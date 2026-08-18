@@ -114,8 +114,20 @@ func apply(i: int) -> void:
 	env.fog_light_color = p.fogc
 	env.fog_height = p.get("fh", 0.0)
 	env.fog_height_density = p.get("fhd", 0.0)
-	env.adjustment_brightness = p.br
-	env.adjustment_saturation = p.sat
+	# под ACES-тонмаппинг: пресеты писались под FILMIC с br 1.25 — приводим к естественному
+	env.adjustment_brightness = 0.92 + (float(p.br) - 1.0) * 0.5
+	env.adjustment_saturation = 1.0 + (float(p.sat) - 1.0) * 0.6
+	sun.light_energy = float(p.se) * 1.35
+	env.ambient_light_energy = float(p.ae) * 1.1
+	if idx == 4:                                   # ночь: под ACES темнее, чем задумано — компенсируем
+		env.ambient_light_energy *= 3.2
+		env.adjustment_brightness += 0.22
+		sun.light_energy *= 2.6                    # «луна» — иначе рельеф не читается вовсе
+		env.glow_intensity = 0.6
+	else:
+		env.glow_intensity = 0.35
+	# объёмная дымка гуще в пасмурную/дождливую погоду
+	env.volumetric_fog_density = 0.00006 + float(p.fog) * 12.0
 	env.background_energy_multiplier = 1.0
 	wind_speed = p.wind
 	var a := deg_to_rad(p.wdir)
@@ -157,7 +169,7 @@ func _process(dt: float) -> void:
 		_flash = maxf(0.0, _flash - dt * 3.5)
 		if randf() < dt * 0.09:
 			_flash = 1.0
-		env.adjustment_brightness = float(PRESETS[idx].br) + _flash * 0.9
+		env.adjustment_brightness = 0.92 + (float(PRESETS[idx].br) - 1.0) * 0.5 + _flash * 0.9
 		env.background_energy_multiplier = 1.0 + _flash * 2.0
 
 

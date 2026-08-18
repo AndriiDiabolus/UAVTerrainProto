@@ -95,7 +95,7 @@ func _process(dt: float) -> void:
 		elif d2 < best[pool - 1][0]:
 			best[pool - 1] = [d2, i]
 			best.sort_custom(func(a, b): return a[0] < b[0])
-	var energy := clampf(night * 0.5, 0.0, 2.5)
+	var energy := clampf(night * 1.1, 0.0, 5.0)
 	for k in _lights.size():
 		if k < best.size():
 			_lights[k].global_position = _lamp_pos[best[k][1]]

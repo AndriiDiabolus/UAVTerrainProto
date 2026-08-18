@@ -144,8 +144,9 @@ func _gen_chunk(c: Vector2i) -> void:
 	chunks[c] = holder
 
 
-## Собирает дерево из примитивов [prim, y_offset, color]; instance color тонирует крону.
-func _tree(parts: Array) -> ArrayMesh:
+## Собирает дерево: ствол (примитив, tree.gdshader) + крона из кросс-карт (foliage.gdshader).
+## parts: [prim, y_offset, color] для ствола; crown: {tex, w, h, y0, color, flutter}
+func _tree(parts: Array, crown: Dictionary) -> ArrayMesh:
 	var mesh := ArrayMesh.new()
 	for part: Array in parts:
 		var arr: Array = part[0].get_mesh_arrays()
@@ -159,42 +160,145 @@ func _tree(parts: Array) -> ArrayMesh:
 		mat.set_shader_parameter("base_color", part[2])
 		mesh.surface_set_material(mesh.get_surface_count() - 1, mat)
 		_tree_mats.append(mat)
+	if not crown.is_empty():
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,
+			_cards(float(crown.w), float(crown.h), float(crown.y0), 3, bool(crown.get("top", true))))
+		var fm := ShaderMaterial.new()
+		fm.shader = load("res://scripts/foliage.gdshader")
+		fm.set_shader_parameter("tex", crown.tex)
+		fm.set_shader_parameter("base_color", crown.color)
+		fm.set_shader_parameter("leaf_flutter", float(crown.get("flutter", 1.0)))
+		mesh.surface_set_material(mesh.get_surface_count() - 1, fm)
+		_tree_mats.append(fm)
 	return mesh
 
 
-func _cone(botr: float, hgt: float, seg: int) -> CylinderMesh:
-	var m := CylinderMesh.new()
-	m.top_radius = 0.0; m.bottom_radius = botr; m.height = hgt
-	m.radial_segments = seg; m.rings = 1
-	return m
+## Кросс-карты: n вертикальных квадов через центр (повёрнуты на 180°/n) + горизонтальная карта
+## (вид сверху с дрона — крона не выглядит звездой).
+func _cards(w: float, h: float, y0: float, n: int, top: bool) -> Array:
+	var V := PackedVector3Array(); var N := PackedVector3Array()
+	var UVs := PackedVector2Array(); var I := PackedInt32Array()
+	var add_quad := func(a: Vector3, b: Vector3, c: Vector3, d: Vector3, nrm: Vector3) -> void:
+		var base := V.size()
+		V.append_array([a, b, c, d])
+		for k in 4: N.append(nrm)
+		UVs.append_array([Vector2(0, 1), Vector2(1, 1), Vector2(1, 0), Vector2(0, 0)])
+		I.append_array([base, base + 1, base + 2, base, base + 2, base + 3])
+	for i in n:
+		var a := PI * i / n
+		var dx := Vector3(cos(a), 0, sin(a)) * (w * 0.5)
+		var nrm := Vector3(-sin(a), 0, cos(a))
+		add_quad.call(-dx + Vector3(0, y0, 0), dx + Vector3(0, y0, 0), dx + Vector3(0, y0 + h, 0), -dx + Vector3(0, y0 + h, 0), nrm)
+	if top:
+		var yy := y0 + h * 0.55
+		var hw := w * 0.5
+		add_quad.call(Vector3(-hw, yy, -hw), Vector3(hw, yy, -hw), Vector3(hw, yy, hw), Vector3(-hw, yy, hw), Vector3.UP)
+	var arr := []
+	arr.resize(Mesh.ARRAY_MAX)
+	arr[Mesh.ARRAY_VERTEX] = V; arr[Mesh.ARRAY_NORMAL] = N
+	arr[Mesh.ARRAY_TEX_UV] = UVs; arr[Mesh.ARRAY_INDEX] = I
+	return arr
+
+
+## Процедурная текстура кроны 256² RGBA. Крона = набор пучков (кластеров) с просветами между ними;
+## внутри пучка — мелкие «листья»/хвоинки с дырками. kind: conifer / leaf / birch / bush.
+func _foliage_tex(kind: String, seed_v: int) -> ImageTexture:
+	var S := 256
+	var img := Image.create(S, S, false, Image.FORMAT_RGBA8)
+	img.fill(Color(0, 0, 0, 0))
+	var rng := RandomNumberGenerator.new(); rng.seed = seed_v
+	# --- пучки ---
+	var clusters: Array = []          # [cx, cy, rx, ry, lum]
+	match kind:
+		"conifer":
+			# ярусы веток: 12 ярусов, пучки растут от ствола в стороны, нижние шире и гуще; макушка
+			var tiers := 12
+			for t in tiers:
+				var cy := lerpf(0.06, 0.97, (t + 0.5) / tiers)
+				var half := lerpf(0.025, 0.47, pow((cy - 0.06) / 0.91, 0.85))
+				var n := 3 + t
+				for k in n:
+					var cx := 0.5 + (rng.randf() * 2.0 - 1.0) * half
+					var rx := rng.randf_range(0.07, 0.15) * (0.45 + half)
+					var ry := rng.randf_range(0.022, 0.04)
+					var cyy := cy + absf(cx - 0.5) * 0.08 * rng.randf()
+					clusters.append([cx, cyy, rx, ry, 0.0])
+			clusters.append([0.5, 0.045, 0.035, 0.05, 0.0])   # макушка
+			for t in 8:                                        # ствольный столб хвои — плотная середина
+				clusters.append([0.5, lerpf(0.15, 0.95, t / 7.0), 0.06, 0.05, 0.0])
+		"bush":
+			for k in 14:
+				var ang := rng.randf() * TAU; var rr := sqrt(rng.randf()) * 0.34
+				clusters.append([0.5 + cos(ang) * rr, 0.58 + sin(ang) * rr * 0.75,
+					rng.randf_range(0.11, 0.17), rng.randf_range(0.09, 0.14), 0.0])
+		_:
+			var n := 18 if kind == "birch" else 22
+			for k in n:
+				var ang := rng.randf() * TAU; var rr := pow(rng.randf(), 0.55) * 0.36
+				var cx := 0.5 + cos(ang) * rr; var cy := 0.5 + sin(ang) * rr * 0.9
+				var r := rng.randf_range(0.11, 0.18) * (0.75 if kind == "birch" else 1.0)
+				clusters.append([cx, cy, r, r * rng.randf_range(0.7, 1.0), 0.0])
+	# яркость пучка: верхние и внешние — на солнце, внутренние/нижние — в тени
+	for c in clusters:
+		var top := 1.0 - float(c[1])
+		var outer := clampf(absf(float(c[0]) - 0.5) * 2.0 + (0.5 - float(c[1])) * 0.6, 0.0, 1.0)
+		c[4] = clampf(0.45 + top * 0.45 + outer * 0.35 + rng.randf_range(-0.18, 0.18), 0.28, 1.35)
+	# --- листья внутри пучков ---
+	var leaf_r := 0.011 if kind == "conifer" else 0.016
+	if kind == "birch": leaf_r = 0.012
+	var per := 120 if kind == "conifer" else 60
+	for c in clusters:
+		var cx: float = c[0]; var cy: float = c[1]; var rx: float = c[2]; var ry: float = c[3]; var lum: float = c[4]
+		var count := int(per * (rx * ry) / (0.14 * 0.12)) + 6
+		for k in count:
+			var ang := rng.randf() * TAU; var rr := sqrt(rng.randf())
+			var lx := cx + cos(ang) * rr * rx; var ly := cy + sin(ang) * rr * ry
+			var lr := leaf_r * rng.randf_range(0.6, 1.5)
+			var lrx := lr * (2.2 if kind == "conifer" else rng.randf_range(0.8, 1.3))
+			var lry := lr * (0.7 if kind == "conifer" else rng.randf_range(0.8, 1.3))
+			var l := lum * rng.randf_range(0.7, 1.25) * (1.0 - rr * 0.2)
+			var tint := Vector3(0.9 + rng.randf_range(-0.1, 0.1), 1.0, 0.85 + rng.randf_range(-0.12, 0.12))
+			var x0 := int((lx - lrx) * S); var x1 := int((lx + lrx) * S)
+			var y0 := int((ly - lry) * S); var y1 := int((ly + lry) * S)
+			for py in range(maxi(y0, 0), mini(y1, S - 1) + 1):
+				for px in range(maxi(x0, 0), mini(x1, S - 1) + 1):
+					var dx := (px / float(S) - lx) / lrx; var dy := (py / float(S) - ly) / lry
+					if dx * dx + dy * dy > 1.0: continue
+					img.set_pixel(px, py, Color(l * tint.x, l * tint.y, l * tint.z, 1.0))
+	img.generate_mipmaps()
+	if "--foliagedump" in OS.get_cmdline_user_args():
+		img.save_png(ProjectSettings.globalize_path("res://../foliage_%s.png" % kind))
+	return ImageTexture.create_from_image(img)
 
 
 func _cyl(topr: float, botr: float, hgt: float) -> CylinderMesh:
 	var m := CylinderMesh.new()
 	m.top_radius = topr; m.bottom_radius = botr; m.height = hgt
-	m.radial_segments = 5; m.rings = 1
+	m.radial_segments = 6; m.rings = 1
 	return m
 
 
-func _ball(r: float, h: float) -> SphereMesh:
-	var m := SphereMesh.new()
-	m.radius = r; m.height = h; m.radial_segments = 8; m.rings = 5
-	return m
-
-
-## 5 видов: ель, сосна, лиственное, берёза, куст.
+## 5 видов: ель, сосна, лиственное, берёза, куст. Кроны — кросс-карты с процедурной листвой.
 func _make_trees() -> Array[ArrayMesh]:
 	var brown := Color(0.30, 0.21, 0.13)
 	var birch_bark := Color(0.84, 0.84, 0.78)
+	var conif := _foliage_tex("conifer", 11)
+	var leaf := _foliage_tex("leaf", 22)
+	var birch := _foliage_tex("birch", 33)
+	var bush := _foliage_tex("bush", 44)
 	var out: Array[ArrayMesh] = []
-	# ель — узкий конус
-	out.append(_tree([[_cyl(0.32, 0.5, 3.0), 1.5, brown], [_cone(2.6, 13.0, 7), 9.0, Color(0.09, 0.20, 0.09)]]))
-	# сосна — высокая, крона выше на голом стволе
-	out.append(_tree([[_cyl(0.28, 0.42, 7.0), 3.5, brown], [_cone(2.3, 9.0, 7), 12.5, Color(0.12, 0.25, 0.12)]]))
-	# лиственное — круглая крона
-	out.append(_tree([[_cyl(0.5, 0.75, 4.5), 2.2, brown], [_ball(4.2, 8.0), 8.0, Color(0.17, 0.31, 0.13)]]))
+	# ель — узкий высокий треугольник, хвоя тёмная
+	out.append(_tree([[_cyl(0.30, 0.48, 3.0), 1.5, brown]],
+		{"tex": conif, "w": 5.6, "h": 13.0, "y0": 1.2, "color": Color(0.16, 0.30, 0.14), "flutter": 0.4}))
+	# сосна — крона выше на голом стволе
+	out.append(_tree([[_cyl(0.26, 0.40, 8.0), 4.0, brown]],
+		{"tex": conif, "w": 6.4, "h": 8.5, "y0": 7.5, "color": Color(0.20, 0.34, 0.16), "flutter": 0.5}))
+	# лиственное — широкая круглая крона
+	out.append(_tree([[_cyl(0.48, 0.72, 4.5), 2.2, brown]],
+		{"tex": leaf, "w": 9.5, "h": 9.0, "y0": 3.2, "color": Color(0.30, 0.46, 0.18), "flutter": 1.0}))
 	# берёза — тонкий светлый ствол, лёгкая крона
-	out.append(_tree([[_cyl(0.2, 0.3, 8.0), 4.0, birch_bark], [_ball(2.6, 5.5), 9.5, Color(0.32, 0.44, 0.19)]]))
+	out.append(_tree([[_cyl(0.18, 0.28, 8.0), 4.0, birch_bark]],
+		{"tex": birch, "w": 6.0, "h": 7.5, "y0": 5.0, "color": Color(0.46, 0.58, 0.24), "flutter": 1.4}))
 	# куст
-	out.append(_tree([[_ball(1.7, 2.6), 1.1, Color(0.18, 0.30, 0.14)]]))
+	out.append(_tree([], {"tex": bush, "w": 3.2, "h": 2.6, "y0": 0.0, "color": Color(0.30, 0.44, 0.18), "flutter": 1.0}))
 	return out

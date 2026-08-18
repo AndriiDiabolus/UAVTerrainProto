@@ -63,6 +63,16 @@ func _schedule_screenshot() -> void:
 		for _i in 90:                       # дать свету/дыму прилипнуть и накопиться
 			await get_tree().process_frame
 		await RenderingServer.frame_post_draw
+	if "--groundshot" in OS.get_cmdline_user_args():
+		# кадр с 2.5 м над землёй — проверка травы/деревьев/земли вблизи
+		var gv: Vector2 = main._world_from_latlon(48.2760, 24.5640)
+		var gyy: float = main.height_at(gv.x, gv.y)
+		main.cam.global_position = Vector3(gv.x, gyy + 2.5, gv.y)
+		var gt: Vector2 = main._world_from_latlon(48.2700, 24.5660)
+		main.cam.look_at(Vector3(gt.x, main.height_at(gt.x, gt.y) + 6.0, gt.y))
+		for _i in 90:
+			await get_tree().process_frame
+		await RenderingServer.frame_post_draw
 	if "--targetcam" in OS.get_cmdline_user_args() and main.targets != null:
 		var want := "tank"
 		if "--oneapc" in OS.get_cmdline_user_args(): want = "apc"

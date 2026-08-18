@@ -47,6 +47,7 @@ func _ready() -> void:
 	_spawn_camera()
 	_build_weather()
 	_build_forest()
+	_build_grass()
 	_build_smoke()
 	_build_targets()
 	_build_ew()
@@ -163,6 +164,7 @@ func _build_terrain() -> void:
 	for pair in [["grass", "grass"], ["dirt", "dirt"], ["rock", "rock"]]:
 		mat.set_shader_parameter(pair[0] + "_tex", _load_tex(pair[1] + "_diff.jpg"))
 		mat.set_shader_parameter(pair[0] + "_n", _load_tex(pair[1] + "_norm.jpg"))
+	mat.set_shader_parameter("noise_tex", _make_detail_noise())
 	mat.set_shader_parameter("uv_debug", "--uvdebug" in OS.get_cmdline_user_args())
 	mesh.surface_set_material(0, mat)
 
@@ -417,38 +419,55 @@ func apply_quality(q: int) -> void:
 	quality = clampi(q, 0, 2)
 	var vp := get_viewport()
 	var forest := get_node_or_null("Forest")
+	var grass := get_node_or_null("Grass")
 	match quality:
 		0:
 			vp.scaling_3d_scale = 0.7
-			vp.msaa_3d = Viewport.MSAA_DISABLED
+			vp.use_taa = false
+			vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA
 			sun.shadow_enabled = false
 			environment.ssr_enabled = false
 			environment.glow_enabled = false
+			environment.ssao_enabled = false
+			environment.ssil_enabled = false
+			environment.volumetric_fog_enabled = false
 			if forest != null: forest.radius = 1400.0
+			if grass != null: grass.enabled = false
 			if props != null: props.pool = 6
 		1:
 			vp.scaling_3d_scale = 1.0
-			vp.msaa_3d = Viewport.MSAA_DISABLED
+			vp.use_taa = true
+			vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA
 			sun.shadow_enabled = true
-			sun.directional_shadow_max_distance = 6000.0
+			sun.directional_shadow_max_distance = 3500.0
 			environment.ssr_enabled = false
 			environment.glow_enabled = true
+			environment.ssao_enabled = true
+			environment.ssil_enabled = false
+			environment.volumetric_fog_enabled = false
 			if forest != null: forest.radius = 2200.0
+			if grass != null: grass.enabled = true; grass.radius = 45.0
 			if props != null: props.pool = 12
 		2:
 			vp.scaling_3d_scale = 1.0
-			vp.msaa_3d = Viewport.MSAA_DISABLED
+			vp.use_taa = true
+			vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA
 			sun.shadow_enabled = true
-			sun.directional_shadow_max_distance = 30000.0
+			sun.directional_shadow_max_distance = 6000.0
 			environment.ssr_enabled = true
 			environment.glow_enabled = true
+			environment.ssao_enabled = true
+			environment.ssil_enabled = true
+			environment.volumetric_fog_enabled = true
 			if forest != null: forest.radius = 3000.0
+			if grass != null: grass.enabled = true; grass.radius = 70.0
 			if props != null: props.pool = 24
 	var cfg := ConfigFile.new()
 	cfg.load(SETTINGS_PATH)
 	cfg.set_value("video", "quality", quality)
 	cfg.save(SETTINGS_PATH)
 	print("Качество: ", QUALITY_NAMES[quality])
+
 
 # ======================= Столкновения, краш, HUD =======================
 var collision: RefCounted
@@ -568,6 +587,14 @@ func _build_forest() -> void:
 	forest.setup(self)
 
 
+func _build_grass() -> void:
+	var g := Node3D.new()
+	g.name = "Grass"
+	g.set_script(load("res://scripts/grass.gd"))
+	add_child(g)
+	g.setup(self)
+
+
 var sound: Node3D
 
 func _build_sound() -> void:
@@ -640,30 +667,56 @@ func _build_environment() -> void:
 	sky_material = ShaderMaterial.new()
 	sky_material.shader = load("res://scripts/sky.gdshader")
 	var sky := Sky.new(); sky.sky_material = sky_material
+	sky.radiance_size = Sky.RADIANCE_SIZE_256
 	var env := Environment.new()
 	env.background_mode = Environment.BG_SKY
 	env.sky = sky
-	# bloom / свечение (окна, фонари, солнце, закат)
+	# тонмаппинг: ACES (кино-кривая, естественные света и небо), без «мультяшной» яркости
+	env.tonemap_mode = Environment.TONE_MAPPER_ACES
+	env.tonemap_white = 6.0
+	env.tonemap_exposure = 1.0
+	env.adjustment_enabled = true
+	env.adjustment_brightness = 1.0
+	env.adjustment_contrast = 1.06
+	env.adjustment_saturation = 1.0
+	# bloom / свечение (окна, фонари, солнце, закат) — мягкий, HDR-порог
 	env.glow_enabled = true
-	env.glow_intensity = 0.5
-	env.glow_bloom = 0.15
-	env.glow_hdr_threshold = 1.0
-	env.glow_blend_mode = Environment.GLOW_BLEND_MODE_ADDITIVE
+	env.glow_intensity = 0.35
+	env.glow_bloom = 0.05
+	env.glow_hdr_threshold = 1.15
+	env.glow_hdr_scale = 2.0
+	env.glow_blend_mode = Environment.GLOW_BLEND_MODE_SOFTLIGHT
+	# контактные тени в складках/у домов/под кронами
+	env.ssao_enabled = true
+	env.ssao_radius = 2.5
+	env.ssao_intensity = 2.2
+	env.ssao_power = 1.6
+	env.ssao_detail = 0.6
+	env.ssao_light_affect = 0.15
+	env.ssao_ao_channel_affect = 0.0
+	# непрямое освещение с экрана — мягче тени под навесами, чуть цвета от земли
+	env.ssil_enabled = true
+	env.ssil_radius = 4.0
+	env.ssil_intensity = 0.8
 	# отражения: небо как источник + SSR (берега/дома в воде)
 	env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
 	env.ssr_enabled = true
-	env.ssr_max_steps = 32
+	env.ssr_max_steps = 48
 	env.ssr_fade_in = 0.2
 	env.ssr_fade_out = 4.0
 	env.fog_enabled = not ("--nofog" in OS.get_cmdline_user_args())
 	env.fog_light_color = Color(0.78, 0.84, 0.92)
 	env.fog_density = 0.0000015
 	env.fog_sky_affect = 0.0
-	env.fog_aerial_perspective = 0.5
-	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
-	env.adjustment_enabled = true
-	env.adjustment_brightness = 1.25
-	env.adjustment_saturation = 1.15
+	env.fog_aerial_perspective = 0.7
+	# объёмная дымка: лучи солнца сквозь кроны/дым, воздушная перспектива на средних дистанциях
+	env.volumetric_fog_enabled = true
+	env.volumetric_fog_density = 0.00008
+	env.volumetric_fog_albedo = Color(0.9, 0.93, 1.0)
+	env.volumetric_fog_length = 4000.0
+	env.volumetric_fog_detail_spread = 1.6
+	env.volumetric_fog_sky_affect = 0.0
+	env.volumetric_fog_ambient_inject = 0.15
 	environment = env
 	var we := WorldEnvironment.new(); we.environment = env
 	add_child(we)
@@ -672,8 +725,18 @@ func _build_environment() -> void:
 	sun.rotation_degrees = Vector3(-38, -125, 0)
 	sun.light_energy = 1.3
 	sun.light_color = Color(1.0, 0.96, 0.88)
+	sun.light_angular_distance = 0.53           # реальный угловой размер солнца → мягкие края теней
 	sun.shadow_enabled = true
-	sun.directional_shadow_max_distance = 30000.0
+	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
+	sun.directional_shadow_split_1 = 0.03
+	sun.directional_shadow_split_2 = 0.10
+	sun.directional_shadow_split_3 = 0.32
+	sun.directional_shadow_blend_splits = true
+	sun.directional_shadow_max_distance = 6000.0
+	sun.directional_shadow_fade_start = 0.85
+	sun.shadow_bias = 0.04
+	sun.shadow_normal_bias = 1.6
+	sun.shadow_opacity = 0.92
 	add_child(sun)
 
 

@@ -60,7 +60,7 @@ func _make_visual(p: Vector3, r: float) -> Node3D:
 		var dm := StandardMaterial3D.new()
 		dm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 		dm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		dm.albedo_color = Color(1.0, 0.25, 0.2, 0.07)
+		dm.albedo_color = Color(1.0, 0.25, 0.2, 0.035)
 		dm.cull_mode = BaseMaterial3D.CULL_DISABLED
 		dm.no_depth_test = false
 		dome.material_override = dm
