@@ -148,6 +148,7 @@ func setup(m: Node3D) -> void:
 	_fpv_osd.set_script(load("res://scripts/fpv_osd.gd"))
 	_fpv_osd.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_fpv_osd.set("main", main)
+	_fpv_osd.home = main._home_pos          # точка оператора = точка взлёта (иначе до нажатия F канал считался от (0,0,0))
 	_fpv_osd.visible = false
 	fpv_layer.add_child(_fpv_osd)
 
