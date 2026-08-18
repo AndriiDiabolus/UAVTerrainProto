@@ -44,11 +44,13 @@ def merc_bounds(tile_x0, tile_y0, z, n_tiles):
     return xmin, ymin, xmax, ymax
 
 
-def stac_search(lat, lon):
+def stac_search(lat, lon, bbox=None):
     d = 0.02
+    if bbox is None:
+        bbox = [lon - d, lat - d, lon + d, lat + d]
     body = {
         "collections": ["sentinel-2-l2a"],
-        "bbox": [lon - d, lat - d, lon + d, lat + d],
+        "bbox": bbox,
         "datetime": DATE_RANGE,
         "limit": 100,
     }
@@ -130,18 +132,25 @@ def build_albedo(meta, out_px=4096, verbose=True):
     out = np.zeros((out_px, out_px, 3), np.uint8)
     filled = np.zeros((out_px, out_px), bool)
 
-    feats = stac_search(lat, lon)
+    # ищем сцены по ВСЕМУ AOI (иначе находятся только тайлы, покрывающие центр, а края остаются пустыми)
+    lon0, lat0 = to4326.transform(xmin, ymin)
+    lon1, lat1 = to4326.transform(xmax, ymax)
+    feats = stac_search(lat, lon, bbox=[lon0, lat0, lon1, lat1])
     if not feats:
         raise RuntimeError("STAC: не найдено безоблачных сцен для AOI")
     if verbose:
         print(f"  найдено сцен (cloud<={CLOUD_MAX}%): {len(feats)}", flush=True)
 
     used = []
+    done_tiles = set()          # MGRS-тайлы, чьи сцены уже ничего не добавляют (не качать их снова)
     for f in feats:
-        if filled.all():
+        if filled.mean() >= 0.995:
             break
         href = f["assets"]["visual"]["href"]
         sid = f["id"]
+        tile = f["properties"].get("grid:code") or (sid.split("_")[1] if "_" in sid else sid)
+        if tile in done_tiles:
+            continue
         dest = CACHE / f"tci_{sid}.tif"
         if verbose:
             print(f"  сцена {sid} cloud={f['properties'].get('eo:cloud_cover'):.1f}%"
@@ -172,8 +181,15 @@ def build_albedo(meta, out_px=4096, verbose=True):
         valid[idx_inb] = nonblack
         ny, nx = np.where(need)
         sy, sx = ny[valid], nx[valid]
+        before = filled.mean()
         out[sy, sx] = sample[valid]
         filled[sy, sx] = True
+        gained = filled.mean() - before
+        if gained < 0.002:
+            done_tiles.add(tile)          # этот тайл исчерпан — остальные его сцены пропускаем
+            if verbose:
+                print(f"    тайл {tile} больше ничего не добавляет ({gained*100:.2f}%)", flush=True)
+            continue
         used.append((sid, epsg, eff_px))
         if verbose:
             print(f"    заполнено {filled.mean()*100:.1f}% (epsg {epsg},"
