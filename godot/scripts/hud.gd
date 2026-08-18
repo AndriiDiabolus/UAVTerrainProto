@@ -209,7 +209,20 @@ func _process(_dt: float) -> void:
 	var spd: float = cam.speed() if cam.has_method("speed") else 0.0
 	var tline := ""
 	if main.targets != null:
-		tline = "\nПоражено: %d   |   целей в зоне: %d" % [main.targets.score, main.targets.active_count()]
+		tline = "\nПоражено: %d   |   целей в зоне: %d   |   боеприпас %d/%d" % [main.targets.score, main.targets.active_count(),
+			main.targets.ammo, main.targets.AMMO_MAX]
+	if main._fpv_osd != null:
+		var lq: float = main._fpv_osd.signal_q
+		var jline := ""
+		if main.get("ew") != null:
+			var ji: Dictionary = main.ew.nearest_info(p)
+			if not ji.is_empty():
+				if float(ji.edge) < 0.0:
+					jline = "   ⚠ РЭБ: подавление %d%%" % int(float(ji.jam) * 100.0)
+				elif float(ji.edge) < 400.0:
+					jline = "   РЭБ-зона через %d м" % int(ji.edge)
+		var fs: String = "   ✖ FAILSAFE" if cam.get("failsafe") == true else ""
+		tline += "\nКанал: %d%%%s%s" % [int(lq * 100.0), jline, fs]
 	if main.mission != null:
 		var ml: String = main.mission.hud_line()
 		if ml != "": tline += "\n" + ml

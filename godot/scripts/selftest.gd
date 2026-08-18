@@ -15,6 +15,8 @@ func setup(m: Node3D) -> void:
 		_check("height_at на узлах меша", _test_height_at())
 		_check("lat/lon ↔ мир (обратимость)", _test_latlon())
 		_check("коллизии + LOS", _test_collision())
+		_check("РЭБ: jam_factor", _test_ew())
+		_check("баллистика сброса + поражение", _test_ballistics())
 	if "--selftest" in args or "--flytest" in args:
 		any = true
 		_check("лётная модель", main.cam.self_test())
@@ -99,4 +101,53 @@ func _test_collision() -> bool:
 	if l_hi < 0.99: ok = false
 	if worst > 0.9:
 		print("  (предупреждение: рельеф региона не перекрывает сигнал — равнина?)")
+	return ok
+
+
+func _test_ew() -> bool:
+	if main.ew == null or main.ew.jammers.is_empty():
+		print("  РЭБ отключена — пропуск"); return true
+	var j: Dictionary = main.ew.jammers[0]
+	var at_center: float = main.ew.jam_factor(j.pos + Vector3(0, 30, 0))
+	var at_edge: float = main.ew.jam_factor(j.pos + Vector3(j.r * 0.98, 30, 0))
+	var far: float = main.ew.jam_factor(j.pos + Vector3(j.r * 3.0, 30, 0))
+	print("  jam центр=%.2f край=%.2f вне=%.2f" % [at_center, at_edge, far])
+	return at_center < 0.1 and at_edge > 0.9 and far == 1.0
+
+
+func _test_ballistics() -> bool:
+	var tg: Node3D = main.targets
+	if tg == null:
+		return false
+	# цель у ближайшей дороги к дому, снаряд бросаем ровно над ней с 80 м без скорости → должна погибнуть
+	var spawned: Array = tg.spawn_near(main._home_pos, ["apc"])
+	if spawned.is_empty():
+		print("  нет дорог для спавна — пропуск"); return true
+	var t: Dictionary = spawned[0]
+	t.speed = 0.0
+	tg._process(0.01)                     # поставить на дорогу
+	var tp: Vector3 = t.node.position
+	var mi := MeshInstance3D.new(); tg.add_child(mi)
+	tg._projs.append({"node": mi, "pos": tp + Vector3(0, 80, 0), "vel": Vector3.ZERO, "t": 0.0})
+	var steps := 0
+	while not tg._projs.is_empty() and steps < 3000:
+		tg._step_projs(1.0 / 120.0)
+		steps += 1
+	var tflight := steps / 120.0
+	print("  падение с 80 м: %.2f с (ждём ~4.0–4.6), цель жива=%s (ждём false)" % [tflight, t.alive])
+	var ok: bool = tflight > 3.8 and tflight < 4.8 and not bool(t.alive)
+	# промах: с 80 м при горизонтальной скорости 20 м/с снаряд улетает ~70–80 м вперёд
+	var mi2 := MeshInstance3D.new(); tg.add_child(mi2)
+	var start := tp + Vector3(0, 80, 0)
+	tg._projs.append({"node": mi2, "pos": start, "vel": Vector3(20, 0, 0), "t": 0.0})
+	var last := start
+	steps = 0
+	while not tg._projs.is_empty() and steps < 3000:
+		last = tg._projs[0].pos
+		tg._step_projs(1.0 / 120.0)
+		steps += 1
+	var carry := last.x - start.x
+	print("  вынос при 20 м/с с 80 м: %.0f м (ждём 60–85)" % carry)
+	ok = ok and carry > 60.0 and carry < 85.0
+	tg.reset_ammo()
 	return ok

@@ -116,6 +116,8 @@ func start(id: int) -> void:
 	main.cam.global_position = _origin + Vector3(0, 0.4, 0)
 	if main.cam.has_method("reset"):
 		main.cam.reset()
+	if main.targets != null:
+		main.targets.reset_ammo()
 	var want: String = str(m.get("mode", "angle"))
 	main.cam.mode = {"gps": 0, "angle": 1, "acro": 2}.get(want, 1)
 	_steps = []

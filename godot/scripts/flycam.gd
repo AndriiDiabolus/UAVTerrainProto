@@ -239,6 +239,9 @@ func _read_sticks(dt: float) -> Dictionary:
 	_kb.w = lerpf(_kb.w, clampf(kb_t, -1.0, 1.0), k)
 
 	var out := {"p": _kb.x, "r": _kb.y, "y": _kb.z, "thr_c": _kb.w, "thr": -1.0, "joy": false}
+	link_q = 1.0
+	if main != null and main.get("_fpv_osd") != null and main._fpv_osd != null:
+		link_q = float(main._fpv_osd.signal_q)
 	if not pads.is_empty():
 		var id: int = pads[0]
 		var raw := []
@@ -256,7 +259,28 @@ func _read_sticks(dt: float) -> Dictionary:
 			out.p = jp; out.r = jr; out.y = jy
 			out.thr_c = jt                    # центр стика = 0
 			out.thr = clampf((jt + 1.0) * 0.5, 0.0, 1.0)   # низ = 0, верх = 1
+	_degrade_link(out)
 	return out
+
+
+var link_q := 1.0                    # качество канала управления (RSSI с OSD): 1 — чисто
+var failsafe := false
+
+## Деградация управления при слабом канале (РЭБ / за рельефом / дальность):
+## ниже 0.5 — стики ослабевают и шумят, ниже 0.1 — failsafe (стики в ноль: GPS висит, ANGLE ровняется).
+func _degrade_link(out: Dictionary) -> void:
+	failsafe = link_q < 0.1
+	if link_q >= 0.5:
+		return
+	var k := clampf((link_q - 0.1) / 0.4, 0.0, 1.0)
+	var nz := (1.0 - k) * 0.12
+	out.p = float(out.p) * k + _turb[0].get_noise_1d(_t * 6.0) * nz
+	out.r = float(out.r) * k + _turb[1].get_noise_1d(_t * 5.0) * nz
+	out.y = float(out.y) * k
+	out.thr_c = float(out.thr_c) * k
+	if float(out.thr) >= 0.0:
+		var hover := clampf(1.0 / float(P["tw"]), 0.0, 1.0)
+		out.thr = lerpf(hover, float(out.thr), k)
 
 
 # ============================ физика ============================

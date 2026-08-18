@@ -177,7 +177,8 @@ func _spawn_vehicle(kind: String, road: Dictionary, d: float) -> void:
 	targets.append({"kind": kind, "node": mi, "road": road, "d": d,
 		"dir": 1.0 if randf() < 0.5 else -1.0,
 		"speed": randf_range(3.0, 5.0) if kind == "tank" else randf_range(6.0, 9.0),
-		"radius": 5.0, "alive": true, "leader": true, "wreck_t": 0.0, "offset": 0.0})
+		"radius": 5.0, "alive": true, "leader": true, "wreck_t": 0.0, "offset": 0.0,
+		"alert": false, "aa_t": randf_range(0.0, 1.5)})
 
 
 func _spawn_squad(road: Dictionary, d: float) -> void:
@@ -191,7 +192,8 @@ func _spawn_squad(road: Dictionary, d: float) -> void:
 		targets.append({"kind": "soldier", "node": mi, "road": road,
 			"d": d - i * 4.0, "dir": 1.0, "speed": randf_range(1.2, 1.7),
 			"radius": 2.0, "alive": true, "leader": i == 0, "wreck_t": 0.0,
-			"offset": randf_range(-2.5, 2.5)})
+			"offset": randf_range(-2.5, 2.5), "alert": false, "aa_t": randf_range(0.0, 2.0),
+			"hide_off": randf_range(9.0, 14.0) * (1.0 if randf() < 0.5 else -1.0)})
 
 
 ## Яркий столб-маркер над целью + billboard-ромб на вершине (видно с воздуха).
@@ -234,10 +236,36 @@ func _process(dt: float) -> void:
 		_try_spawn()
 		_cleanup()
 	var cam_pos: Vector3 = main.cam.global_position
+	_step_projs(dt)
+	var agl: float = cam_pos.y - main.height_at(cam_pos.x, cam_pos.z)
+	var drone_spd: float = main.cam.speed() if main.cam.has_method("speed") else 0.0
 	for t: Dictionary in targets:
 		if not t.alive:
 			t.wreck_t += dt
 			continue
+		# --- обнаружение дрона и реакция ---
+		var dist_d: float = cam_pos.distance_to(t.node.position)
+		if not t.alert:
+			var det := 250.0 if t.kind == "soldier" else 420.0
+			if dist_d < det and agl < 220.0:
+				t.alert = true
+				if t.kind != "soldier":
+					t.speed *= 2.4          # техника уходит на полном ходу
+				if main.get("telemetry") != null:
+					main.telemetry.event("target_alert", {"kind": t.kind})
+		if t.alert and t.kind == "soldier":
+			# пехота сходит с дороги в укрытие и залегает
+			t.offset = lerpf(t.offset, t.hide_off, clampf(dt * 0.6, 0.0, 1.0))
+			t.speed = lerpf(t.speed, 0.15, clampf(dt * 0.8, 0.0, 1.0))
+		# --- ответный огонь (БТР — автопушка, танк — ЗПУ, пехота — стрелковое) ---
+		if t.alert and _aa_enabled:
+			t.aa_t -= dt
+			var rng_max := 120.0 if t.kind == "soldier" else 450.0
+			if t.aa_t <= 0.0 and dist_d < rng_max:
+				t.aa_t = 1.6 if t.kind != "soldier" else 2.5
+				var origin: Vector3 = t.node.position + Vector3(0, 2.2, 0)
+				if _terrain_hit(origin, (cam_pos - origin).normalized(), dist_d) >= dist_d - 1.0:
+					_aa_burst(t, origin, cam_pos, dist_d, rng_max, agl, drone_spd)
 		# движение по дороге туда-обратно
 		t.d += t.dir * t.speed * dt
 		var road: Dictionary = t.road
@@ -294,35 +322,126 @@ func active_count() -> int:
 	return n
 
 
-## Выстрел из центра экрана. Возвращает true при поражении.
+# ======================= Боеприпасы: сброс с баллистикой =======================
+const AMMO_MAX := 6
+const DROP_COOLDOWN := 1.2
+const BOMB_DRAG := 0.004            # c/m: F/m = -c·v_air·|v_air|
+const BLAST_R := 7.0                # радиус поражения техники, м (пехота ×1.3)
+var ammo := AMMO_MAX
+var _projs: Array = []              # {node, pos, vel, t}
+
+
+func reset_ammo() -> void:
+	ammo = AMMO_MAX
+
+
+## ЛКМ — сброс боеприпаса. Летит по баллистике: начальная скорость = скорость дрона, гравитация,
+## сопротивление относительно воздуха (ветер сносит), взрыв при касании земли или прямом попадании.
+## Ударный FPV — таран корпусом (RAM_DIST) работает всегда.
 func fire(cam: Camera3D) -> void:
-	if _cool > 0.0:
+	if _cool > 0.0 or ammo <= 0:
 		return
-	_cool = FIRE_COOLDOWN
+	_cool = DROP_COOLDOWN
+	ammo -= 1
 	if main.get("sound") != null:
 		main.sound.shot()
-	var origin := cam.global_position
-	var dir := -cam.global_transform.basis.z
-	# ближайшая цель на луче
-	var best: Dictionary = {}
-	var best_d := FIRE_RANGE
+	var v0: Vector3 = cam.velocity if cam.get("velocity") != null else Vector3.ZERO
+	var mi := MeshInstance3D.new()
+	var sph := SphereMesh.new(); sph.radius = 0.28; sph.height = 0.56
+	sph.radial_segments = 8; sph.rings = 4
+	mi.mesh = sph
+	var mat := StandardMaterial3D.new(); mat.albedo_color = Color(0.12, 0.12, 0.11)
+	mi.material_override = mat
+	mi.position = cam.global_position - Vector3(0, 1.0, 0)
+	add_child(mi)
+	_projs.append({"node": mi, "pos": mi.position, "vel": v0 + Vector3(0, -1.5, 0), "t": 0.0})
+	if main.get("telemetry") != null:
+		main.telemetry.event("drop", {"ammo": ammo})
+
+
+func _step_projs(dt: float) -> void:
+	if _projs.is_empty():
+		return
+	var wind := Vector3.ZERO
+	if main.get("weather") != null:
+		wind = main.weather.wind_vec()
+	for pr: Dictionary in _projs.duplicate():
+		pr.t += dt
+		var v: Vector3 = pr.vel
+		var v_air: Vector3 = v - wind
+		v.y -= 9.81 * dt
+		v -= v_air * v_air.length() * BOMB_DRAG * dt
+		pr.vel = v
+		var p: Vector3 = pr.pos + v * dt
+		pr.pos = p
+		pr.node.position = p
+		var g: float = main.height_at(p.x, p.z)
+		var hit: bool = p.y <= g + 0.2 or pr.t > 25.0
+		if not hit:
+			for t: Dictionary in targets:
+				if t.alive and p.distance_to(t.node.position + Vector3(0, 1.2, 0)) < t.radius + 0.6:
+					hit = true
+					break
+		if hit:
+			_explode(Vector3(p.x, maxf(p.y, g), p.z))
+			pr.node.queue_free()
+			_projs.erase(pr)
+
+
+func _explode(pos: Vector3) -> void:
+	var any := false
 	for t: Dictionary in targets:
 		if not t.alive:
 			continue
-		var to: Vector3 = t.node.position + Vector3(0, 1.2, 0) - origin
-		var along: float = to.dot(dir)
-		if along < 0.0 or along > FIRE_RANGE:
-			continue
-		var miss: float = (to - dir * along).length()
-		if miss < t.radius and along < best_d:
-			best = t
-			best_d = along
-	# препятствие рельефом
-	var terr_d := _terrain_hit(origin, dir, minf(best_d, FIRE_RANGE))
-	if not best.is_empty() and best_d <= terr_d + 2.0:
-		_kill(best, best.node.position)
-	elif terr_d < FIRE_RANGE:
-		_puff(origin + dir * terr_d, Color(0.5, 0.45, 0.38), 3.0)  # промах в землю
+		var r := BLAST_R * (1.3 if t.kind == "soldier" else 1.0)
+		if pos.distance_to(t.node.position) < r + t.radius * 0.5:
+			_kill(t, t.node.position)
+			any = true
+	if not any:
+		if main.get("sound") != null:
+			main.sound.boom(pos)
+		_puff(pos + Vector3(0, 1.5, 0), Color(0.55, 0.45, 0.32), 8.0)
+		_puff(pos + Vector3(0, 3.0, 0), Color(0.3, 0.28, 0.25), 12.0)
+	if main.get("telemetry") != null:
+		main.telemetry.event("impact", {"x": pos.x, "z": pos.z, "hit": any})
+
+
+var _aa_enabled := not ("--noaa" in OS.get_cmdline_user_args())
+
+
+## Очередь по дрону: вероятность попадания растёт вблизи, при малой скорости и малой высоте.
+func _aa_burst(t: Dictionary, origin: Vector3, drone: Vector3, dist: float, rng_max: float, agl: float, spd: float) -> void:
+	var base := 0.03 if t.kind == "soldier" else 0.11
+	var p := base * (1.0 - dist / rng_max) * (0.35 + 0.65 * (1.0 - clampf(spd / 22.0, 0.0, 1.0)))
+	if agl > 120.0: p *= 0.4
+	var hit := randf() < p
+	# трассер: линия к дрону (при промахе — мимо на 3–9 м)
+	var miss := Vector3.ZERO if hit else Vector3(randf_range(-1, 1), randf_range(-0.6, 0.6), randf_range(-1, 1)).normalized() * randf_range(3.0, 9.0)
+	_tracer(origin, drone + miss)
+	if main.get("sound") != null:
+		main.sound.shot()
+	if main.get("telemetry") != null:
+		main.telemetry.event("aa_fire", {"kind": t.kind, "dist": int(dist), "hit": hit})
+	if hit and not main.crashed:
+		main.crash("зенитный огонь (%s)" % {"tank": "ЗПУ танка", "apc": "автопушка БТР", "soldier": "стрелковое"}.get(t.kind, "огонь"))
+
+
+func _tracer(a: Vector3, b: Vector3) -> void:
+	var im := ImmediateMesh.new()
+	im.surface_begin(Mesh.PRIMITIVE_LINES)
+	im.surface_add_vertex(a); im.surface_add_vertex(b)
+	im.surface_end()
+	var mi := MeshInstance3D.new()
+	mi.mesh = im
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.albedo_color = Color(1.0, 0.75, 0.3)
+	mat.emission_enabled = true; mat.emission = Color(1.0, 0.7, 0.3); mat.emission_energy_multiplier = 2.0
+	mi.material_override = mat
+	add_child(mi)
+	var tw := create_tween()
+	tw.tween_property(mat, "albedo_color:a", 0.0, 0.35)
+	tw.tween_callback(mi.queue_free)
 
 
 func _terrain_hit(origin: Vector3, dir: Vector3, max_d: float) -> float:

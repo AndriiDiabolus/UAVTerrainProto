@@ -12,6 +12,7 @@ func asset_path(f: String) -> String:
 	return asset_dir + f
 
 var meta: Dictionary
+var seed_value := 1
 var height_bytes: PackedByteArray
 var px: int                    # пикселей heightmap по стороне
 var size_m: float              # размер мира в метрах
@@ -28,6 +29,7 @@ func _ready() -> void:
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--seed="):
 			sv = int(a.substr(7))
+	seed_value = sv
 	seed(hash(sv))
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--region="):
@@ -47,6 +49,7 @@ func _ready() -> void:
 	_build_forest()
 	_build_smoke()
 	_build_targets()
+	_build_ew()
 	_build_sound()
 	_build_hud()
 	_build_mission()
@@ -509,6 +512,8 @@ func crash(what: String) -> void:
 
 func _respawn() -> void:
 	crashed = false
+	if targets != null:
+		targets.reset_ammo()
 	if _crash_label != null:
 		_crash_label.visible = false
 	cam.global_position = _home_pos + Vector3(0, 5, 0)
@@ -595,6 +600,16 @@ func _build_telemetry() -> void:
 	add_child(telemetry)
 	telemetry.replay_label = _replay_label
 	telemetry.setup(self)
+
+
+var ew: Node3D
+
+func _build_ew() -> void:
+	ew = Node3D.new()
+	ew.name = "EW"
+	ew.set_script(load("res://scripts/ew.gd"))
+	add_child(ew)
+	ew.setup(self)
 
 
 var targets: Node3D

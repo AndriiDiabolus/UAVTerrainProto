@@ -31,7 +31,10 @@ func _process(dt: float) -> void:
 		# прямая видимость от оператора (точка взлёта + 2 м) до дрона
 		var los: float = main.los_factor(home + Vector3(0, 2, 0), dp)
 		# сигнал плавно следует за худшим из факторов (без дёрганья)
-		var target := clampf(dist_q * (0.12 + 0.88 * los), 0.0, 1.0)
+		var jam := 1.0
+		if main.get("ew") != null:
+			jam = main.ew.jam_factor(dp)
+		var target := clampf(dist_q * (0.12 + 0.88 * los) * jam, 0.0, 1.0)
 		signal_q = lerpf(signal_q, target, clampf(dt * 2.5, 0.0, 1.0))
 	queue_redraw()
 
