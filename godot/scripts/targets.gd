@@ -1,0 +1,615 @@
+extends Node3D
+## Движущиеся цели (танки, БТР, пехота) на реальных дорогах OSM + поражение.
+
+const MAX_VEHICLES := 18
+const MAX_SQUADS := 6
+const SPAWN_NEAR := 600.0
+const SPAWN_FAR := 4000.0
+var _spawn_near_override := 0.0     # для стартовой партии — спавн ближе
+const DESPAWN := 5500.0
+const FIRE_RANGE := 900.0
+const FIRE_COOLDOWN := 0.5
+const RAM_DIST := 8.0
+
+var main: Node3D
+var roads: Array = []          # [{p: [[x,z],...], len: [кумулятивные длины]}]
+var targets: Array = []        # словари-цели
+var score := 0
+var _cool := 0.0
+var _spawn_accum := 0.0
+
+var tank_mesh: ArrayMesh
+var apc_mesh: ArrayMesh
+var soldier_mesh: ArrayMesh
+var wreck_mat := StandardMaterial3D.new()
+
+
+func setup(m: Node3D) -> void:
+	main = m
+	wreck_mat.albedo_color = Color(0.09, 0.08, 0.07)
+	wreck_mat.roughness = 1.0
+	tank_mesh = _make_tank()
+	apc_mesh = _make_apc()
+	soldier_mesh = _make_soldier()
+	_load_roads()
+	_spawn_near_override = 200.0    # стартовая партия близко и на виду
+	for i in 14:
+		_try_spawn()
+	_spawn_near_override = 0.0
+	if "--targetdebug" in OS.get_cmdline_user_args():
+		_debug_spawn_ahead()
+
+
+## Гарантированные цели прямо перед стартовой камерой (для проверки).
+func _debug_spawn_ahead() -> void:
+	var cam_pos: Vector3 = main.cam.global_position
+	var fwd: Vector3 = -main.cam.global_transform.basis.z
+	var probe := cam_pos + fwd * 350.0
+	var best: Dictionary = {}
+	var best_d := 1e9
+	var best_off := 0.0
+	for road: Dictionary in roads:
+		var lens: Array = road["len"]
+		for i in range(0, lens.size(), 2):
+			var p := _road_pos(road, lens[i])
+			var d := Vector2(p.x - probe.x, p.y - probe.z).length()
+			if d < best_d:
+				best_d = d
+				best = road
+				best_off = lens[i]
+	if not best.is_empty():
+		if "--onetank" in OS.get_cmdline_user_args():
+			_spawn_vehicle("tank", best, best_off)
+		elif "--oneapc" in OS.get_cmdline_user_args():
+			_spawn_vehicle("apc", best, best_off)
+		elif "--onesquad" in OS.get_cmdline_user_args():
+			_spawn_squad(best, best_off)
+		else:
+			_spawn_vehicle("tank", best, best_off)
+			_spawn_vehicle("apc", best, best_off + 40.0)
+			_spawn_squad(best, best_off + 80.0)
+
+
+## Спавн заданных целей у ближайшей к точке дороги (для миссий). Возвращает словари целей.
+func spawn_near(pos: Vector3, kinds: Array) -> Array:
+	var best: Dictionary = {}
+	var best_d := 1e9
+	var best_off := 0.0
+	for road: Dictionary in roads:
+		var lens: Array = road["len"]
+		for i in range(0, lens.size(), 2):
+			var p := _road_pos(road, lens[i])
+			var d := Vector2(p.x - pos.x, p.y - pos.z).length()
+			if d < best_d:
+				best_d = d
+				best = road
+				best_off = lens[i]
+	var out: Array = []
+	if best.is_empty():
+		return out
+	var off := best_off
+	for k: String in kinds:
+		var before := targets.size()
+		if k == "soldier":
+			_spawn_squad(best, off)
+		else:
+			_spawn_vehicle(k, best, off)
+		for i in range(before, targets.size()):
+			out.append(targets[i])
+		off += 45.0
+	return out
+
+
+signal target_killed(kind: String, pos: Vector3)
+
+
+func _load_roads() -> void:
+	var f := FileAccess.get_file_as_string("res://assets/roads.json")
+	if f.is_empty():
+		return
+	for r: Dictionary in JSON.parse_string(f)["roads"]:
+		var pts: Array = r["p"]
+		if pts.size() < 2:
+			continue
+		var lens: Array[float] = [0.0]
+		var total := 0.0
+		for i in range(1, pts.size()):
+			total += Vector2(pts[i][0] - pts[i-1][0], pts[i][1] - pts[i-1][1]).length()
+			lens.append(total)
+		if total > 150.0:
+			roads.append({"p": pts, "len": lens, "total": total})
+	print("Targets: дорог для патрулей: ", roads.size())
+
+
+## Нормаль рельефа в точке (центральные разности).
+func _terrain_normal(x: float, z: float) -> Vector3:
+	var e := 4.0
+	var hl: float = main.height_at(x - e, z); var hr: float = main.height_at(x + e, z)
+	var hd: float = main.height_at(x, z - e); var hu: float = main.height_at(x, z + e)
+	return Vector3(hl - hr, 2.0 * e, hd - hu).normalized()
+
+
+func _road_pos(road: Dictionary, dist: float) -> Vector2:
+	var lens: Array = road["len"]
+	var pts: Array = road["p"]
+	dist = clampf(dist, 0.0, road["total"])
+	for i in range(1, lens.size()):
+		if dist <= lens[i]:
+			var t: float = (dist - lens[i-1]) / maxf(lens[i] - lens[i-1], 0.01)
+			return Vector2(lerpf(pts[i-1][0], pts[i][0], t), lerpf(pts[i-1][1], pts[i][1], t))
+	return Vector2(pts[-1][0], pts[-1][1])
+
+
+func _try_spawn() -> void:
+	if roads.is_empty() or main.cam == null:
+		return
+	var vehicles := 0
+	var squads := 0
+	for t in targets:
+		if t.alive:
+			if t.kind == "soldier": squads += (1 if t.leader else 0)
+			else: vehicles += 1
+	var cam_xz := Vector2(main.cam.global_position.x, main.cam.global_position.z)
+	var tries := 60 if _spawn_near_override > 0.0 else 24
+	for attempt in tries:
+		var road: Dictionary = roads.pick_random()
+		var d: float = randf() * road["total"]
+		var p := _road_pos(road, d)
+		var dist := p.distance_to(cam_xz)
+		var near: float = _spawn_near_override if _spawn_near_override > 0.0 else SPAWN_NEAR
+		var far: float = 2200.0 if _spawn_near_override > 0.0 else SPAWN_FAR
+		if dist < near or dist > far:
+			continue
+		var roll := randf()
+		if roll < 0.55 and vehicles < MAX_VEHICLES:
+			_spawn_vehicle("tank" if randf() < 0.5 else "apc", road, d)
+			return
+		elif squads < MAX_SQUADS:
+			_spawn_squad(road, d)
+			return
+
+
+func _spawn_vehicle(kind: String, road: Dictionary, d: float) -> void:
+	var mi := MeshInstance3D.new()
+	mi.mesh = tank_mesh if kind == "tank" else apc_mesh
+	_add_marker(mi, Color(1.0, 0.15, 0.1) if kind == "tank" else Color(1.0, 0.55, 0.05), 70.0)
+	add_child(mi)
+	targets.append({"kind": kind, "node": mi, "road": road, "d": d,
+		"dir": 1.0 if randf() < 0.5 else -1.0,
+		"speed": randf_range(3.0, 5.0) if kind == "tank" else randf_range(6.0, 9.0),
+		"radius": 5.0, "alive": true, "leader": true, "wreck_t": 0.0, "offset": 0.0})
+
+
+func _spawn_squad(road: Dictionary, d: float) -> void:
+	var n := randi_range(3, 5)
+	for i in n:
+		var mi := MeshInstance3D.new()
+		mi.mesh = soldier_mesh
+		if i == 0:
+			_add_marker(mi, Color(1.0, 0.9, 0.1), 50.0)   # маркер над командиром группы
+		add_child(mi)
+		targets.append({"kind": "soldier", "node": mi, "road": road,
+			"d": d - i * 4.0, "dir": 1.0, "speed": randf_range(1.2, 1.7),
+			"radius": 2.0, "alive": true, "leader": i == 0, "wreck_t": 0.0,
+			"offset": randf_range(-2.5, 2.5)})
+
+
+## Яркий столб-маркер над целью + billboard-ромб на вершине (видно с воздуха).
+func _add_marker(node: MeshInstance3D, color: Color, h: float) -> void:
+	if "--nomarkers" in OS.get_cmdline_user_args():
+		return
+	var beam := MeshInstance3D.new()
+	beam.name = "Marker"
+	var bm := BoxMesh.new()
+	bm.size = Vector3(3.0, h, 3.0)
+	beam.mesh = bm
+	beam.position = Vector3(0, h * 0.5 + 3.0, 0)
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.albedo_color = Color(color.r, color.g, color.b, 0.45)
+	mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED   # столб всегда развёрнут к камере
+	mat.billboard_keep_scale = true
+	beam.mesh.surface_set_material(0, mat)
+	beam.set("no_depth_test", true)
+	node.add_child(beam)
+	var cap := MeshInstance3D.new()
+	var sph := SphereMesh.new(); sph.radius = 2.2; sph.height = 4.4
+	cap.mesh = sph
+	cap.position = Vector3(0, h + 5.0, 0)
+	var cm := StandardMaterial3D.new()
+	cm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	cm.albedo_color = color
+	cap.mesh.surface_set_material(0, cm)
+	node.add_child(cap)
+
+
+func _process(dt: float) -> void:
+	if main == null or main.cam == null:
+		return
+	_cool = maxf(0.0, _cool - dt)
+	_spawn_accum += dt
+	if _spawn_accum >= 2.0:
+		_spawn_accum = 0.0
+		_try_spawn()
+		_cleanup()
+	var cam_pos: Vector3 = main.cam.global_position
+	for t: Dictionary in targets:
+		if not t.alive:
+			t.wreck_t += dt
+			continue
+		# движение по дороге туда-обратно
+		t.d += t.dir * t.speed * dt
+		var road: Dictionary = t.road
+		if t.d <= 0.0 or t.d >= road["total"]:
+			t.dir = -t.dir
+			t.d = clampf(t.d, 0.0, road["total"])
+		var p := _road_pos(road, t.d)
+		var p2 := _road_pos(road, t.d + t.dir * 5.0)
+		var dir3 := Vector2(p2.x - p.x, p2.y - p.y)
+		if dir3.length_squared() < 0.01:
+			dir3 = Vector2(1, 0)
+		dir3 = dir3.normalized()
+		var side: Vector2 = Vector2(-dir3.y, dir3.x) * t.offset
+		var wx: float = p.x + side.x
+		var wz: float = p.y + side.y
+		var y: float = main.height_at(wx, wz)
+		if t.kind == "soldier":
+			# лёгкое покачивание при ходьбе + мелкая рысканье
+			var bob := sin(t.d * 3.2) * 0.05
+			var yaw := atan2(-dir3.y, dir3.x) + sin(t.d * 1.6) * 0.06
+			t.node.transform = Transform3D(Basis(Vector3.UP, yaw), Vector3(wx, y + bob, wz))
+		else:
+			# техника прижимается к рельефу, но крен ограничен (иначе тонет на кручах)
+			var up := _terrain_normal(wx, wz)
+			up = (up + Vector3.UP * 1.6).normalized()
+			var fwd := Vector3(dir3.x, 0, dir3.y)
+			fwd = (fwd - up * fwd.dot(up)).normalized()
+			var rgt := fwd.cross(up).normalized()
+			t.node.transform = Transform3D(Basis(fwd, up, rgt), Vector3(wx, y + 0.25, wz))
+		# таран дроном
+		if cam_pos.distance_to(t.node.position) < RAM_DIST + t.radius:
+			_kill(t, t.node.position)
+	# чистка старых обломков
+	for t: Dictionary in targets.duplicate():
+		if not t.alive and t.wreck_t > 25.0:
+			t.node.queue_free()
+			targets.erase(t)
+
+
+func _cleanup() -> void:
+	var cam_xz := Vector2(main.cam.global_position.x, main.cam.global_position.z)
+	for t: Dictionary in targets.duplicate():
+		var p: Vector3 = t.node.position
+		if Vector2(p.x, p.z).distance_to(cam_xz) > DESPAWN:
+			t.node.queue_free()
+			targets.erase(t)
+
+
+func active_count() -> int:
+	var n := 0
+	for t in targets:
+		if t.alive:
+			n += 1
+	return n
+
+
+## Выстрел из центра экрана. Возвращает true при поражении.
+func fire(cam: Camera3D) -> void:
+	if _cool > 0.0:
+		return
+	_cool = FIRE_COOLDOWN
+	if main.get("sound") != null:
+		main.sound.shot()
+	var origin := cam.global_position
+	var dir := -cam.global_transform.basis.z
+	# ближайшая цель на луче
+	var best: Dictionary = {}
+	var best_d := FIRE_RANGE
+	for t: Dictionary in targets:
+		if not t.alive:
+			continue
+		var to: Vector3 = t.node.position + Vector3(0, 1.2, 0) - origin
+		var along: float = to.dot(dir)
+		if along < 0.0 or along > FIRE_RANGE:
+			continue
+		var miss: float = (to - dir * along).length()
+		if miss < t.radius and along < best_d:
+			best = t
+			best_d = along
+	# препятствие рельефом
+	var terr_d := _terrain_hit(origin, dir, minf(best_d, FIRE_RANGE))
+	if not best.is_empty() and best_d <= terr_d + 2.0:
+		_kill(best, best.node.position)
+	elif terr_d < FIRE_RANGE:
+		_puff(origin + dir * terr_d, Color(0.5, 0.45, 0.38), 3.0)  # промах в землю
+
+
+func _terrain_hit(origin: Vector3, dir: Vector3, max_d: float) -> float:
+	var step := 20.0
+	var d := step
+	while d < max_d:
+		var p := origin + dir * d
+		if p.y < main.height_at(p.x, p.z):
+			return d
+		d += step
+	return max_d
+
+
+func _kill(t: Dictionary, pos: Vector3) -> void:
+	t.alive = false
+	score += 1
+	target_killed.emit(t.kind, pos)
+	if main.get("sound") != null:
+		main.sound.boom(pos)
+	for s in t.node.mesh.get_surface_count():
+		t.node.set_surface_override_material(s, wreck_mat)
+	for c in t.node.get_children():   # погасить маркер над подбитой целью
+		c.queue_free()
+	_puff(pos + Vector3(0, 2, 0), Color(1.0, 0.55, 0.15), 9.0)
+	_puff(pos + Vector3(0, 4, 0), Color(0.25, 0.23, 0.2), 14.0)
+
+
+## Ближайшая живая цель к точке и дистанция до неё (для HUD-указателя).
+func nearest(pos: Vector3) -> Dictionary:
+	var best: Dictionary = {}
+	var best_d := 1e20
+	for t: Dictionary in targets:
+		if not t.alive:
+			continue
+		var d: float = pos.distance_squared_to(t.node.position)
+		if d < best_d:
+			best_d = d
+			best = t
+	if best.is_empty():
+		return {}
+	return {"pos": best.node.position, "kind": best.kind, "dist": sqrt(best_d)}
+
+
+## Простой эффект: расширяющаяся затухающая сфера.
+func _puff(pos: Vector3, color: Color, max_r: float) -> void:
+	var mi := MeshInstance3D.new()
+	var sph := SphereMesh.new()
+	sph.radial_segments = 12; sph.rings = 6
+	var mat := StandardMaterial3D.new()
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.albedo_color = color
+	sph.material = mat
+	mi.mesh = sph
+	mi.position = pos
+	add_child(mi)
+	var tw := create_tween().set_parallel(true)
+	tw.tween_property(mi, "scale", Vector3.ONE * max_r, 0.7).from(Vector3.ONE * 0.5)
+	tw.tween_property(mat, "albedo_color:a", 0.0, 0.7).from(0.9)
+	tw.chain().tween_callback(mi.queue_free)
+
+
+# ---------- сборка моделей из примитивов ----------
+
+func _append(mesh: ArrayMesh, prim: PrimitiveMesh, xform: Transform3D, color: Color) -> void:
+	var arr: Array = prim.get_mesh_arrays()
+	var verts: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+	var norms: PackedVector3Array = arr[Mesh.ARRAY_NORMAL]
+	for i in verts.size():
+		verts[i] = xform * verts[i]
+		norms[i] = xform.basis * norms[i]
+	arr[Mesh.ARRAY_VERTEX] = verts
+	arr[Mesh.ARRAY_NORMAL] = norms
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = color
+	mat.roughness = 1.0
+	mesh.surface_set_material(mesh.get_surface_count() - 1, mat)
+
+
+const HULL_GREEN := Color(0.17, 0.20, 0.13)
+const HULL_DARK := Color(0.13, 0.16, 0.10)
+const METAL_DARK := Color(0.07, 0.075, 0.065)
+const CAMO_TAN := Color(0.30, 0.28, 0.18)
+
+
+## Прямоугольная призма со скосом переднего верхнего ребра (для лобовой брони/носа).
+func _sloped_box(size: Vector3, slope: float) -> ArrayMesh:
+	var sx := size.x * 0.5; var sy := size.y * 0.5; var sz := size.z * 0.5
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	# 8 вершин; верхние передние (+x,+y) утянуты назад по x на slope
+	var v := [
+		Vector3(-sx, -sy, -sz), Vector3(sx, -sy, -sz), Vector3(sx, -sy, sz), Vector3(-sx, -sy, sz),
+		Vector3(-sx, sy, -sz), Vector3(sx - slope, sy, -sz), Vector3(sx - slope, sy, sz), Vector3(-sx, sy, sz)]
+	var faces := [[0,1,2,3],[4,7,6,5],[0,4,5,1],[3,2,6,7],[1,5,6,2],[0,3,7,4]]
+	for f in faces:
+		var a: Vector3 = v[f[0]]; var b: Vector3 = v[f[1]]; var c: Vector3 = v[f[2]]; var d: Vector3 = v[f[3]]
+		var nrm := (b - a).cross(c - a).normalized()
+		for tri in [[a, b, c], [a, c, d]]:
+			for p: Vector3 in tri:
+				st.set_normal(nrm); st.add_vertex(p)
+	st.index()
+	return st.commit()
+
+
+## Современный ОБТ (тип Т-72/Т-90): корпус со скошенным лбом, ДЗ, литая башня,
+## ствол с эжектором и кожухом, 6 катков + гусеницы, башенка с ЗПУ, бочки, антенны.
+func _make_tank() -> ArrayMesh:
+	var m := ArrayMesh.new()
+	var green := Color(0.37, 0.40, 0.25)
+	var dgreen := Color(0.29, 0.31, 0.19)
+	var era := Color(0.33, 0.35, 0.22)
+	var track_c := Color(0.13, 0.13, 0.12)
+	var rubber := Color(0.09, 0.09, 0.09)
+	var steel := Color(0.22, 0.23, 0.20)
+
+	# нижний корпус
+	var lower := BoxMesh.new(); lower.size = Vector3(6.4, 0.9, 2.7)
+	_append(m, lower, Transform3D(Basis(), Vector3(0, 0.95, 0)), dgreen)
+	# верхний корпус со скошенным лбом
+	_append_mesh(m, _sloped_box(Vector3(6.2, 0.75, 2.7), 1.9), Transform3D(Basis(), Vector3(0, 1.55, 0)), green)
+	# надгусеничные полки
+	var fender := BoxMesh.new(); fender.size = Vector3(6.6, 0.12, 0.55)
+	_append(m, fender, Transform3D(Basis(), Vector3(0, 1.35, 1.5)), dgreen)
+	_append(m, fender, Transform3D(Basis(), Vector3(0, 1.35, -1.5)), dgreen)
+
+	# гусеницы + траки (насечки)
+	var track := BoxMesh.new(); track.size = Vector3(6.8, 0.7, 0.7)
+	_append(m, track, Transform3D(Basis(), Vector3(0, 0.55, 1.42)), track_c)
+	_append(m, track, Transform3D(Basis(), Vector3(0, 0.55, -1.42)), track_c)
+	var link := BoxMesh.new(); link.size = Vector3(0.16, 0.78, 0.78)
+	for lx in range(-3, 4):
+		var xx := lx * 0.9
+		_append(m, link, Transform3D(Basis(), Vector3(xx, 0.55, 1.42)), steel)
+		_append(m, link, Transform3D(Basis(), Vector3(xx, 0.55, -1.42)), steel)
+	# катки (6/борт) + ведущее/направляющее по краям
+	var wheel := CylinderMesh.new(); wheel.top_radius = 0.5; wheel.bottom_radius = 0.5; wheel.height = 0.28
+	for rx in [-2.55, -1.53, -0.51, 0.51, 1.53, 2.55]:
+		for rz in [1.42, -1.42]:
+			_append(m, wheel, Transform3D(Basis(Vector3.RIGHT, PI / 2), Vector3(rx, 0.55, rz)), rubber)
+	var sprocket := CylinderMesh.new(); sprocket.top_radius = 0.42; sprocket.bottom_radius = 0.42; sprocket.height = 0.3
+	for rx in [-3.15, 3.15]:
+		for rz in [1.42, -1.42]:
+			_append(m, sprocket, Transform3D(Basis(Vector3.RIGHT, PI / 2), Vector3(rx, 0.75, rz)), steel)
+
+	# блоки динамической защиты на лбу корпуса (ряд наклонных кирпичей)
+	var era_b := BoxMesh.new(); era_b.size = Vector3(0.5, 0.28, 0.4)
+	for ez in [-1.0, -0.5, 0.0, 0.5, 1.0]:
+		_append(m, era_b, Transform3D(Basis(Vector3.BACK, -0.5), Vector3(2.9, 1.7, ez)), era)
+
+	# литая башня — приплюснутый 8-гранный барабан со скосом
+	var turret := _oct_turret(1.85, 1.35, 0.95)
+	_append_mesh(m, turret, Transform3D(Basis(), Vector3(-0.5, 2.35, 0)), green)
+	# ДЗ «щёки» на лбу башни
+	for tz in [-0.85, -0.45, 0.45, 0.85]:
+		_append(m, era_b, Transform3D(Basis(Vector3.BACK, -0.35), Vector3(0.95, 2.35, tz)), era)
+	# бронемаска
+	var mant := BoxMesh.new(); mant.size = Vector3(0.9, 0.75, 1.3)
+	_append(m, mant, Transform3D(Basis(), Vector3(1.15, 2.35, 0)), dgreen)
+	# ствол: казённая часть + теплозащитный кожух + эжектор + дульный срез
+	var breech := CylinderMesh.new(); breech.top_radius = 0.2; breech.bottom_radius = 0.22; breech.height = 2.0
+	_append(m, breech, Transform3D(Basis(Vector3.BACK, PI / 2), Vector3(2.6, 2.35, 0)), steel)
+	var barrel := CylinderMesh.new(); barrel.top_radius = 0.12; barrel.bottom_radius = 0.14; barrel.height = 3.0
+	_append(m, barrel, Transform3D(Basis(Vector3.BACK, PI / 2), Vector3(4.9, 2.35, 0)), Color(0.10, 0.11, 0.09))
+	var evac := CylinderMesh.new(); evac.top_radius = 0.24; evac.bottom_radius = 0.24; evac.height = 0.7
+	_append(m, evac, Transform3D(Basis(Vector3.BACK, PI / 2), Vector3(4.3, 2.35, 0)), steel)
+	var muzzle := CylinderMesh.new(); muzzle.top_radius = 0.17; muzzle.bottom_radius = 0.17; muzzle.height = 0.35
+	_append(m, muzzle, Transform3D(Basis(Vector3.BACK, PI / 2), Vector3(6.3, 2.35, 0)), steel)
+
+	# командирская башенка + ЗПУ (зенитный пулемёт)
+	var cupola := CylinderMesh.new(); cupola.top_radius = 0.42; cupola.bottom_radius = 0.46; cupola.height = 0.42
+	_append(m, cupola, Transform3D(Basis(), Vector3(-1.0, 3.05, 0.6)), dgreen)
+	var mg := CylinderMesh.new(); mg.top_radius = 0.05; mg.bottom_radius = 0.06; mg.height = 1.1
+	_append(m, mg, Transform3D(Basis(Vector3.BACK, PI / 2.2), Vector3(-0.4, 3.35, 0.6)), rubber)
+	# корзина ЗИП на корме башни
+	var basket := BoxMesh.new(); basket.size = Vector3(1.2, 0.5, 1.9)
+	_append(m, basket, Transform3D(Basis(), Vector3(-1.9, 2.3, 0)), Color(0.12, 0.13, 0.10))
+	# бочки на корме корпуса
+	var drum := CylinderMesh.new(); drum.top_radius = 0.28; drum.bottom_radius = 0.28; drum.height = 0.9
+	_append(m, drum, Transform3D(Basis(Vector3.BACK, PI / 2), Vector3(-3.4, 1.6, 0.7)), dgreen)
+	_append(m, drum, Transform3D(Basis(Vector3.BACK, PI / 2), Vector3(-3.4, 1.6, -0.7)), dgreen)
+	# антенны
+	var ant := CylinderMesh.new(); ant.top_radius = 0.015; ant.bottom_radius = 0.03; ant.height = 1.9
+	_append(m, ant, Transform3D(Basis(), Vector3(-1.8, 3.4, -0.7)), rubber)
+	_append(m, ant, Transform3D(Basis(), Vector3(-1.9, 3.3, 0.7)), rubber)
+	return m
+
+
+## Приплюснутый 8-гранный «барабан» литой башни (ось Y), радиусы xz и высота.
+func _oct_turret(rx: float, rz: float, h: float) -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var n := 8
+	var top: Array[Vector3] = []
+	var bot: Array[Vector3] = []
+	for i in n:
+		var a := TAU * i / n + PI / n
+		# верх чуть у́же (скос литья)
+		top.append(Vector3(cos(a) * rx * 0.82, h * 0.5, sin(a) * rz * 0.82))
+		bot.append(Vector3(cos(a) * rx, -h * 0.5, sin(a) * rz))
+	# боковые грани
+	for i in n:
+		var j := (i + 1) % n
+		_quad(st, bot[i], bot[j], top[j], top[i])
+	# крышка и дно
+	var ct := Vector3(0, h * 0.5, 0); var cb := Vector3(0, -h * 0.5, 0)
+	for i in n:
+		var j := (i + 1) % n
+		_tri(st, top[i], top[j], ct)
+		_tri(st, bot[j], bot[i], cb)
+	st.index()
+	return st.commit()
+
+
+func _quad(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3, d: Vector3) -> void:
+	var nrm := (b - a).cross(c - a).normalized()
+	for p: Vector3 in [a, b, c, a, c, d]:
+		st.set_normal(nrm); st.add_vertex(p)
+
+
+func _tri(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3) -> void:
+	var nrm := (b - a).cross(c - a).normalized()
+	for p: Vector3 in [a, b, c]:
+		st.set_normal(nrm); st.add_vertex(p)
+
+
+## БТР-4-подобный: длинный скошенный корпус, 8 колёс, башня с пушкой (вперёд = +X).
+func _make_apc() -> ArrayMesh:
+	var m := ArrayMesh.new()
+	_append_mesh(m, _sloped_box(Vector3(6.8, 1.5, 2.7), 1.9), Transform3D(Basis(), Vector3(0, 1.55, 0)), CAMO_TAN)
+	# скошенные борта (imитируем гранёный корпус узкой верхней вставкой)
+	var top := BoxMesh.new(); top.size = Vector3(5.6, 0.6, 2.0)
+	_append(m, top, Transform3D(Basis(), Vector3(-0.3, 2.35, 0)), CAMO_TAN)
+	# башня + автопушка
+	var tur := BoxMesh.new(); tur.size = Vector3(1.6, 0.7, 1.4)
+	_append(m, tur, Transform3D(Basis(), Vector3(0.2, 2.9, 0)), Color(0.27, 0.25, 0.16))
+	var cannon := CylinderMesh.new(); cannon.top_radius = 0.07; cannon.bottom_radius = 0.09; cannon.height = 2.6
+	_append(m, cannon, Transform3D(Basis(Vector3.BACK, PI / 2), Vector3(2.0, 2.9, 0)), METAL_DARK)
+	# 8 колёс (4 на борт) с выраженными арками
+	var wheel := CylinderMesh.new(); wheel.top_radius = 0.62; wheel.bottom_radius = 0.62; wheel.height = 0.45
+	var hub := CylinderMesh.new(); hub.top_radius = 0.22; hub.bottom_radius = 0.22; hub.height = 0.47
+	for wx in [-2.5, -0.9, 0.9, 2.5]:
+		for wz in [1.35, -1.35]:
+			_append(m, wheel, Transform3D(Basis(Vector3.RIGHT, PI / 2), Vector3(wx, 0.62, wz)), METAL_DARK)
+			_append(m, hub, Transform3D(Basis(Vector3.RIGHT, PI / 2), Vector3(wx, 0.62, wz)), Color(0.16, 0.16, 0.14))
+	return m
+
+
+## Пехотинец: торс, голова в каске, ноги, автомат — читается силуэт с воздуха.
+func _make_soldier() -> ArrayMesh:
+	var m := ArrayMesh.new()
+	var uniform := Color(0.20, 0.23, 0.14)
+	var torso := BoxMesh.new(); torso.size = Vector3(0.5, 0.65, 0.28)
+	_append(m, torso, Transform3D(Basis(), Vector3(0, 1.15, 0)), uniform)
+	# рюкзак
+	var pack := BoxMesh.new(); pack.size = Vector3(0.32, 0.45, 0.2)
+	_append(m, pack, Transform3D(Basis(), Vector3(-0.28, 1.15, 0)), Color(0.16, 0.18, 0.11))
+	# ноги
+	var leg := BoxMesh.new(); leg.size = Vector3(0.2, 0.8, 0.22)
+	_append(m, leg, Transform3D(Basis(), Vector3(0.02, 0.4, 0.14)), Color(0.17, 0.19, 0.12))
+	_append(m, leg, Transform3D(Basis(), Vector3(0.02, 0.4, -0.14)), Color(0.17, 0.19, 0.12))
+	# голова + каска
+	var head := SphereMesh.new(); head.radius = 0.13; head.height = 0.26
+	_append(m, head, Transform3D(Basis(), Vector3(0, 1.62, 0)), Color(0.42, 0.33, 0.26))
+	var helmet := SphereMesh.new(); helmet.radius = 0.17; helmet.height = 0.2; helmet.is_hemisphere = true
+	_append(m, helmet, Transform3D(Basis(), Vector3(0, 1.66, 0)), uniform)
+	# автомат наперевес
+	var rifle := BoxMesh.new(); rifle.size = Vector3(0.7, 0.07, 0.07)
+	_append(m, rifle, Transform3D(Basis(Vector3.UP, 0.3), Vector3(0.35, 1.15, 0.2)), Color(0.04, 0.04, 0.04))
+	return m
+
+
+## Как _append, но принимает уже готовый ArrayMesh (переносит все его поверхности).
+func _append_mesh(dst: ArrayMesh, src: ArrayMesh, xform: Transform3D, color: Color) -> void:
+	for s in src.get_surface_count():
+		var arr := src.surface_get_arrays(s)
+		var verts: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+		var norms: PackedVector3Array = arr[Mesh.ARRAY_NORMAL]
+		for i in verts.size():
+			verts[i] = xform * verts[i]
+			if norms.size() > i:
+				norms[i] = (xform.basis * norms[i]).normalized()
+		arr[Mesh.ARRAY_VERTEX] = verts
+		arr[Mesh.ARRAY_NORMAL] = norms
+		dst.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+		var mat := StandardMaterial3D.new()
+		mat.albedo_color = color
+		mat.roughness = 0.95
+		dst.surface_set_material(dst.get_surface_count() - 1, mat)

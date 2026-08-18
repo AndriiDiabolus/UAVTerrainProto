@@ -1,0 +1,21 @@
+# Godot
+godot/.godot/
+godot/*.tmp
+build/
+# данные-кеши пайплайна (регенерируются, 1+ ГБ)
+tools/tile_cache/
+tools/osm_cache/
+tools/.venv/
+tools/__pycache__/
+*.pyc
+# производные/промежуточные ассеты (регенерируются fetch_terrain/bake_overlay)
+godot/assets/height16.png
+godot/assets/height16.png.import
+godot/assets/albedo_clean.jpg
+godot/assets/albedo_clean.jpg.import
+# скриншоты отладки в корне (docs/*.png — оставляем)
+/shot*.png
+/debug_loaded.png
+# macOS
+.DS_Store
+*.app/

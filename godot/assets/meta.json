@@ -1,0 +1,13 @@
+{
+  "center_lat": 48.16,
+  "center_lon": 24.5,
+  "elev_min_m": 332.7,
+  "elev_max_m": 2046.0,
+  "size_m": 52211.2,
+  "px": 4096,
+  "tile_x0": 4645,
+  "tile_y0": 2834,
+  "zoom": 13,
+  "n_tiles": 16,
+  "attribution": "Terrain: Mapzen/AWS Terrain Tiles; Imagery: Copernicus Sentinel-2 L2A (S2A_35ULP_20250830_0_L2A, S2A_34UGU_20250701_0_L2A, S2C_34UGU_20250828_0_L2A, S2A_35ULP_20250701_0_L2A, S2C_35ULP_20250828_0_L2A, S2A_34UGU_20250830_0_L2A, S2B_34UGU_20250701_2_L2A), open licence, via AWS sentinel-cogs"
+}
