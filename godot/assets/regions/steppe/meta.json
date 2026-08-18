@@ -1,0 +1,16 @@
+{
+  "center_lat": 47.66,
+  "center_lon": 33.72,
+  "elev_min_m": -72.0,
+  "elev_max_m": 153.0,
+  "size_m": 52718.1,
+  "px": 4096,
+  "tile_x0": 4855,
+  "tile_y0": 2851,
+  "zoom": 13,
+  "n_tiles": 16,
+  "start_lat": 47.66,
+  "start_lon": 33.72,
+  "region": "steppe",
+  "attribution": "Terrain: Mapzen/AWS Terrain Tiles; Imagery: Copernicus Sentinel-2 L2A (S2B_36UWU_20250831_0_L2A, S2B_36TWT_20250831_0_L2A), open licence, via AWS sentinel-cogs"
+}

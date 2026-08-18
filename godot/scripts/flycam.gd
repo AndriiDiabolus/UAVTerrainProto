@@ -67,7 +67,7 @@ var _turb: Array[FastNoiseLite] = []
 var _axes := [1, 0, 3, 2]            # индексы осей джойстика: T, Y, P, R (mode 2)
 var _inv := [true, false, true, false]  # инверсия осей: стик вверх у Godot = -1 → газ/тангаж инвертируем
 var _joydebug := false
-var _wobble := 0.0
+var _novibe := false
 
 
 func _ready() -> void:
@@ -135,6 +135,8 @@ func _parse_flags() -> void:
 			_inv = ["T" in s, "Y" in s, "P" in s, "R" in s]
 		elif a == "--joydebug":
 			_joydebug = true
+		elif a == "--novibe":
+			_novibe = true
 
 
 func set_drone(id: String) -> void:
@@ -526,10 +528,10 @@ func self_test() -> bool:
 
 
 func _apply_camera(dt: float, wind: Vector3) -> void:
-	# вибрация винтов (растёт с газом и ветром)
-	var amp := 0.002 + throttle * 0.003 + wind.length() * 0.0009
-	var wob_p := sin(_t * 47.3) * amp + sin(_t * 15.1) * amp * 0.4
-	var wob_r := cos(_t * 39.1) * amp * 1.3
+	# вибрация винтов — едва заметная дрожь (растёт с газом и ветром); --novibe отключает
+	var amp := 0.0 if _novibe else (0.0004 + throttle * 0.0006 + wind.length() * 0.00015)
+	var wob_p := sin(_t * 9.3) * amp + sin(_t * 15.1) * amp * 0.4
+	var wob_r := cos(_t * 7.1) * amp * 1.3
 	var cam_b: Basis
 	if mode == MODE_GPS:
 		# подвес: горизонт стабилизирован, тангаж — мышью
