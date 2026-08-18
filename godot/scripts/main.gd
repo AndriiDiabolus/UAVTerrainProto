@@ -3,9 +3,13 @@ extends Node3D
 ## Данные: AWS Terrain Tiles (высоты) + Sentinel-2 L2A COG, открытая лицензия (подложка).
 
 const MESH_RES := 1024         # вершин по стороне
-const RAW_PATH := "res://assets/height.raw"
-const META_PATH := "res://assets/meta.json"
-const ALBEDO_PATH := "res://assets/albedo.jpg"
+var region := ""               # "" = базовый регион (Карпаты) в res://assets/, иначе res://assets/regions/<name>/
+var asset_dir := "res://assets/"
+
+
+## Путь к файлу данных текущего региона (height.raw, meta.json, albedo.jpg, mask.png, *.json).
+func asset_path(f: String) -> String:
+	return asset_dir + f
 
 var meta: Dictionary
 var height_bytes: PackedByteArray
@@ -25,7 +29,12 @@ func _ready() -> void:
 		if a.begins_with("--seed="):
 			sv = int(a.substr(7))
 	seed(hash(sv))
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--region="):
+			region = a.substr(9)
+			asset_dir = "res://assets/regions/%s/" % region
 	_load_quality()
+	collision = load("res://scripts/collision.gd").new(self)
 	_load_data()
 	_build_environment()
 	_build_terrain()
@@ -43,23 +52,18 @@ func _ready() -> void:
 	_build_mission()
 	_build_telemetry()
 	apply_quality(quality)
-	if "--coltest" in OS.get_cmdline_user_args():
-		_col_test()
-	if "--missiontest" in OS.get_cmdline_user_args():
-		var ok: bool = mission.self_test()
-		get_tree().quit(0 if ok else 1)
-	if "--flytest" in OS.get_cmdline_user_args():
-		var ok: bool = cam.self_test()
-		get_tree().quit(0 if ok else 1)
-	if "--targetreport" in OS.get_cmdline_user_args():
-		_debug_report_targets()
-	if "--screenshot" in OS.get_cmdline_user_args():
-		_schedule_screenshot()
+	_build_selftest()
+	_build_debug()
 
 
 func _load_data() -> void:
-	meta = JSON.parse_string(FileAccess.get_file_as_string(META_PATH))
-	height_bytes = FileAccess.get_file_as_bytes(RAW_PATH)
+	var mtxt := FileAccess.get_file_as_string(asset_path("meta.json"))
+	if mtxt.is_empty():
+		push_error("Регион '%s' не найден: нет %s (соберите tools/build_region.py)" % [region, asset_path("meta.json")])
+		get_tree().quit(2)
+		return
+	meta = JSON.parse_string(mtxt)
+	height_bytes = FileAccess.get_file_as_bytes(asset_path("height.raw"))
 	px = int(meta["px"])
 	size_m = float(meta["size_m"])
 	e_min = float(meta["elev_min_m"])
@@ -95,7 +99,8 @@ func height_at(x: float, z: float) -> float:
 func _build_terrain() -> void:
 	var t0 := Time.get_ticks_msec()
 	var n := MESH_RES
-	var cache_path := "user://terrain_%d_%d_%d.res" % [px, n, FileAccess.get_modified_time(ProjectSettings.globalize_path(RAW_PATH))]
+	var cache_path := "user://terrain_%s%d_%d_%d.res" % [region + "_" if region != "" else "", px, n,
+		FileAccess.get_modified_time(ProjectSettings.globalize_path(asset_path("height.raw")))]
 	var mesh: ArrayMesh
 
 	if FileAccess.file_exists(cache_path):
@@ -151,7 +156,7 @@ func _build_terrain() -> void:
 	var mat := ShaderMaterial.new()
 	var sh := "res://scripts/terrain_unshaded.gdshader" if "--unshaded" in OS.get_cmdline_user_args() else "res://scripts/terrain.gdshader"
 	mat.shader = load(sh)
-	mat.set_shader_parameter("albedo_tex", load(ALBEDO_PATH))
+	mat.set_shader_parameter("albedo_tex", _load_albedo())
 	for pair in [["grass", "grass"], ["dirt", "dirt"], ["rock", "rock"]]:
 		mat.set_shader_parameter(pair[0] + "_tex", _load_tex(pair[1] + "_diff.jpg"))
 		mat.set_shader_parameter(pair[0] + "_n", _load_tex(pair[1] + "_norm.jpg"))
@@ -164,6 +169,19 @@ func _build_terrain() -> void:
 	add_child(mi)
 	print("Terrain built in %d ms, AABB=%s" % [Time.get_ticks_msec() - t0, mesh.get_aabb()])
 
+
+
+## Спутниковая подложка региона: через импорт (мипы/sRGB), а если регион ещё не импортирован — с диска.
+func _load_albedo() -> Texture2D:
+	var res := asset_path("albedo.jpg")
+	if ResourceLoader.exists(res):
+		return load(res)
+	var img := Image.load_from_file(ProjectSettings.globalize_path(res))
+	if img == null:
+		push_error("albedo.jpg не найден: " + res)
+		return null
+	img.generate_mipmaps()
+	return ImageTexture.create_from_image(img)
 
 
 ## Загрузка текстуры мимо импорт-пайплайна (одинаково для albedo/normal;
@@ -239,7 +257,7 @@ func _make_ground_detail() -> ImageTexture:
 ## Дома из OSM: 4 типа застройки (хата / 2-этажный / сарай / ПГТ) с фасадами
 ## (окна/двери/ставни), двускатными или плоскими крышами и трубами.
 func _build_buildings() -> void:
-	var f := FileAccess.get_file_as_string("res://assets/buildings.json")
+	var f := FileAccess.get_file_as_string(asset_path("buildings.json"))
 	if f.is_empty():
 		return
 	var arr: Array = JSON.parse_string(f)["b"]
@@ -429,110 +447,48 @@ func apply_quality(q: int) -> void:
 	cfg.save(SETTINGS_PATH)
 	print("Качество: ", QUALITY_NAMES[quality])
 
-
-# ======================= Столкновения и краш =======================
-const COL_CELL := 64.0
-const DRONE_R := 1.6
-const CHUNK_M := 512.0
-var _col_box := {}      # Vector2i(64м) -> Array[Dictionary] коробки зданий
-var _col_cyl := {}      # Vector2i(64м) -> Array[Dictionary] столбы/фонари
-var _tree_col := {}     # Vector2i(чанк 512м) -> Array[Dictionary] деревья
+# ======================= Столкновения, краш, HUD =======================
+var collision: RefCounted
 var crashed := false
-var _crash_label: Label
 var _home_pos := Vector3.ZERO
+var hud: CanvasLayer
+# ссылки на элементы HUD, которыми пользуются другие модули (mission, telemetry, debug)
+var _crash_label: Label
+var _fpv_osd: Control
+var _result_label: Label
+var _replay_label: Label
 
 
-func _col_test() -> void:
-	var f := FileAccess.get_file_as_string("res://assets/buildings.json")
-	var arr: Array = JSON.parse_string(f)["b"]
-	var b: Array = arr[100]
-	var gy := height_at(b[0], b[1])
-	var inside := Vector3(b[0], gy + 2.0, b[1])
-	var outside := Vector3(b[0] + 60.0, gy + 2.0, b[1])
-	var above := Vector3(b[0], gy + 40.0, b[1])
-	print("COLTEST здание #100 центр(%.0f,%.0f) h=%.1f" % [b[0], b[1], b[5]])
-	print("  внутри  -> '%s' (ждём 'здание')" % check_crash(inside))
-	print("  снаружи -> '%s' (ждём пусто)" % check_crash(outside))
-	print("  сверху  -> '%s' (ждём пусто)" % check_crash(above))
-	print("COLTEST ячеек-коробок: %d, ячеек-цилиндров: %d" % [_col_box.size(), _col_cyl.size()])
-	# LOS: оператор в долине Ворохты, дрон высоко (чисто) и низко за 4 км (должно упасть)
-	var op := _world_from_latlon(48.2839, 24.5610)
-	var opp := Vector3(op.x, height_at(op.x, op.y) + 2.0, op.y)
-	var hi := opp + Vector3(0, 400, 0)
-	var far := _world_from_latlon(48.32, 24.60)
-	var lowfar := Vector3(far.x, height_at(far.x, far.y) + 5.0, far.y)
-	print("COLTEST LOS вверх(+400м) = %.2f (ждём ~1)" % los_factor(opp, hi))
-	print("COLTEST LOS низко за ~5км = %.2f (ждём <1)" % los_factor(opp, lowfar))
+func _build_hud() -> void:
+	hud = CanvasLayer.new()
+	hud.name = "HUD"
+	hud.set_script(load("res://scripts/hud.gd"))
+	add_child(hud)
+	hud.setup(self)
+	_crash_label = hud._crash_label
+	_fpv_osd = hud._fpv_osd
+	_result_label = hud._result_label
+	_replay_label = hud._replay_label
 
 
+# --- тонкие обёртки над collision.gd (интерфейс для scatter/props/mission/flycam не менялся) ---
 func col_add_box(cx: float, cz: float, w: float, d: float, ang: float, top: float) -> void:
-	var box := {"cx": cx, "cz": cz, "hw": w * 0.5, "hd": d * 0.5,
-		"cs": cos(ang), "sn": sin(ang), "top": top}
-	var r := maxf(w, d) * 0.5 + 2.0
-	for gx in range(int(floor((cx - r) / COL_CELL)), int(floor((cx + r) / COL_CELL)) + 1):
-		for gz in range(int(floor((cz - r) / COL_CELL)), int(floor((cz + r) / COL_CELL)) + 1):
-			var k := Vector2i(gx, gz)
-			if not _col_box.has(k): _col_box[k] = []
-			_col_box[k].append(box)
-
+	collision.col_add_box(cx, cz, w, d, ang, top)
 
 func col_add_cyl(x: float, z: float, r: float, top: float) -> void:
-	var k := Vector2i(int(floor(x / COL_CELL)), int(floor(z / COL_CELL)))
-	if not _col_cyl.has(k): _col_cyl[k] = []
-	_col_cyl[k].append({"x": x, "z": z, "r": r, "top": top})
-
+	collision.col_add_cyl(x, z, r, top)
 
 func col_register_trees(chunk: Vector2i, arr: Array) -> void:
-	_tree_col[chunk] = arr
-
+	collision.col_register_trees(chunk, arr)
 
 func col_unregister_trees(chunk: Vector2i) -> void:
-	_tree_col.erase(chunk)
+	collision.col_unregister_trees(chunk)
 
-
-## Проверка столкновения с твёрдыми объектами (не рельеф). "" если чисто.
 func check_crash(pos: Vector3) -> String:
-	var k := Vector2i(int(floor(pos.x / COL_CELL)), int(floor(pos.z / COL_CELL)))
-	var g := height_at(pos.x, pos.z)
-	for dx in [-1, 0, 1]:
-		for dz in [-1, 0, 1]:
-			var kk := k + Vector2i(dx, dz)
-			for b: Dictionary in _col_box.get(kk, []):
-				if pos.y - DRONE_R < b.top and pos.y + DRONE_R > g:
-					var lx: float = (pos.x - b.cx) * b.cs + (pos.z - b.cz) * b.sn
-					var lz: float = -(pos.x - b.cx) * b.sn + (pos.z - b.cz) * b.cs
-					if absf(lx) < b.hw + DRONE_R and absf(lz) < b.hd + DRONE_R:
-						return "здание"
-			for c: Dictionary in _col_cyl.get(kk, []):
-				if pos.y - DRONE_R < c.top and Vector2(pos.x - c.x, pos.z - c.z).length() < c.r + DRONE_R:
-					return "столб / ЛЭП"
-	var ck := Vector2i(int(floor(pos.x / CHUNK_M)), int(floor(pos.z / CHUNK_M)))
-	for dx in [-1, 0, 1]:
-		for dz in [-1, 0, 1]:
-			for tr: Dictionary in _tree_col.get(ck + Vector2i(dx, dz), []):
-				var tp: Vector3 = tr.pos
-				if pos.y - DRONE_R < tp.y + tr.top and pos.y + DRONE_R > tp.y:
-					if Vector2(pos.x - tp.x, pos.z - tp.z).length() < tr.r + DRONE_R:
-						return "дерево"
-	return ""
+	return collision.check_crash(pos)
 
-
-## Радиовидимость дрона с точки оператора: 1 = чистая прямая видимость,
-## →0 = рельеф перекрывает линию (за горой/складкой сигнал теряется).
 func los_factor(op: Vector3, drone: Vector3) -> float:
-	var dist := op.distance_to(drone)
-	if dist < 1.0:
-		return 1.0
-	var steps := clampi(int(dist / 30.0), 4, 120)
-	var worst := 0.0                       # макс. «утопание» линии под рельеф, м
-	for i in range(1, steps):
-		var f := float(i) / steps
-		var p := op.lerp(drone, f)
-		var g := height_at(p.x, p.z)
-		worst = maxf(worst, g - p.y)       # >0 — рельеф выше линии визирования
-	if worst <= 0.0:
-		return 1.0
-	return clampf(1.0 - worst / 40.0, 0.0, 1.0)   # 40 м перекрытия = полная потеря
+	return collision.los_factor(op, drone)
 
 
 ## Столкновение → краш дрона (падает, ждёт перезапуска R).
@@ -597,8 +553,8 @@ func _add_mm(nm: String, mesh: Mesh, mat: Material, xforms: Array, colors: Array
 
 
 func _build_forest() -> void:
-	if not FileAccess.file_exists(ProjectSettings.globalize_path("res://assets/mask.png")) \
-			and not ResourceLoader.exists("res://assets/mask.png"):
+	if not FileAccess.file_exists(ProjectSettings.globalize_path(asset_path("mask.png"))) \
+			and not ResourceLoader.exists(asset_path("mask.png")):
 		return
 	var forest := Node3D.new()
 	forest.name = "Forest"
@@ -727,221 +683,30 @@ func _spawn_camera() -> void:
 		add_child(cam)
 		cam.look_at(Vector3(0, 0, 0), Vector3.FORWARD)
 	else:
-		# старт над Ворохтой, низко над долиной с дорогой
-		var v := _world_from_latlon(48.2839, 24.5610)
+		# старт: базовый регион — над Ворохтой, низко над долиной с дорогой; иначе — start_lat/lon из meta
+		var slat := float(meta.get("start_lat", 48.2839))
+		var slon := float(meta.get("start_lon", 24.5610))
+		var v := _world_from_latlon(slat, slon)
 		var ground := height_at(v.x, v.y)
 		cam.position = Vector3(v.x, ground + 220.0, v.y)
 		add_child(cam)
-		var tgt := _world_from_latlon(48.2650, 24.5660)  # вдоль долины на юг
+		var tgt := _world_from_latlon(slat - 0.019, slon + 0.005)  # ~2 км на юг
 		cam.look_at(Vector3(tgt.x, height_at(tgt.x, tgt.y) + 60.0, tgt.y))
 	cam.set("main", self)
 	cam.make_current()
 	_home_pos = cam.position
 
 
-var hud_label: Label
-var target_marker: Label
-var _sound_btn: Button
-var _sound_muted := false
-var _wind_label: Label
-var _wind_flag: Control
-var _sticks: Control
-var _result_label: Label
-var _replay_label: Label
-var mission_marker: Label
-
-## Вкл/выкл весь звук (кнопка в углу или клавиша M).
-func _toggle_sound() -> void:
-	_sound_muted = not _sound_muted
-	AudioServer.set_bus_mute(0, _sound_muted)
-	if _sound_btn != null:
-		_sound_btn.text = "  Звук: ВЫКЛ  " if _sound_muted else "  Звук: ВКЛ  "
-
-
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
 		if event.keycode == KEY_M:
-			_toggle_sound()
+			hud._toggle_sound()
 		elif event.keycode == KEY_F:
-			_toggle_fpv()
+			hud._toggle_fpv()
 		elif event.keycode == KEY_R and crashed:
 			_respawn()
 		elif event.keycode == KEY_G:
 			apply_quality((quality + 1) % 3)
-
-
-var _fpv_rect: ColorRect
-var _fpv_osd: Control
-var fpv_on := false
-
-## FPV-подача: широкий угол + «аналоговое видео» + OSD дрона.
-func _toggle_fpv() -> void:
-	fpv_on = not fpv_on
-	_fpv_rect.visible = fpv_on
-	_fpv_osd.visible = fpv_on
-	hud_label.visible = not fpv_on
-	target_marker.visible = not fpv_on
-	# обычный HUD прячем — в FPV своя приборка
-	for c: Node in [_wind_label, _wind_flag, _sound_btn]:
-		if c != null:
-			c.visible = not fpv_on
-	cam.fov = 105.0 if fpv_on else 75.0
-	if fpv_on:
-		_fpv_osd.home = cam.global_position
-		_fpv_osd.flight_t = 0.0
-
-
-func _build_hud() -> void:
-	var layer := CanvasLayer.new()
-	add_child(layer)
-	hud_label = Label.new()
-	hud_label.position = Vector2(16, 12)
-	hud_label.add_theme_font_size_override("font_size", 15)
-	hud_label.add_theme_color_override("font_color", Color(1, 1, 1, 0.95))
-	hud_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.8))
-	hud_label.add_theme_constant_override("shadow_offset_x", 1)
-	hud_label.add_theme_constant_override("shadow_offset_y", 1)
-	layer.add_child(hud_label)
-
-	# кнопка звука в правом верхнем углу
-	_sound_btn = Button.new()
-	_sound_btn.text = "  Звук: ВКЛ  "
-	_sound_btn.focus_mode = Control.FOCUS_NONE
-	_sound_btn.add_theme_font_size_override("font_size", 15)
-	_sound_btn.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-	_sound_btn.position = Vector2(-150, 12)
-	_sound_btn.pressed.connect(_toggle_sound)
-	layer.add_child(_sound_btn)
-
-	# перекрестие
-	for size_off: Array in [[Vector2(14, 2), Vector2(-7, -1)], [Vector2(2, 14), Vector2(-1, -7)]]:
-		var cr := ColorRect.new()
-		cr.color = Color(1, 1, 1, 0.8)
-		cr.size = size_off[0]
-		cr.set_anchors_preset(Control.PRESET_CENTER)
-		cr.position = size_off[1]
-		cr.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		hud_label.get_parent().add_child(cr)
-
-	# указатель на ближайшую цель
-	target_marker = Label.new()
-	target_marker.text = "◆ ЦЕЛЬ"
-	target_marker.add_theme_font_size_override("font_size", 16)
-	target_marker.add_theme_color_override("font_color", Color(1, 0.25, 0.15))
-	target_marker.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.9))
-	target_marker.add_theme_constant_override("shadow_offset_x", 1)
-	target_marker.add_theme_constant_override("shadow_offset_y", 1)
-	target_marker.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	layer.add_child(target_marker)
-
-	# флажок-ветрометр в левом нижнем углу
-	_wind_flag = Control.new()
-	_wind_flag.set_script(load("res://scripts/windflag.gd"))
-	_wind_flag.set("main", self)
-	_wind_flag.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
-	_wind_flag.position = Vector2(14, -150)
-	_wind_flag.custom_minimum_size = Vector2(110, 92)
-	_wind_flag.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	layer.add_child(_wind_flag)
-
-	# скорость ветра под флажком
-	_wind_label = Label.new()
-	_wind_label.add_theme_font_size_override("font_size", 16)
-	_wind_label.add_theme_color_override("font_color", Color(1, 1, 1, 0.95))
-	_wind_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.8))
-	_wind_label.add_theme_constant_override("shadow_offset_x", 1)
-	_wind_label.add_theme_constant_override("shadow_offset_y", 1)
-	_wind_label.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
-	_wind_label.position = Vector2(16, -54)
-	layer.add_child(_wind_label)
-
-	# индикатор стиков пульта — правый нижний угол
-	_sticks = Control.new()
-	_sticks.set_script(load("res://scripts/sticks.gd"))
-	_sticks.set("main", self)
-	_sticks.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
-	_sticks.position = Vector2(-330, -118)
-	layer.add_child(_sticks)
-
-	# надпись о столкновении по центру экрана
-	_crash_label = Label.new()
-	_crash_label.set_anchors_preset(Control.PRESET_CENTER)
-	_crash_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_crash_label.add_theme_font_size_override("font_size", 30)
-	_crash_label.add_theme_color_override("font_color", Color(1.0, 0.35, 0.25))
-	_crash_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.9))
-	_crash_label.add_theme_constant_override("shadow_offset_x", 2)
-	_crash_label.add_theme_constant_override("shadow_offset_y", 2)
-	_crash_label.position = Vector2(-360, -60)
-	_crash_label.custom_minimum_size = Vector2(720, 0)
-	_crash_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_crash_label.visible = false
-	layer.add_child(_crash_label)
-
-	# FPV-слой: пост-эффект видео + OSD (поверх всего, включается на F)
-	var fpv_layer := CanvasLayer.new()
-	fpv_layer.layer = 5
-	add_child(fpv_layer)
-	_fpv_rect = ColorRect.new()
-	_fpv_rect.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_fpv_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var fmat := ShaderMaterial.new()
-	fmat.shader = load("res://scripts/fpv.gdshader")
-	_fpv_rect.material = fmat
-	_fpv_rect.visible = false
-	fpv_layer.add_child(_fpv_rect)
-	_fpv_osd = Control.new()
-	_fpv_osd.set_script(load("res://scripts/fpv_osd.gd"))
-	_fpv_osd.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_fpv_osd.set("main", self)
-	_fpv_osd.visible = false
-	fpv_layer.add_child(_fpv_osd)
-
-	# результат миссии по центру
-	_result_label = Label.new()
-	_result_label.set_anchors_preset(Control.PRESET_CENTER)
-	_result_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_result_label.add_theme_font_size_override("font_size", 22)
-	_result_label.add_theme_color_override("font_color", Color(0.9, 1.0, 0.85))
-	_result_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.9))
-	_result_label.add_theme_constant_override("shadow_offset_x", 2)
-	_result_label.add_theme_constant_override("shadow_offset_y", 2)
-	_result_label.position = Vector2(-380, -160)
-	_result_label.custom_minimum_size = Vector2(760, 0)
-	_result_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_result_label.visible = false
-	layer.add_child(_result_label)
-
-	# маркер цели миссии (ворота/площадка/точка)
-	mission_marker = Label.new()
-	mission_marker.add_theme_font_size_override("font_size", 16)
-	mission_marker.add_theme_color_override("font_color", Color(0.4, 1.0, 0.5))
-	mission_marker.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.9))
-	mission_marker.add_theme_constant_override("shadow_offset_x", 1)
-	mission_marker.add_theme_constant_override("shadow_offset_y", 1)
-	mission_marker.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	mission_marker.visible = false
-	layer.add_child(mission_marker)
-
-	# строка реплея (сверху по центру)
-	_replay_label = Label.new()
-	_replay_label.set_anchors_preset(Control.PRESET_CENTER_TOP)
-	_replay_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_replay_label.add_theme_font_size_override("font_size", 16)
-	_replay_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.4))
-	_replay_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.9))
-	_replay_label.position = Vector2(-300, 40)
-	_replay_label.custom_minimum_size = Vector2(600, 0)
-	_replay_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	layer.add_child(_replay_label)
-
-	var attrib := Label.new()
-	attrib.text = str(meta.get("attribution", ""))
-	attrib.add_theme_font_size_override("font_size", 11)
-	attrib.add_theme_color_override("font_color", Color(1, 1, 1, 0.55))
-	attrib.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
-	attrib.position = Vector2(16, -24)
-	layer.add_child(attrib)
 
 
 func _latlon_at(x: float, z: float) -> Vector2:
@@ -954,183 +719,22 @@ func _latlon_at(x: float, z: float) -> Vector2:
 	return Vector2(lat, lon)
 
 
-func _process(_dt: float) -> void:
-	if cam == null or hud_label == null:
-		return
-	var p := cam.global_position
-	var ground := height_at(p.x, p.z)
-	var ll := _latlon_at(p.x, p.z)
-	var spd: float = cam.speed() if cam.has_method("speed") else 0.0
-	var tline := ""
-	if targets != null:
-		tline = "\nПоражено: %d   |   целей в зоне: %d" % [targets.score, targets.active_count()]
-	if mission != null:
-		var ml: String = mission.hud_line()
-		if ml != "": tline += "\n" + ml
-	var wline := ""
-	if weather != null:
-		var w: Vector3 = weather.wind_vec()
-		wline = "\n%s   ветер %d м/с %s" % [weather.label, int(w.length()), _wind_arrow(w)]
-		if _wind_label != null:
-			_wind_label.text = "Ветер: %d м/с %s" % [int(w.length()), _wind_arrow(w)]
-	var fline := ""
-	if cam.has_method("mode_name"):
-		var src: String = ("пульт: " + str(cam.joy_name)) if str(cam.joy_name) != "" else "клавиатура"
-		fline = "\n[%s]  %s  ·  %s%s  ·  качество: %s (G)" % [cam.mode_name(), cam.drone_name(), src,
-			("  ·  НА ЗЕМЛЕ" if cam.landed else ""), QUALITY_NAMES[quality]]
-	hud_label.text = "%.5f°N  %.5f°E\nMSL %d м   AGL %d м\nскорость %d м/с   FPS %d%s%s%s\nW/S тангаж · A/D крен · E/Q газ · ←/→ рыскание · Tab режим · B дрон · Shift буст · ЛКМ огонь · 1-5/P погода · 6 туман · 7 дождь · M звук · F FPV · R рестарт" % [
-		ll.x, ll.y, int(p.y), int(p.y - ground), int(spd), int(Engine.get_frames_per_second()), fline, tline, wline]
-	_update_target_marker(p)
-	_update_mission_marker()
-	if fpv_on and _fpv_rect != null:
-		# картинка сыпется по мере падения сигнала; при краше — полная статика
-		var q: float = 0.0 if crashed else _fpv_osd.signal_q
-		_fpv_rect.material.set_shader_parameter("noise_burst", clampf(1.0 - q, 0.0, 1.0) * 0.9)
-		_fpv_rect.material.set_shader_parameter("grain", 0.05 + (1.0 - q) * 0.12)
+
+var selftest: Node
+
+func _build_selftest() -> void:
+	selftest = Node.new()
+	selftest.name = "SelfTest"
+	selftest.set_script(load("res://scripts/selftest.gd"))
+	add_child(selftest)
+	selftest.setup(self)
 
 
-func _update_mission_marker() -> void:
-	if mission_marker == null or mission == null:
-		return
-	var tp = mission.target_pos()
-	if tp == null:
-		mission_marker.visible = false
-		return
-	mission_marker.visible = true
-	var vp := get_viewport().get_visible_rect().size
-	var behind := cam.is_position_behind(tp)
-	var sp := cam.unproject_position(tp)
-	if behind:
-		sp.x = vp.x - sp.x
-		sp.y = vp.y
-	var margin := 40.0
-	sp.x = clampf(sp.x, margin, vp.x - margin)
-	sp.y = clampf(sp.y, margin, vp.y - margin)
-	mission_marker.position = sp - mission_marker.size * 0.5
-	mission_marker.text = "◎ %d м" % int(cam.global_position.distance_to(tp))
+var debug: Node
 
-
-func _wind_arrow(w: Vector3) -> String:
-	if w.length() < 0.5:
-		return "—"
-	var a := atan2(w.z, w.x)
-	var dirs := ["→", "↘", "↓", "↙", "←", "↖", "↑", "↗"]
-	return dirs[int(round(a / (PI / 4.0))) & 7]
-
-
-func _update_target_marker(p: Vector3) -> void:
-	if target_marker == null or targets == null:
-		return
-	var n: Dictionary = targets.nearest(p)
-	if n.is_empty() or fpv_on:
-		target_marker.visible = false
-		return
-	target_marker.visible = true
-	var tpos: Vector3 = n.pos + Vector3(0, 30, 0)
-	var vp := get_viewport().get_visible_rect().size
-	var behind := cam.is_position_behind(tpos)
-	var sp := cam.unproject_position(tpos)
-	if behind:
-		sp.x = vp.x - sp.x
-		sp.y = vp.y
-	# держим ярлык у края экрана, если цель вне кадра
-	var margin := 40.0
-	sp.x = clampf(sp.x, margin, vp.x - margin)
-	sp.y = clampf(sp.y, margin, vp.y - margin)
-	target_marker.position = sp - target_marker.size * 0.5
-	var names := {"tank": "ТАНК", "apc": "БТР", "soldier": "ПЕХОТА"}
-	var name_ru: String = names.get(n.kind, "ЦЕЛЬ")
-	target_marker.text = "◆ %s  %d м" % [name_ru, int(n.dist)]
-
-
-## Пресеты видовых точек для заявки/видео: cam lat/lon, AGL(м), target lat/lon, target +Δh(м).
-const SHOT_PRESETS := [
-	[48.070, 24.560, 2600.0, 48.160, 24.500, 0.0],    # 0 establishing: ЮВ→Говерла, высокий облёт
-	[48.2839, 24.5610, 240.0, 48.2650, 24.5660, 60.0],# 1 low valley: долина Ворохты на юг
-	[48.140, 24.560, 700.0, 48.180, 24.470, -100.0],  # 2 ridge: вдоль хребта к массиву
-	[48.190, 24.470, 900.0, 48.160, 24.500, -50.0],   # 3 peak: подход к вершине Говерлы
-]
-
-func _preset_index() -> int:
-	for a in OS.get_cmdline_user_args():
-		if a.begins_with("--preset="):
-			return int(a.substr(9))
-	return -1
-
-func _apply_preset(i: int) -> void:
-	var p: Array = SHOT_PRESETS[i]
-	var v := _world_from_latlon(p[0], p[1])
-	cam.global_position = Vector3(v.x, height_at(v.x, v.y) + float(p[2]), v.y)
-	var t := _world_from_latlon(p[3], p[4])
-	cam.look_at(Vector3(t.x, height_at(t.x, t.y) + float(p[5]), t.y))
-
-
-func _schedule_screenshot() -> void:
-	await RenderingServer.frame_post_draw
-	for i in 90:
-		await get_tree().process_frame
-	var preset := _preset_index()
-	if preset >= 0 and preset < SHOT_PRESETS.size():
-		_apply_preset(preset)
-		await RenderingServer.frame_post_draw
-		await get_tree().process_frame
-	if "--watershot" in OS.get_cmdline_user_args():
-		var wt := _world_from_latlon(48.23928, 24.33539)
-		var gy := height_at(wt.x, wt.y)
-		cam.global_position = Vector3(wt.x + 30.0, gy + 320.0, wt.y + 30.0)
-		cam.look_at(Vector3(wt.x, gy, wt.y))
-		for _i in 60:
-			await get_tree().process_frame
-		await RenderingServer.frame_post_draw
-	if "--fpv" in OS.get_cmdline_user_args():
-		_toggle_fpv()
-		_fpv_osd.flight_t = 143.0
-		_fpv_osd.battery = 0.62
-	if "--lowshot" in OS.get_cmdline_user_args():
-		var lv := _world_from_latlon(48.2760, 24.5640)
-		cam.global_position = Vector3(lv.x, height_at(lv.x, lv.y) + 35.0, lv.y)
-		var lt := _world_from_latlon(48.2700, 24.5660)
-		cam.look_at(Vector3(lt.x, height_at(lt.x, lt.y) + 8.0, lt.y))
-		for _i in 90:                       # дать свету/дыму прилипнуть и накопиться
-			await get_tree().process_frame
-		await RenderingServer.frame_post_draw
-	if "--targetcam" in OS.get_cmdline_user_args() and targets != null:
-		var want := "tank"
-		if "--oneapc" in OS.get_cmdline_user_args(): want = "apc"
-		elif "--onesquad" in OS.get_cmdline_user_args(): want = "soldier"
-		var pick: Dictionary = targets.targets[-1] if not targets.targets.is_empty() else {}
-		for t: Dictionary in targets.targets:
-			if t.kind == want:
-				pick = t
-				break
-		if not pick.is_empty():
-			var tp: Vector3 = pick.node.position
-			cam.global_position = tp + Vector3(8.0, 6.5, 8.5)
-			cam.look_at(tp + Vector3(0, 1.9, 0))
-		await RenderingServer.frame_post_draw
-		await get_tree().process_frame
-	await RenderingServer.frame_post_draw
-	var img := get_viewport().get_texture().get_image()
-	var suffix := ("_%d" % preset) if preset >= 0 else ""
-	var out := ProjectSettings.globalize_path("res://../shot%s.png" % suffix)
-	img.save_png(out)
-	print("Screenshot saved: ", out)
-	get_tree().quit()
-
-
-func _debug_report_targets() -> void:
-	await get_tree().process_frame
-	for i in 30:
-		await get_tree().process_frame
-	if targets == null:
-		return
-	var cp: Vector3 = cam.global_position
-	var lst: Array = []
-	for t: Dictionary in targets.targets:
-		var d := cp.distance_to(t.node.position)
-		lst.append([d, t.kind])
-	lst.sort()
-	print("=== ЦЕЛИ от камеры (", cp, ") ===")
-	for e in lst:
-		print("  %s  %.0f м" % [e[1], e[0]])
-	get_tree().quit()
+func _build_debug() -> void:
+	debug = Node.new()
+	debug.name = "Debug"
+	debug.set_script(load("res://scripts/debug.gd"))
+	add_child(debug)
+	debug.setup(self)

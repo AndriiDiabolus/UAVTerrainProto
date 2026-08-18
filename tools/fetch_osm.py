@@ -4,10 +4,11 @@
   godot/assets/roads.json     — полилинии дорог по классам
   godot/assets/buildings.json — [x, z, w, d, angle, h] для каждого здания
 """
+import os
 import json, math, sys, time, urllib.request
 from pathlib import Path
 
-ASSETS = Path(__file__).resolve().parent.parent / "godot" / "assets"
+ASSETS = Path(os.environ["UAV_ASSETS"]) if os.environ.get("UAV_ASSETS") else Path(__file__).resolve().parent.parent / "godot" / "assets"
 META = json.loads((ASSETS / "meta.json").read_text())
 
 Z = META["zoom"]; N = META["n_tiles"]

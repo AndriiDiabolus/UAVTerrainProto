@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Качает водоёмы OSM (natural=water, landuse=reservoir) -> godot/assets/lakes.json
 Полигоны в локальных метрах мира."""
+import os
 import hashlib, json, math, time, urllib.request
 from pathlib import Path
 
-ASSETS = Path(__file__).resolve().parent.parent / "godot" / "assets"
+ASSETS = Path(os.environ["UAV_ASSETS"]) if os.environ.get("UAV_ASSETS") else Path(__file__).resolve().parent.parent / "godot" / "assets"
 META = json.loads((ASSETS / "meta.json").read_text())
 Z, N, X0, Y0, SIZE = META["zoom"], META["n_tiles"], META["tile_x0"], META["tile_y0"], META["size_m"]
 TWO_Z = 2 ** Z

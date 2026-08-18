@@ -2,11 +2,12 @@
 """Запекает OSM-дороги в albedo.jpg (чёткие линии поверх спутника) и строит
 маску землепользования mask.png (2048², L8): 0 прочее, 1 лес, 2 дорога, 3 застройка.
 Оригинал спутника сохраняется в albedo_clean.jpg (идемпотентно)."""
+import os
 import json, math
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFilter
 
-ASSETS = Path(__file__).resolve().parent.parent / "godot" / "assets"
+ASSETS = Path(os.environ["UAV_ASSETS"]) if os.environ.get("UAV_ASSETS") else Path(__file__).resolve().parent.parent / "godot" / "assets"
 META = json.loads((ASSETS / "meta.json").read_text())
 SIZE = META["size_m"]
 

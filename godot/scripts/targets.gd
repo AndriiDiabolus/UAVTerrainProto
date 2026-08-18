@@ -104,7 +104,7 @@ signal target_killed(kind: String, pos: Vector3)
 
 
 func _load_roads() -> void:
-	var f := FileAccess.get_file_as_string("res://assets/roads.json")
+	var f := FileAccess.get_file_as_string(main.asset_path("roads.json"))
 	if f.is_empty():
 		return
 	for r: Dictionary in JSON.parse_string(f)["roads"]:

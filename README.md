@@ -30,8 +30,15 @@ tools/.venv/bin/python tools/fetch_terrain.py
 ## Как запустить
 
 ```bash
-/Users/andriidiablo/Desktop/Sabbath_3D/Godot.app/Contents/MacOS/Godot --path /Users/andriidiablo/Desktop/UAVTerrainProto/godot
+./run.sh                       # Godot ищется: $GODOT → PATH → /Applications → Sabbath_3D
+./run.sh --mode=acro --mission=2 --quality=low
 ```
+
+**Качество** (клавиша **G**, `--quality=low|medium|high`, запоминается в `user://settings.cfg`): low — рендер-скейл 0.7, без теней/SSR/bloom, лес 1.4 км, 6 фонарей-источников; medium — тени 6 км, без SSR, лес 2.2 км; high — всё (тени 30 км, SSR, лес 3 км, 24 источника). Для школьных ПК начинать с low.
+
+**Экспорт билдов** (`tools/export.sh win|linux|mac|all` → `build/`): пресеты в `godot/export_presets.cfg` (PCK встроен, `*.raw`/`*.json` включены, `height16.png`/`albedo_clean.jpg` исключены). Нужны export templates 4.6.1 (в Godot: Editor → Manage Export Templates → Download; сейчас установлены только web-шаблоны). Вместе с билдом раздавать `ATTRIBUTION.md`.
+
+**Git**: репозиторий инициализирован (кеши `tools/tile_cache`, `osm_cache`, `.venv`, `.godot`, `build/`, `.app` — в `.gitignore`; ассеты `godot/assets` ~60 МБ — в репо, чтобы проект запускался после клона).
 
 ## Управление и лётная модель (`flycam.gd`)
 
@@ -138,9 +145,14 @@ Bloom: `env.glow_enabled` (additive, threshold 1.0) — светятся окн�
 
 ## Архитектура
 
-- `godot/scripts/main.gd` — грузит `assets/height.raw` (uint16 LE, 2048²) + `meta.json`, строит ArrayMesh 1024² (кешируется в user://terrain_*.res), окружение, HUD (реальные lat/lon через обратный Web Mercator, MSL/AGL).
-- `godot/scripts/terrain.gdshader` — спутниковый albedo + world-space detail-шум (маскирует мыло ~10 м/px вблизи).
-- `godot/scripts/flycam.gd` — свободная камера с клампом над рельефом.
+- `godot/scripts/main.gd` — оркестратор: регион/данные (`asset_path`), террейн-меш (кеш в user://), дома, окружение, качество, крах/рестарт, тонкие обёртки над коллизией. `height_at` — высота ПО МЕШУ.
+- `collision.gd` — сетка препятствий 64 м (здания/столбы/деревья), `check_crash`, `los_factor` (радиовидимость через рельеф).
+- `flycam.gd` — дрон: ввод (пульт/клавиатура/мышь), режимы GPS/ANGLE/ACRO, профили, физика, `--flytest`.
+- `hud.gd` — всё поверх 3D: строки, маркеры целей/миссии, ветрометр, стики, FPV-слой (`fpv.gdshader` + `fpv_osd.gd`), краш/результат/реплей.
+- `mission.gd` — упражнения (ворота/посадка/разведка/удар), скоринг, `results.csv`, `--missiontest`. `telemetry.gd` — запись CSV 10 Гц + события, реплей `--replay=`.
+- `terrain.gdshader`, `facade.gdshader`, `sky.gdshader`, `water.gdshader`, `tree.gdshader` — материалы. `scatter.gd` (лес), `roads.gd`, `props.gd` (фонари/ЛЭП/живой свет), `water.gd`, `smoke.gd`, `targets.gd`, `weather.gd`, `sound.gd`, `windflag.gd`, `sticks.gd`.
+- `selftest.gd` — `--selftest` (height_at на узлах, lat/lon-обратимость, коллизии+LOS, лётная модель, миссии) → код выхода 0/1. `debug.gd` — `--screenshot`/пресеты кадров/`--targetreport`.
+- `tools/` — Python-пайплайн данных; `tools/build_region.py --name X --lat --lon` собирает регион в `godot/assets/regions/X/`, запуск `./run.sh --region=X`.
 
 ## Грабли, на которые уже наступили (не повторять)
 

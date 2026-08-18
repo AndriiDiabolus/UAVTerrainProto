@@ -194,8 +194,10 @@ def main():
     preview = "--preview" in sys.argv
     if "--px" in sys.argv:
         px = int(sys.argv[sys.argv.index("--px") + 1])
-    meta = json.loads((Path(__file__).resolve().parent.parent /
-                       "godot" / "assets" / "meta.json").read_text())
+    import os
+    assets = Path(os.environ["UAV_ASSETS"]) if os.environ.get("UAV_ASSETS") else \
+        Path(__file__).resolve().parent.parent / "godot" / "assets"
+    meta = json.loads((assets / "meta.json").read_text())
     CACHE.mkdir(parents=True, exist_ok=True)
     img, attr, cov = build_albedo(meta, out_px=px)
     print(f"coverage {cov*100:.1f}%  |  {attr}")

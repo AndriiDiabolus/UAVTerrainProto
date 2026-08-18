@@ -14,7 +14,7 @@ const CLASS := {
 
 
 func setup(main: Node3D) -> void:
-	var f := FileAccess.get_file_as_string("res://assets/roads.json")
+	var f := FileAccess.get_file_as_string(main.asset_path("roads.json"))
 	if f.is_empty():
 		return
 	var roads: Array = JSON.parse_string(f)["roads"]

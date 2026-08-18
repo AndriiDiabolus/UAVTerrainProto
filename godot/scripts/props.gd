@@ -19,7 +19,7 @@ var _accum := 0.0
 
 func setup(main: Node3D) -> void:
 	_main = main
-	var f := FileAccess.get_file_as_string("res://assets/roads.json")
+	var f := FileAccess.get_file_as_string(main.asset_path("roads.json"))
 	if f.is_empty():
 		return
 	var roads: Array = JSON.parse_string(f)["roads"]

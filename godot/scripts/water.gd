@@ -16,7 +16,7 @@ func setup(main: Node3D) -> void:
 	var I := PackedInt32Array()
 
 	var nriv := 0
-	var f := FileAccess.get_file_as_string("res://assets/water.json")
+	var f := FileAccess.get_file_as_string(main.asset_path("water.json"))
 	if not f.is_empty():
 		for w: Dictionary in JSON.parse_string(f)["w"]:
 			var hw: float = HALF.get(w["c"], 1.6)
@@ -24,7 +24,7 @@ func setup(main: Node3D) -> void:
 			nriv += 1
 
 	var nlake := 0
-	var lf := FileAccess.get_file_as_string("res://assets/lakes.json")
+	var lf := FileAccess.get_file_as_string(main.asset_path("lakes.json"))
 	if not lf.is_empty():
 		for poly: Array in JSON.parse_string(lf)["a"]:
 			if _polygon(main, poly, V, N, I):

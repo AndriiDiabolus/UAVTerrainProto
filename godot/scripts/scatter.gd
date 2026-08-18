@@ -21,7 +21,7 @@ var _cur_dir := Vector2(1, 0)
 
 func setup(m: Node3D) -> void:
 	main = m
-	mask = main.load_image("res://assets/mask.png")
+	mask = main.load_image(main.asset_path("mask.png"))
 	if mask == null:
 		push_warning("scatter: mask.png не найдена")
 		return

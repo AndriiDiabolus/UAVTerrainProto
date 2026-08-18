@@ -11,6 +11,7 @@
             Copernicus Sentinel-2: открытая лицензия, коммерческое использование ОК.
 Требует venv tools/.venv (numpy, pyproj, tifffile, imagecodecs, pillow).
 """
+import os
 import io, json, math, sys, time
 from array import array
 from concurrent.futures import ThreadPoolExecutor
@@ -19,13 +20,14 @@ from urllib.request import Request, urlopen
 
 from PIL import Image
 
-CENTER_LAT, CENTER_LON = 48.16, 24.50   # Говерла, Карпаты
+CENTER_LAT = float(os.environ.get("UAV_LAT", 48.16))   # по умолчанию Говерла, Карпаты
+CENTER_LON = float(os.environ.get("UAV_LON", 24.50))
 Z_HEIGHT, N_HEIGHT = 13, 16              # 16x16 тайлов по 256px -> 4096px
 ALBEDO_PX = 4096                         # размер подложки (Sentinel-2, ~12.7 м/px, native)
 TILE = 256
 EARTH = 40075016.686
 
-ASSETS = Path(__file__).resolve().parent.parent / "godot" / "assets"
+ASSETS = Path(os.environ["UAV_ASSETS"]) if os.environ.get("UAV_ASSETS") else Path(__file__).resolve().parent.parent / "godot" / "assets"
 CACHE = Path(__file__).resolve().parent / "tile_cache"
 
 
@@ -112,6 +114,9 @@ def main():
         "elev_min_m": round(e_min, 1), "elev_max_m": round(e_max, 1),
         "size_m": round(size_m, 1), "px": dem.width,
         "tile_x0": hx0, "tile_y0": hy0, "zoom": Z_HEIGHT, "n_tiles": N_HEIGHT,
+        "start_lat": float(os.environ.get("UAV_START_LAT", CENTER_LAT)),
+        "start_lon": float(os.environ.get("UAV_START_LON", CENTER_LON)),
+        "region": os.environ.get("UAV_REGION", "carpathians"),
     }
 
     print("Строю спутниковую подложку (Sentinel-2 L2A COG, открытая лицензия)...",
