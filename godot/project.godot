@@ -25,3 +25,14 @@ environment/ssao/quality=2
 environment/ssil/quality=1
 environment/glow/upscale_mode=1
 scaling_3d/mode=0
+
+[shader_globals]
+
+cloud_shadow_params={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0.0004)
+}
+cloud_shadow_tex={
+"type": "sampler2D",
+"value": ""
+}

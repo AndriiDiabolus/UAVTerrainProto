@@ -15,11 +15,13 @@ var _rain_holder: Node3D
 var _rain: GPUParticles3D
 var _t := 0.0
 var _flash := 0.0
+var _cloud_strength := 0.4
+var _cloud_off := Vector2.ZERO
 
 # Пресеты: имя, поворот солнца(°), энергия/цвет солнца, ambient, цвета неба, туман, тон, дождь(0/1), ветер(м/с), направление(°)
 const PRESETS := [
 	{"name": "☀ Ясный день", "srot": Vector3(-52, -120, 0), "se": 1.35, "sc": Color(1.0, 0.97, 0.9),
-	 "amb": Color(0.52, 0.6, 0.72), "ae": 0.35, "top": Color(0.22, 0.43, 0.75), "hor": Color(0.72, 0.81, 0.9),
+	 "amb": Color(0.52, 0.6, 0.72), "ae": 0.35, "top": Color(0.16, 0.38, 0.80), "hor": Color(0.70, 0.80, 0.92),
 	 "gnd": Color(0.55, 0.62, 0.7), "fog": 0.0000012, "fogc": Color(0.78, 0.84, 0.92),
 	 "br": 1.25, "sat": 1.15, "rain": 0.0, "lit": 0.02, "cov": 0.32, "ccol": Color(1,1,1), "cdark": Color(0.62,0.66,0.72), "wind": 3.0, "wdir": 40.0},
 
@@ -36,12 +38,12 @@ const PRESETS := [
 	{"name": "🌇 Закат", "srot": Vector3(-8, -95, 0), "se": 1.4, "sc": Color(1.0, 0.62, 0.32),
 	 "amb": Color(0.5, 0.4, 0.42), "ae": 0.3, "top": Color(0.28, 0.3, 0.55), "hor": Color(0.95, 0.55, 0.32),
 	 "gnd": Color(0.5, 0.42, 0.42), "fog": 0.000004, "fogc": Color(0.85, 0.55, 0.4),
-	 "br": 1.2, "sat": 1.3, "rain": 0.0, "lit": 0.28, "fh": 940, "fhd": 0.0, "cov": 0.48, "ccol": Color(1.0,0.82,0.66), "cdark": Color(0.62,0.44,0.5), "wind": 2.5, "wdir": 300.0},
+	 "br": 1.2, "sat": 1.3, "rain": 0.0, "lit": 0.22, "fh": 940, "fhd": 0.0, "cov": 0.48, "ccol": Color(1.0,0.82,0.66), "cdark": Color(0.62,0.44,0.5), "wind": 2.5, "wdir": 300.0},
 
 	{"name": "🌙 Ночь", "srot": Vector3(-42, -60, 0), "se": 0.14, "sc": Color(0.6, 0.68, 0.9),
 	 "amb": Color(0.12, 0.15, 0.24), "ae": 0.4, "top": Color(0.03, 0.04, 0.1), "hor": Color(0.09, 0.11, 0.2),
 	 "gnd": Color(0.06, 0.07, 0.12), "fog": 0.000009, "fogc": Color(0.1, 0.12, 0.2),
-	 "br": 0.95, "sat": 0.8, "rain": 0.0, "lit": 0.6, "fh": 900, "fhd": 0.0, "cov": 0.5, "ccol": Color(0.32,0.35,0.44), "cdark": Color(0.1,0.12,0.18), "wind": 5.0, "wdir": 120.0},
+	 "br": 0.95, "sat": 0.8, "rain": 0.0, "lit": 0.45, "fh": 900, "fhd": 0.0, "cov": 0.5, "ccol": Color(0.22,0.24,0.32), "cdark": Color(0.07,0.08,0.13), "wind": 5.0, "wdir": 120.0},
 ]
 
 
@@ -110,17 +112,23 @@ func apply(i: int) -> void:
 	sky.set_shader_parameter("night", 1.0 if idx == 4 else 0.0)
 	var wa := deg_to_rad(p.wdir)
 	sky.set_shader_parameter("wind_dir", Vector2(cos(wa), sin(wa)))
-	env.fog_density = p.fog
-	env.fog_light_color = p.fogc
+	# воздушная перспектива: экспоненциальный туман ×40 относительно старых значений
+	# (ясно → видимость ~60 км, пасмурно ~15 км, шторм ~6 км); цвет дымки уводим к небу
+	env.fog_density = float(p.fog) * 40.0
+	env.fog_light_color = Color(p.fogc).lerp(Color(p.hor), 0.5)
+	env.fog_aerial_perspective = 0.85
+	env.fog_sky_affect = 0.18
+	# тени облаков: сила по пресету (нет при сплошной облачности/ночью почти нет)
+	_cloud_strength = {0: 0.45, 1: 0.22, 2: 0.0, 3: 0.40, 4: 0.12}.get(idx, 0.3)
 	env.fog_height = p.get("fh", 0.0)
 	env.fog_height_density = p.get("fhd", 0.0)
 	# под ACES-тонмаппинг: пресеты писались под FILMIC с br 1.25 — приводим к естественному
 	env.adjustment_brightness = 0.92 + (float(p.br) - 1.0) * 0.5
-	env.adjustment_saturation = 1.0 + (float(p.sat) - 1.0) * 0.6
+	env.adjustment_saturation = 0.86 + (float(p.sat) - 1.0) * 0.5
 	sun.light_energy = float(p.se) * 1.35
 	env.ambient_light_energy = float(p.ae) * 1.1
 	if idx == 4:                                   # ночь: под ACES темнее, чем задумано — компенсируем
-		env.ambient_light_energy *= 3.2
+		env.ambient_light_energy *= 2.6
 		env.adjustment_brightness += 0.22
 		sun.light_energy *= 2.6                    # «луна» — иначе рельеф не читается вовсе
 		env.glow_intensity = 0.6
@@ -160,6 +168,10 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _process(dt: float) -> void:
+	# движение теней облаков по ветру (uv-смещение; масштаб 1/2500 м на текстуру)
+	_cloud_off += Vector2(wind.x, wind.z) * dt * 0.0004 * 1.5
+	RenderingServer.global_shader_parameter_set("cloud_shadow_params",
+		Vector4(_cloud_off.x, _cloud_off.y, _cloud_strength, 0.0004))
 	_t += dt
 	if main != null and main.cam != null:
 		_rain_holder.global_position = main.cam.global_position

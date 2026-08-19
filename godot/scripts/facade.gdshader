@@ -15,6 +15,15 @@ varying vec4 vdim;
 varying vec3 lnorm;
 varying vec2 vuv;
 varying float bseed;
+varying vec2 wxz;
+// тени облаков (глобальные uniform'ы)
+global uniform sampler2D cloud_shadow_tex;
+global uniform vec4 cloud_shadow_params;
+float cloud_shadow(vec2 pxz) {
+	float n = texture(cloud_shadow_tex, pxz * cloud_shadow_params.w + cloud_shadow_params.xy).r;
+	return 1.0 - smoothstep(0.50, 0.72, n) * cloud_shadow_params.z;
+}
+
 
 const float COL_STEP = 3.2;
 const float FLOOR_H  = 3.0;
@@ -36,6 +45,7 @@ void vertex() {
 	lnorm = NORMAL;
 	vuv = UV;
 	bseed = float(INSTANCE_ID);
+	wxz = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xz;
 }
 
 void fragment() {
@@ -93,10 +103,12 @@ void fragment() {
 			if (m < 0.12) {
 				col = win_frame;
 			} else {
-				bool lit = h21(vec2(bseed * 17.0 + ci, fi + 1.0)) < lit_amount;
+				// часть домов «спит» целиком (45 %), в остальных — доля окон по lit_amount
+				float house_awake = step(0.45, h21(vec2(bseed * 3.1, 7.7)));
+				bool lit = h21(vec2(bseed * 17.0 + ci, fi + 1.0)) < lit_amount * 0.7 * house_awake;
 				if (lit) {
 					col = vec3(1.0, 0.86, 0.58);
-					emit = vec3(1.0, 0.80, 0.45) * 1.7;
+					emit = vec3(1.0, 0.78, 0.42) * 2.2;
 				} else {
 					col = win_glass;
 					if (dx < 0.03 || abs(fv - WIN_H * 0.5) < 0.03) col = win_frame;
@@ -114,7 +126,7 @@ void fragment() {
 		}
 	}
 
-	ALBEDO = col;
+	ALBEDO = col * cloud_shadow(wxz);
 	EMISSION = emit;
 	ROUGHNESS = (zface || xface) ? 0.85 : 1.0;
 }

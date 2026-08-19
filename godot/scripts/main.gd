@@ -296,8 +296,8 @@ func _build_buildings() -> void:
 	var chimneys: Array[Transform3D] = []
 
 	# палитры базового цвета стен по типам (белёная штукатурка / голубая / дерево / ПГТ)
-	var plaster := [Color(0.90,0.89,0.85), Color(0.82,0.86,0.90), Color(0.88,0.85,0.78),
-		Color(0.93,0.92,0.88), Color(0.86,0.80,0.72)]
+	var plaster := [Color(0.76,0.75,0.71), Color(0.70,0.74,0.78), Color(0.75,0.72,0.66),
+		Color(0.80,0.79,0.75), Color(0.73,0.68,0.61), Color(0.62,0.70,0.64)]
 	var wood := [Color(0.50,0.38,0.26), Color(0.44,0.34,0.24)]
 	var blockc := [Color(0.78,0.78,0.76), Color(0.72,0.74,0.72), Color(0.82,0.80,0.75)]
 	var roof_cols := [Color(1,1,1.02), Color(0.82,0.82,0.86), Color(1.15,0.6,0.42),
@@ -672,8 +672,8 @@ func _build_environment() -> void:
 	env.background_mode = Environment.BG_SKY
 	env.sky = sky
 	# тонмаппинг: ACES (кино-кривая, естественные света и небо), без «мультяшной» яркости
-	env.tonemap_mode = Environment.TONE_MAPPER_ACES
-	env.tonemap_white = 6.0
+	env.tonemap_mode = Environment.TONE_MAPPER_AGX
+	env.tonemap_white = 4.0
 	env.tonemap_exposure = 1.0
 	env.adjustment_enabled = true
 	env.adjustment_brightness = 1.0
@@ -720,6 +720,17 @@ func _build_environment() -> void:
 	environment = env
 	var we := WorldEnvironment.new(); we.environment = env
 	add_child(we)
+
+	# текстура теней облаков — глобальный uniform для всех шейдеров поверхностей
+	var cn := FastNoiseLite.new()
+	cn.noise_type = FastNoiseLite.TYPE_SIMPLEX
+	cn.frequency = 0.010
+	cn.fractal_octaves = 4
+	cn.seed = 7
+	var cimg := cn.get_seamless_image(512, 512)
+	cimg.generate_mipmaps()
+	RenderingServer.global_shader_parameter_set("cloud_shadow_tex", ImageTexture.create_from_image(cimg))
+	RenderingServer.global_shader_parameter_set("cloud_shadow_params", Vector4(0, 0, 0.4, 0.0004))
 
 	sun = DirectionalLight3D.new()
 	sun.rotation_degrees = Vector3(-38, -125, 0)

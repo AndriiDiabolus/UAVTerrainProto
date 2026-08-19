@@ -15,6 +15,15 @@ uniform sampler2D noise_tex : filter_linear_mipmap, repeat_enable;   // бесш
 uniform float detail_range = 1400.0;
 uniform bool uv_debug = false;
 
+
+// тени облаков (глобальные uniform'ы: текстура шума + (offset.xy, сила, масштаб 1/м))
+global uniform sampler2D cloud_shadow_tex;
+global uniform vec4 cloud_shadow_params;
+float cloud_shadow(vec2 pxz) {
+	float n = texture(cloud_shadow_tex, pxz * cloud_shadow_params.w + cloud_shadow_params.xy).r;
+	return 1.0 - smoothstep(0.50, 0.72, n) * cloud_shadow_params.z;
+}
+
 varying vec3 wpos;
 varying vec3 wnorm;
 
@@ -81,7 +90,7 @@ void fragment() {
 		vec3 wn = normalize(wnorm + (vec3(1,0,0) * nd.x + vec3(0,0,1) * nd.y) * (0.9 * near));
 		NORMAL = normalize((VIEW_MATRIX * vec4(wn, 0.0)).xyz);
 
-		ALBEDO = base;
+		ALBEDO = base * cloud_shadow(wpos.xz);
 		ROUGHNESS = 0.88 + 0.12 * nB - grassW * 0.05;
 		SPECULAR = 0.12;
 	}

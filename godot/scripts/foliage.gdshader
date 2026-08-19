@@ -11,7 +11,17 @@ uniform float pivot_y = 0.0;
 uniform vec3 base_color : source_color = vec3(0.15, 0.3, 0.12);
 uniform float leaf_flutter = 1.0;   // хвоя дрожит меньше, листва больше
 
+
+// тени облаков (глобальные uniform'ы: текстура шума + (offset.xy, сила, масштаб 1/м))
+global uniform sampler2D cloud_shadow_tex;
+global uniform vec4 cloud_shadow_params;
+float cloud_shadow(vec2 pxz) {
+	float n = texture(cloud_shadow_tex, pxz * cloud_shadow_params.w + cloud_shadow_params.xy).r;
+	return 1.0 - smoothstep(0.50, 0.72, n) * cloud_shadow_params.z;
+}
+
 varying float vdist;
+varying vec2 wxz;
 
 void vertex() {
 	vec3 o = MODEL_MATRIX[3].xyz;
@@ -29,6 +39,7 @@ void vertex() {
 	// мелкий трепет листьев (по UV, чтобы края карты «дышали»)
 	VERTEX.y += sin(t * 3.1 + rnd + UV.x * 6.0) * 0.03 * wind_strength * leaf_flutter * h;
 	vdist = length((MODELVIEW_MATRIX * vec4(VERTEX, 1.0)).xyz);
+	wxz = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xz;
 }
 
 void fragment() {
@@ -37,7 +48,7 @@ void fragment() {
 	float thr = 0.5 - 0.28 * clamp(vdist / 1200.0, 0.0, 1.0);
 	ALPHA = c.a;
 	ALPHA_SCISSOR_THRESHOLD = thr;
-	ALBEDO = c.rgb * base_color * COLOR.rgb;
+	ALBEDO = c.rgb * base_color * COLOR.rgb * cloud_shadow(wxz);
 	// нормаль: смесь нормали карты и «вверх» — крона освещается как объём, а не как плоскость
 	vec3 up_v = normalize((VIEW_MATRIX * vec4(0.0, 1.0, 0.0, 0.0)).xyz);
 	vec3 n = normalize(NORMAL);

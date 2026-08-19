@@ -50,10 +50,16 @@ void sky() {
 	vec3 col = mix(horizon_color, top_color, clamp(pow(max(up, 0.0), 0.6), 0.0, 1.0));
 	col = mix(col, ground_color, clamp(-up * 6.0, 0.0, 1.0));
 
-	// солнце: диск + ореол
+	// дымка у горизонта: небо «молочнеет» к горизонту (рассеяние Ми в толще воздуха)
+	float hz = pow(1.0 - clamp(up, 0.0, 1.0), 5.0);
+	col = mix(col, horizon_color * 1.04 + vec3(0.03), hz * 0.6 * (1.0 - night * 0.7));
+
+	// солнце: диск + узкий ореол Ми + широкое свечение
 	float sd = max(dot(normalize(dir), normalize(sun_dir)), 0.0);
 	col += sun_color * pow(sd, 2500.0) * 12.0;                 // диск
-	col += sun_color * pow(sd, 8.0) * 0.25 * (1.0 - night);    // ореол
+	col += sun_color * pow(sd, 160.0) * 0.9 * (1.0 - night);   // ореол Ми (forward scattering)
+	col += sun_color * pow(sd, 8.0) * 0.22 * (1.0 - night);    // широкое свечение
+	col += sun_color * pow(sd, 2.5) * 0.05 * (1.0 - night) * hz; // подсветка дымки у горизонта со стороны солнца
 
 	// звёзды ночью — маленькие точки, по одной на редкую ячейку
 	if (night > 0.3 && up > 0.05) {
