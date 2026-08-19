@@ -48,8 +48,9 @@ void fragment() {
 	// --- эффекты «в сигнале» (до объектива по порядку обработки, но в экранных координатах):
 	// jello, срывы строк, срыв синхры — сдвигают и картинку, и OSD
 	vec2 suv = uv;
-	suv.x += jello_amp * sin(uv.y * 62.0 + t * 90.0) + jello_amp * 0.6 * sin(uv.y * 170.0 + t * 120.0);
-	suv.y += jello_amp * 0.3 * sin(t * 37.0);
+	float ja = jello_amp * (1.0 - thermal);      // LWIR — глобальный затвор, «желе» нет
+	suv.x += ja * sin(uv.y * 62.0 + t * 90.0) + ja * 0.6 * sin(uv.y * 170.0 + t * 120.0);
+	suv.y += ja * 0.3 * sin(t * 37.0);
 	float dq = 1.0 - link_q;
 	if (link_type == 0) {
 		float tear = step(1.0 - dq * 0.45, rnd(vec2(line, floor(t * 30.0))));
@@ -81,33 +82,35 @@ void fragment() {
 	if (thermal > 0.5) {
 		// --- LWIR 256×192: температура в люме кадра (EMISSION наших материалов) ---
 		vec2 res = vec2(256.0, 192.0);
-		vec2 tuv = (floor(src * res) + 0.5) / res;
+		vec2 g = src * res - 0.5;
+		vec2 gi = floor(g); vec2 gf = fract(g);
 		float px = 1.0 / res.x, py = 1.0 / res.y;
-		float t0 = dot(fetch(tuv), vec3(0.299, 0.587, 0.114));
-		// AGC: окно вокруг средней температуры кадра (среднее — из грубого мипа), горячее — клип
-		// среднее по земле (нижние 2/3 кадра, грубый мип), а не по всему кадру с холодным небом
+		// температура в 4 соседних «пикселях» матрицы → билинейный апскейл (как у реальных тепловизоров)
+		#define TL(o) dot(fetch((gi + 0.5 + o) / res), vec3(0.299, 0.587, 0.114))
+		float t00 = TL(vec2(0.0, 0.0)), t10 = TL(vec2(1.0, 0.0)), t01 = TL(vec2(0.0, 1.0)), t11 = TL(vec2(1.0, 1.0));
+		float t0 = mix(mix(t00, t10, gf.x), mix(t01, t11, gf.x), gf.y);
+		// AGC: окно вокруг средней температуры земли (нижние 2/3 кадра, грубый мип); горячее — клип
 		float m = 0.0;
 		for (int i = 0; i < 3; i++) for (int j = 0; j < 2; j++) {
 			m += dot(textureLod(video, vec2(0.2 + 0.3 * float(i), 0.55 + 0.3 * float(j)), 6.0).rgb, vec3(0.299, 0.587, 0.114));
 		}
 		m /= 6.0;
-		float lo = m - 0.20, hi = m + 0.24;
+		float lo = m - 0.22, hi = m + 0.30;
 		float tv = clamp((t0 - lo) / (hi - lo), 0.0, 1.0);
 		// ореол (halo) вокруг горячих объектов: размытый избыток
 		float hot = 0.0;
 		for (int i = -2; i <= 2; i++) for (int j = -2; j <= 2; j++) {
-			float tt = dot(fetch(tuv + vec2(float(i) * px, float(j) * py) * 1.5), vec3(0.299, 0.587, 0.114));
-			hot += max(tt - (m + 0.25), 0.0);
+			float tt = dot(fetch(src + vec2(float(i) * px, float(j) * py) * 1.5), vec3(0.299, 0.587, 0.114));
+			hot += max(tt - (m + 0.28), 0.0);
 		}
-		tv += hot / 25.0 * 1.6;
-		// «кипение» матрицы: пространственно-временной шум + фиксированный паттерн (FPN)
-		tv += (rnd(tuv * res + floor(t * 25.0) * 3.7) - 0.5) * 0.05 + (rnd(tuv * res * 3.1) - 0.5) * 0.02;
+		tv += hot / 25.0 * 1.4;
+		// «кипение» матрицы (временной шум) + слабый фиксированный паттерн (FPN)
+		vec2 tuv = (gi + 0.5) / res;
+		tv += (rnd(tuv * res + floor(t * 25.0) * 3.7) - 0.5) * 0.022 + (rnd(tuv * res * 3.1) - 0.5) * 0.008;
 		tv = clamp(tv, 0.0, 1.0);
 		if (thermal_palette == 0) col = vec3(tv);
 		else if (thermal_palette == 1) col = vec3(1.0 - tv);
 		else col = ironbow(tv);
-		// мягкая билинейная «размазанность» апскейла: смешать с соседним пикселем
-		col = mix(col, col * 0.92 + 0.08 * vec3(tv), 0.5);
 	} else if (link_type == 0) {
 		// --- аналог ---
 		// люма полная, цветность размыта по горизонтали (NTSC) + хроматическая аберрация к краю

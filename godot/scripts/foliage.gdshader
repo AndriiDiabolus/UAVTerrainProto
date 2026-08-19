@@ -60,5 +60,5 @@ void fragment() {
 	ROUGHNESS = 0.92;
 	SPECULAR = 0.15;
 	BACKLIGHT = vec3(0.30, 0.34, 0.16) * c.rgb;   // просвет листвы на солнце
-	if (thermal_params.x > 0.5) { ALBEDO = vec3(0.0); EMISSION = vec3(mix(0.31, 0.26, thermal_params.y)); BACKLIGHT = vec3(0.0); }
+	if (thermal_params.x > 0.5) { ALBEDO = vec3(0.0); EMISSION = vec3(mix(0.26, 0.23, thermal_params.y)); BACKLIGHT = vec3(0.0); }
 }

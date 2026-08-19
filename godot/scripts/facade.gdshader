@@ -139,7 +139,7 @@ void fragment() {
 	EMISSION = emit;
 	if (thermal_params.x > 0.5) {
 		float hot = step(0.5, length(emit));          // освещённое окно — тёплое
-		ALBEDO = vec3(0.0); EMISSION = vec3(mix(mix(0.46, 0.40, thermal_params.y), 0.78, hot));
+		ALBEDO = vec3(0.0); EMISSION = vec3(mix(mix(0.56, 0.46, thermal_params.y), 0.85, hot));
 	}
 	ROUGHNESS = (zface || xface) ? 0.85 : 1.0;
 }

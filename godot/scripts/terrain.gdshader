@@ -168,11 +168,11 @@ void fragment() {
 			// температура поверхности: вода холодная, лес прохладный, пашня/голая земля тёплые, дорога/застройка горячие;
 			// южные склоны теплее, низины холоднее; ночью всё остывает, асфальт и камень держат тепло
 			float night = thermal_params.y;
-			float tmp = 0.40;
-			tmp = mix(tmp, 0.30, forest); tmp = mix(tmp, 0.38, meadow); tmp = mix(tmp, 0.44 + 0.06 * stub, crop);
-			tmp = mix(tmp, 0.48, bare); tmp = mix(tmp, 0.52, builtc); tmp = mix(tmp, 0.14, waterc);
+			float tmp = 0.36;
+			tmp = mix(tmp, 0.27, forest); tmp = mix(tmp, 0.33, meadow); tmp = mix(tmp, 0.42 + 0.08 * stub, crop);
+			tmp = mix(tmp, 0.50, bare); tmp = mix(tmp, 0.40, builtc); tmp = mix(tmp, 0.12, waterc);
 			float road = step(1.5, cls) * step(cls, 2.5);
-			tmp = mix(tmp, 0.62, road);
+			tmp = mix(tmp, 0.66, road);
 			tmp += wnorm.z * 0.05 - (0.5 - nA) * 0.06 + rockW * 0.06;
 			tmp = mix(tmp, tmp * 0.72 + road * 0.08 + rockW * 0.06, night);
 			ALBEDO = vec3(0.0); EMISSION = vec3(tmp); ROUGHNESS = 1.0; SPECULAR = 0.0;

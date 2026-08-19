@@ -60,5 +60,5 @@ void fragment() {
 	ROUGHNESS = 0.95;
 	SPECULAR = 0.1;
 	BACKLIGHT = vec3(0.35, 0.4, 0.15) * c.rgb;
-	if (thermal_params.x > 0.5) { ALBEDO = vec3(0.0); EMISSION = vec3(mix(0.37, 0.30, thermal_params.y)); BACKLIGHT = vec3(0.0); }
+	if (thermal_params.x > 0.5) { ALBEDO = vec3(0.0); EMISSION = vec3(mix(0.33, 0.28, thermal_params.y)); BACKLIGHT = vec3(0.0); }
 }

@@ -12,9 +12,9 @@ var _mats := {}                   # temp -> StandardMaterial3D
 var _saved := {}                  # instance_id -> прежний material_override (восстанавливаем при выключении)
 var _acc := 0.0
 # температуры по группам (день); ночью ×0.8 кроме техники/людей
-const T_ROAD := 0.62
-const T_ROOF := 0.56
-const T_PROP := 0.42
+const T_ROAD := 0.66
+const T_ROOF := 0.68
+const T_PROP := 0.45
 const T_VEHICLE := 0.88
 const T_SOLDIER := 0.95
 const T_CAR := 0.80
