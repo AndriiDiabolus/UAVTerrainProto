@@ -59,6 +59,7 @@ func setup(m: Node3D, s: DirectionalLight3D, e: Environment, sk: ShaderMaterial)
 	sky = sk
 	_build_rain()
 	_parse_time_flags()
+	_fog_extra = "--fog" in OS.get_cmdline_user_args()
 	var start := 0
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--weather="):
@@ -152,9 +153,18 @@ func apply(i: int) -> void:
 	if main != null and main.has_method("set_window_light"):
 		main.set_window_light(p.get("lit", 0.03))
 	# ручные тумблеры (6/7) поверх любого пресета
-	if _fog_extra:
-		env.fog_height = 940.0
-		env.fog_height_density = 0.006
+	# туман по долинам (объёмный, пятнами): клавиша 6 — включить с полной плотностью (рассеется на солнце);
+	# пасмурно/дождь/ночь/закат — держится сам с меньшей плотностью
+	env.fog_height_density = 0.0
+	if main.get("valley_fog") != null:
+		if _fog_extra:
+			main.valley_fog.set_enabled(true, true, idx in [1, 2, 5], 1.0)
+		else:
+			var auto := {1: 0.35, 2: 0.6, 3: 0.35, 4: 0.45, 5: 0.5}
+			if auto.has(idx):
+				main.valley_fog.set_enabled(true, true, idx in [1, 2, 5], float(auto[idx]))
+			else:
+				main.valley_fog.set_enabled(false)
 	_rain.emitting = (p.rain > 0.0) or _rain_extra
 	var pm := _rain.process_material as ParticleProcessMaterial
 	pm.gravity = Vector3(wind.x * 0.7, -12.0, wind.z * 0.7)

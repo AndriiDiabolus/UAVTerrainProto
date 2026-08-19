@@ -45,6 +45,7 @@ func _ready() -> void:
 	_build_props()
 	_build_buildings()
 	_spawn_camera()
+	_build_valley_fog()
 	_build_weather()
 	_build_forest()
 	_build_yards()
@@ -447,7 +448,7 @@ func apply_quality(q: int) -> void:
 			environment.glow_enabled = false
 			environment.ssao_enabled = false
 			environment.ssil_enabled = false
-			environment.volumetric_fog_enabled = false
+			environment.volumetric_fog_enabled = valley_fog != null and valley_fog.enabled
 			if forest != null: forest.radius = 1400.0
 			if grass != null: grass.enabled = false
 			if props != null: props.pool = 6
@@ -461,7 +462,7 @@ func apply_quality(q: int) -> void:
 			environment.glow_enabled = true
 			environment.ssao_enabled = true
 			environment.ssil_enabled = false
-			environment.volumetric_fog_enabled = false
+			environment.volumetric_fog_enabled = valley_fog != null and valley_fog.enabled
 			if forest != null: forest.radius = 2200.0
 			if grass != null: grass.enabled = true; grass.radius = 45.0
 			if props != null: props.pool = 12
@@ -796,6 +797,16 @@ func _build_environment() -> void:
 	sun.shadow_normal_bias = 1.6
 	sun.shadow_opacity = 0.92
 	add_child(sun)
+
+
+var valley_fog: Node3D
+
+func _build_valley_fog() -> void:
+	valley_fog = Node3D.new()
+	valley_fog.name = "ValleyFog"
+	valley_fog.set_script(load("res://scripts/valley_fog.gd"))
+	add_child(valley_fog)
+	valley_fog.setup(self)
 
 
 var weather: Node3D
