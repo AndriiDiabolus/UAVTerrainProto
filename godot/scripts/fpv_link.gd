@@ -16,6 +16,8 @@ var mat: ShaderMaterial
 var osd_layer: CanvasLayer
 var osd_vp: SubViewport
 var link_type := 0                 # 0 аналог, 1 цифра
+var camera := 0                    # 0 аналог (Caddx/Runcam), 1 цифра DJI O3, 2 ночная ч/б (Night Eagle), 3 тепловизор
+const CAMERA_NAMES := ["ANALOG 1200TVL", "DJI O3", "NIGHT EAGLE B/W", "THERMAL 256"]
 var link_eff := 1.0                # эффективное качество канала (с бурстами)
 var frozen := false
 var lost_t := 0.0
@@ -109,9 +111,21 @@ func set_enabled(on: bool) -> void:
 		frozen = false; lost_t = 0.0
 
 
+## Переключение камеры (C — цикл, T — тепло). Тип линка: цифра только у DJI O3, остальные — аналог 5.8 ГГц.
+func set_camera(c: int) -> void:
+	camera = posmod(c, 4)
+	if main.thermal != null:
+		main.thermal.set_active(camera == 3)
+	_apply_profile()
+	print("Камера: ", CAMERA_NAMES[camera])
+
+
+func camera_name() -> String:
+	return CAMERA_NAMES[camera]
+
+
 func _apply_profile() -> void:
-	var id := str(main.cam.get("drone_id"))
-	link_type = 1 if id == "mavic" else 0
+	link_type = 1 if camera == 1 else 0
 	# разрешение рендера: эквидистантная проекция увеличивает центр ×2.8, поэтому рендерим крупнее «сигнала»
 	var q: int = int(main.quality)
 	if link_type == 1:
@@ -134,8 +148,6 @@ func _sync_cam() -> void:
 func _process(dt: float) -> void:
 	if not enabled or main == null or main.cam == null:
 		return
-	if str(main.cam.get("drone_id")) != ("mavic" if link_type == 1 else str(main.cam.get("drone_id"))):
-		_apply_profile()
 	_sync_cam()
 	_frame_t += dt
 	# --- качество канала: RSSI с OSD + бурсты помех (Пуассон) ---
@@ -161,7 +173,7 @@ func _process(dt: float) -> void:
 			frozen = false
 			lost_t = 0.0
 	# --- тепловизор: узкий FOV, 25 к/с, FFC-фриз 0.4 с каждые 45–120 с ---
-	var th: bool = main.thermal != null and main.thermal.active
+	var th: bool = camera == 3 and main.thermal != null and main.thermal.active
 	cam.fov = FOV_THERMAL if th else FOV_H
 	(cam.attributes as CameraAttributesPractical).auto_exposure_enabled = not th
 	mat.set_shader_parameter("fov_render", cam.fov)
@@ -210,6 +222,7 @@ func _process(dt: float) -> void:
 	mat.set_shader_parameter("sun_uv", sun_uv)
 	mat.set_shader_parameter("sun_vis", _sun_vis)
 	mat.set_shader_parameter("night", night)
+	mat.set_shader_parameter("night_cam", 1.0 if camera == 2 else 0.0)
 	mat.set_shader_parameter("lost", 1.0 if (frozen and lost_t > 1.5) else 0.0)
 	mat.set_shader_parameter("frame_t", _frame_t)
 	if main._fpv_osd != null:

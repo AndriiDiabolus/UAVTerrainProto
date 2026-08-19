@@ -102,6 +102,8 @@ func _draw() -> void:
 	_txt(f, Vector2(24, 30), "ARMED" if not main.crashed else "DISARMED", fs)
 	_txt(f, Vector2(cx - 34, 30), "%02d:%02d" % [mm, ss], fs + 2)
 	_txt(f, Vector2(vp.x - 150, 30), mode_s, fs)
+	if main.get("hud") != null and main.hud.get("fpv_link") != null and main.hud.fpv_link != null:
+		_txt(f, Vector2(vp.x - 190, 56), main.hud.fpv_link.camera_name(), fs - 3)
 	if link_type == 0:
 		draw_circle(Vector2(cx + 38, 24), 5.0, OUTL)
 		draw_circle(Vector2(cx + 38, 24), 4.0, Color(1, 0.25, 0.2, 0.4 + 0.6 * float(blink)))

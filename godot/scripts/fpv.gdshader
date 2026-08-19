@@ -20,6 +20,7 @@ uniform float night = 0.0;
 uniform float lost = 0.0;
 uniform float frame_t = 0.0;
 uniform float thermal = 0.0;
+uniform float night_cam = 0.0;    // ночная ч/б камера (Night Eagle): усиление, зерно, блюминг фонарей
 uniform int thermal_palette = 0;
 uniform float vignette : hint_range(0.0, 1.5) = 0.55;
 uniform vec3 white_balance : source_color = vec3(1.04, 1.0, 0.94);   // тёплая камера (Caddx-like)
@@ -111,6 +112,28 @@ void fragment() {
 		if (thermal_palette == 0) col = vec3(tv);
 		else if (thermal_palette == 1) col = vec3(1.0 - tv);
 		else col = ironbow(tv);
+	} else if (night_cam > 0.5) {
+		// --- ночная ч/б камера: AGC по средней яркости, мягкий клип, блюминг вокруг ярких источников, зерно ∝ усилению ---
+		float px = 1.0 / tex_size.x;
+		vec3 c0 = fetch(src);
+		float l0 = dot(c0, vec3(0.299, 0.587, 0.114));
+		float m = dot(textureLod(video, vec2(0.5), 8.0).rgb, vec3(0.299, 0.587, 0.114));
+		float gain = clamp(0.35 / max(m, 0.002), 1.0, 40.0);
+		float v = l0 * gain;
+		// блюминг: яркие источники растекаются
+		float bl = 0.0;
+		for (int i = -2; i <= 2; i++) for (int j = -2; j <= 2; j++) {
+			float tt = dot(fetch(src + vec2(float(i), float(j)) * px * 2.5), vec3(0.299, 0.587, 0.114)) * gain;
+			bl += max(tt - 1.0, 0.0);
+		}
+		v += bl / 25.0 * 0.8;
+		v = v / (1.0 + v * 0.6);                                  // мягкое колено
+		float gn = (rnd(src * tex_size + floor(t * 30.0) * 1.3) - 0.5) * (0.03 + 0.012 * sqrt(gain));
+		v = clamp(v + gn, 0.0, 1.0);
+		col = vec3(v) * vec3(0.93, 1.0, 0.96);
+		// далее — аналоговый тракт (строчки, деградация) применяется ниже как к обычному аналогу
+		float odd = mod(line, 2.0);
+		col *= 1.0 - 0.06 * odd;
 	} else if (link_type == 0) {
 		// --- аналог ---
 		// люма полная, цветность размыта по горизонтали (NTSC) + хроматическая аберрация к краю

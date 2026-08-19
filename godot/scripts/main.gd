@@ -854,11 +854,14 @@ func _unhandled_input(event: InputEvent) -> void:
 			_respawn()
 		elif event.keycode == KEY_G:
 			apply_quality((quality + 1) % 3)
-		elif event.keycode == KEY_T:
-			if thermal != null:
+		elif event.keycode == KEY_T or event.keycode == KEY_C:
+			if hud.fpv_link != null:
 				if not hud.fpv_on:
-					hud._toggle_fpv()          # тепловизор — это камера дрона: только через FPV
-				thermal.toggle()
+					hud._toggle_fpv()          # камеры — это FPV-картинка
+				if event.keycode == KEY_C:
+					hud.fpv_link.set_camera(hud.fpv_link.camera + 1)
+				else:
+					hud.fpv_link.set_camera(3 if hud.fpv_link.camera != 3 else 0)
 		elif event.keycode == KEY_Y and thermal != null:
 			thermal.cycle_palette()
 

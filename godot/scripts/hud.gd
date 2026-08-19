@@ -230,7 +230,7 @@ func _process(_dt: float) -> void:
 		var src: String = ("пульт: " + str(cam.joy_name)) if str(cam.joy_name) != "" else "клавиатура"
 		fline = "\n[%s]  %s  ·  %s%s  ·  качество: %s (G)" % [cam.mode_name(), cam.drone_name(), src,
 			("  ·  НА ЗЕМЛЕ" if cam.landed else ""), main.QUALITY_NAMES[main.quality]]
-	hud_label.text = "%.5f°N  %.5f°E\nMSL %d м   AGL %d м\nскорость %d м/с   FPS %d%s%s%s\nW/S тангаж · A/D крен · E/Q газ · ←/→ рыскание · Tab режим · B дрон · Shift буст · ЛКМ огонь · 1-5/8/P погода · 6 туман · 7 дождь · M звук · F FPV · T тепловизор · R рестарт" % [
+	hud_label.text = "%.5f°N  %.5f°E\nMSL %d м   AGL %d м\nскорость %d м/с   FPS %d%s%s%s\nW/S тангаж · A/D крен · E/Q газ · ←/→ рыскание · Tab режим · B дрон · Shift буст · ЛКМ огонь · 1-5/8/P погода · 6 туман · 7 дождь · M звук · F FPV · C камера · T тепло · R рестарт" % [
 		ll.x, ll.y, int(p.y), int(p.y - ground), int(spd), int(Engine.get_frames_per_second()), fline, tline, wline]
 	_update_target_marker(p)
 	_update_mission_marker()
