@@ -688,11 +688,11 @@ func _build_environment() -> void:
 	env.glow_blend_mode = Environment.GLOW_BLEND_MODE_SOFTLIGHT
 	# контактные тени в складках/у домов/под кронами
 	env.ssao_enabled = true
-	env.ssao_radius = 2.5
-	env.ssao_intensity = 2.2
-	env.ssao_power = 1.6
-	env.ssao_detail = 0.6
-	env.ssao_light_affect = 0.15
+	env.ssao_radius = 2.0
+	env.ssao_intensity = 1.6
+	env.ssao_power = 1.5
+	env.ssao_detail = 0.5
+	env.ssao_light_affect = 0.2
 	env.ssao_ao_channel_affect = 0.0
 	# непрямое освещение с экрана — мягче тени под навесами, чуть цвета от земли
 	env.ssil_enabled = true

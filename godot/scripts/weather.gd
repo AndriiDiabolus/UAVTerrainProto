@@ -44,6 +44,11 @@ const PRESETS := [
 	 "amb": Color(0.12, 0.15, 0.24), "ae": 0.4, "top": Color(0.03, 0.04, 0.1), "hor": Color(0.09, 0.11, 0.2),
 	 "gnd": Color(0.06, 0.07, 0.12), "fog": 0.000009, "fogc": Color(0.1, 0.12, 0.2),
 	 "br": 0.95, "sat": 0.8, "rain": 0.0, "lit": 0.45, "fh": 900, "fhd": 0.0, "cov": 0.5, "ccol": Color(0.22,0.24,0.32), "cdark": Color(0.07,0.08,0.13), "wind": 5.0, "wdir": 120.0},
+
+	{"name": "☁☁ Пасмурно (overcast)", "srot": Vector3(-55, -110, 0), "se": 0.30, "sc": Color(0.9, 0.91, 0.93),
+	 "amb": Color(0.62, 0.64, 0.67), "ae": 0.75, "top": Color(0.58, 0.60, 0.64), "hor": Color(0.72, 0.73, 0.75),
+	 "gnd": Color(0.62, 0.63, 0.65), "fog": 0.000009, "fogc": Color(0.72, 0.73, 0.75),
+	 "br": 1.0, "sat": 0.78, "rain": 0.0, "lit": 0.08, "cov": 1.0, "ccol": Color(0.70,0.71,0.73), "cdark": Color(0.52,0.53,0.56), "wind": 6.0, "wdir": 250.0},
 ]
 
 
@@ -53,6 +58,7 @@ func setup(m: Node3D, s: DirectionalLight3D, e: Environment, sk: ShaderMaterial)
 	env = e
 	sky = sk
 	_build_rain()
+	_parse_time_flags()
 	var start := 0
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--weather="):
@@ -110,6 +116,8 @@ func apply(i: int) -> void:
 	sky.set_shader_parameter("cloud_color", p.get("ccol", Color(1, 1, 1)))
 	sky.set_shader_parameter("cloud_dark", p.get("cdark", Color(0.55, 0.58, 0.62)))
 	sky.set_shader_parameter("night", 1.0 if idx == 4 else 0.0)
+	if _sun_by_time:
+		_apply_ephemeris()
 	var wa := deg_to_rad(p.wdir)
 	sky.set_shader_parameter("wind_dir", Vector2(cos(wa), sin(wa)))
 	# воздушная перспектива: экспоненциальный туман ×40 относительно старых значений
@@ -119,7 +127,8 @@ func apply(i: int) -> void:
 	env.fog_aerial_perspective = 0.85
 	env.fog_sky_affect = 0.18
 	# тени облаков: сила по пресету (нет при сплошной облачности/ночью почти нет)
-	_cloud_strength = {0: 0.45, 1: 0.22, 2: 0.0, 3: 0.40, 4: 0.12}.get(idx, 0.3)
+	_cloud_strength = {0: 0.45, 1: 0.22, 2: 0.0, 3: 0.40, 4: 0.12, 5: 0.0}.get(idx, 0.3)
+	sun.shadow_opacity = 0.35 if idx == 5 else 0.92      # пасмурно: мягкие слабые тени
 	env.fog_height = p.get("fh", 0.0)
 	env.fog_height_density = p.get("fhd", 0.0)
 	# под ACES-тонмаппинг: пресеты писались под FILMIC с br 1.25 — приводим к естественному
@@ -154,6 +163,65 @@ func apply(i: int) -> void:
 var _fog_extra := false
 var _rain_extra := false
 
+# --- солнце по дате/времени (--date=YYYY-MM-DD --time=HH:MM, локальное время Киева UTC+3) ---
+var _sun_by_time := false
+var _date := [2026, 8, 18]
+var _time_h := 14.0
+
+func _parse_time_flags() -> void:
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--date="):
+			var p := a.substr(7).split("-")
+			if p.size() == 3:
+				_date = [int(p[0]), int(p[1]), int(p[2])]; _sun_by_time = true
+		elif a.begins_with("--time="):
+			var p := a.substr(7).split(":")
+			if p.size() >= 1:
+				_time_h = float(p[0]) + (float(p[1]) / 60.0 if p.size() > 1 else 0.0); _sun_by_time = true
+
+
+## Положение солнца (упрощённый NOAA-алгоритм: склонение + уравнение времени + часовой угол),
+## точность ~0.5° — достаточно, чтобы тени и свет соответствовали дате/часу.
+func sun_position(lat: float, lon: float, y: int, m: int, d: int, local_h: float, tz: float) -> Vector2:
+	var a := int((14 - m) / 12)
+	var yy := y + 4800 - a
+	var mm := m + 12 * a - 3
+	var jdn := d + int((153 * mm + 2) / 5) + 365 * yy + int(yy / 4) - int(yy / 100) + int(yy / 400) - 32045
+	var jd := float(jdn) + (local_h - tz) / 24.0 - 0.5
+	var n := jd - 2451545.0
+	var L := fmod(280.460 + 0.9856474 * n, 360.0)
+	var g := deg_to_rad(fmod(357.528 + 0.9856003 * n, 360.0))
+	var lam := deg_to_rad(L + 1.915 * sin(g) + 0.020 * sin(2.0 * g))
+	var eps := deg_to_rad(23.439 - 0.0000004 * n)
+	var decl := asin(sin(eps) * sin(lam))
+	var ra := atan2(cos(eps) * sin(lam), cos(lam))
+	var gmst := fmod(18.697374558 + 24.06570982441908 * n, 24.0)
+	var lst := deg_to_rad(fmod(gmst * 15.0 + lon, 360.0))
+	var ha := lst - ra
+	var latr := deg_to_rad(lat)
+	var alt := asin(sin(latr) * sin(decl) + cos(latr) * cos(decl) * cos(ha))
+	var az := atan2(-sin(ha), tan(decl) * cos(latr) - sin(latr) * cos(ha))   # от севера по часовой
+	return Vector2(rad_to_deg(alt), fmod(rad_to_deg(az) + 360.0, 360.0))
+
+
+func _apply_ephemeris() -> void:
+	var lat := float(main.meta.get("center_lat", 48.16))
+	var lon := float(main.meta.get("center_lon", 24.5))
+	var sp := sun_position(lat, lon, _date[0], _date[1], _date[2], _time_h, 3.0)
+	var alt := sp.x; var az := sp.y
+	# Godot: DirectionalLight светит по -Z; rotation.x = -alt (вниз), rotation.y = поворот к азимуту (север = -Z мира)
+	sun.rotation_degrees = Vector3(-maxf(alt, -2.0), 180.0 - az, 0.0)
+	var k := clampf(alt / 25.0, 0.0, 1.0)              # низкое солнце — теплее и слабее
+	sun.light_color = Color(1.0, 0.6 + 0.38 * k, 0.3 + 0.6 * k)
+	if alt < 0.0:
+		sun.light_energy = 0.05
+	else:
+		sun.light_energy *= clampf(0.25 + 0.75 * sin(deg_to_rad(minf(alt, 90.0))) * 1.2, 0.2, 1.3)
+	sky.set_shader_parameter("sun_dir", -sun.global_transform.basis.z)
+	sky.set_shader_parameter("sun_color", sun.light_color)
+	label += "  %02d:%02d солнце %d°" % [int(_time_h), int(fmod(_time_h, 1.0) * 60.0), int(alt)]
+	print("Солнце по эфемеридам: %s %.1f ч → высота %.1f°, азимут %.0f°" % [_date, _time_h, alt, az])
+
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
 		match event.keycode:
@@ -162,6 +230,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_3: apply(2)
 			KEY_4: apply(3)
 			KEY_5: apply(4)
+			KEY_8: apply(5)
 			KEY_6: _fog_extra = not _fog_extra; apply(idx)     # туман вкл/выкл
 			KEY_7: _rain_extra = not _rain_extra; apply(idx)   # дождь вкл/выкл
 			KEY_P: apply(idx + 1)
