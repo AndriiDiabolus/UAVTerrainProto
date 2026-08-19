@@ -116,9 +116,9 @@ void fragment() {
 		// люма полная, цветность размыта по горизонтали (NTSC) + хроматическая аберрация к краю
 		float px = 1.0 / tex_size.x;
 		vec3 c0 = fetch(src);
-		vec3 cb = (fetch(src - vec2(3.0 * px, 0.0)) + fetch(src - vec2(1.5 * px, 0.0)) + c0
-				 + fetch(src + vec2(1.5 * px, 0.0)) + fetch(src + vec2(3.0 * px, 0.0))) * 0.2;
-		float ca = 0.0006 * (0.3 + r * r);
+		vec3 cb = (fetch(src - vec2(2.0 * px, 0.0)) + fetch(src - vec2(1.0 * px, 0.0)) + c0
+				 + fetch(src + vec2(1.0 * px, 0.0)) + fetch(src + vec2(2.0 * px, 0.0))) * 0.2;
+		float ca = 0.00028 * (0.2 + r * r);          // умеренная хроматика к краю
 		vec3 cc = vec3(fetch(src + dirn * ca).r, cb.g, fetch(src - dirn * ca).b);
 		float y0 = dot(c0, vec3(0.299, 0.587, 0.114));
 		float yc = dot(cc, vec3(0.299, 0.587, 0.114));
@@ -128,10 +128,10 @@ void fragment() {
 		col *= 1.0 - 0.07 * odd;
 		// характер камеры: лёгкий шарпинг, приподнятый чёрный, насыщенность, баланс белого
 		vec3 blur = (fetch(src + vec2(px, 0.0)) + fetch(src - vec2(px, 0.0)) + fetch(src + vec2(0.0, px * aspect)) + fetch(src - vec2(0.0, px * aspect))) * 0.25;
-		col += (c0 - blur) * 0.9;
+		col += (c0 - blur) * 0.5;
 		col = pow(clamp((col - 0.02) * 1.12 + 0.035, 0.0, 1.0), vec3(1.0 / 1.08));
 		float lum = dot(col, vec3(0.299, 0.587, 0.114));
-		col = mix(vec3(lum), col, 1.18) * white_balance;
+		col = mix(vec3(lum), col, 1.08) * white_balance;
 		// деградация: потеря цветности (color killer) → ч/б
 		float sat = smoothstep(0.30, 0.58, link_q);
 		col = mix(vec3(lum), col, sat);
