@@ -29,11 +29,32 @@ func setup(main: Node3D) -> void:
 		var hw: float = CLASS[cls][0]
 		var asph: bool = CLASS[cls][1]
 		_ribbon(main, r["p"], hw, 0.22 if asph else 0.15, av["asph" if asph else "grav"])
+		_index(main, r["p"], hw)
 
 	_emit(main, av["asph"], _asph_mat(main), "Asphalt")
 	_emit(main, av["grav"], _grav_mat(main), "Gravel")
 	print("Roads built in %d ms (asph v=%d, grav v=%d)" % [
 		Time.get_ticks_msec() - t0, av["asph"].V.size(), av["grav"].V.size()])
+
+
+## Пространственный индекс сегментов дорог (ячейки 32 м) — для исключения травы/клаттера с полотна.
+const IDX_CELL := 32.0
+func _index(main: Node3D, pts: Array, hw: float) -> void:
+	for i in range(1, pts.size()):
+		var a := Vector2(pts[i - 1][0], pts[i - 1][1]); var b := Vector2(pts[i][0], pts[i][1])
+		var seg := [a.x, a.y, b.x, b.y, hw]
+		var L := a.distance_to(b)
+		var steps := int(L / IDX_CELL) + 1
+		var seen := {}
+		for k in steps + 1:
+			var q := a.lerp(b, float(k) / steps)
+			for dx in [-1, 0, 1]:
+				for dz in [-1, 0, 1]:
+					var c := Vector2i(int(floor(q.x / IDX_CELL)) + dx, int(floor(q.y / IDX_CELL)) + dz)
+					if seen.has(c): continue
+					seen[c] = true
+					if not main.road_index.has(c): main.road_index[c] = []
+					main.road_index[c].append(seg)
 
 
 func _arena() -> Dictionary:

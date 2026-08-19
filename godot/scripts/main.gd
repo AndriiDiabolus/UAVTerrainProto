@@ -91,17 +91,20 @@ func _node_h(ix: int, iz: int) -> float:
 	return e_min + (e_max - e_min) * v / 65535.0
 
 
-## Высота рельефа в мировой точке (x, z) = точная поверхность террейн-меша
-## (билинейно между узлами сетки MESH_RES). Центр мира = центр карты.
+## Высота рельефа в мировой точке (x, z) = ТОЧНАЯ поверхность террейн-меша.
+## Меш в каждой ячейке сетки MESH_RES — два треугольника с диагональю (ix+1,iz)–(ix,iz+1);
+## билинейная интерполяция отличается от них на метры на неровном рельефе → дороги/реки/трава «проваливались».
 func height_at(x: float, z: float) -> float:
 	var n := MESH_RES
-	var gx := clampf((x / size_m + 0.5) * (n - 1), 0.0, float(n - 1))
-	var gz := clampf((z / size_m + 0.5) * (n - 1), 0.0, float(n - 1))
+	var gx := clampf((x / size_m + 0.5) * (n - 1), 0.0, float(n - 1) - 1e-4)
+	var gz := clampf((z / size_m + 0.5) * (n - 1), 0.0, float(n - 1) - 1e-4)
 	var x0 := int(gx); var z0 := int(gz)
 	var tx := gx - x0; var tz := gz - z0
 	var h00 := _node_h(x0, z0); var h10 := _node_h(x0 + 1, z0)
 	var h01 := _node_h(x0, z0 + 1); var h11 := _node_h(x0 + 1, z0 + 1)
-	return lerpf(lerpf(h00, h10, tx), lerpf(h01, h11, tx), tz)
+	if tx + tz <= 1.0:
+		return h00 + (h10 - h00) * tx + (h01 - h00) * tz          # треугольник (00, 10, 01)
+	return h11 + (h01 - h11) * (1.0 - tx) + (h10 - h11) * (1.0 - tz)   # треугольник (10, 11, 01)
 
 
 func _build_terrain() -> void:
@@ -405,6 +408,23 @@ func _build_smoke() -> void:
 
 
 var _lamp_mat: StandardMaterial3D
+
+var road_index := {}       # Vector2i(32 м) -> Array[[ax,az,bx,bz,hw]] — заполняет roads.gd
+
+## Точка ближе margin к полотну дороги (с учётом её полуширины)?
+func near_road(x: float, z: float, margin: float) -> bool:
+	var c := Vector2i(int(floor(x / 32.0)), int(floor(z / 32.0)))
+	var p := Vector2(x, z)
+	for dx in [-1, 0, 1]:
+		for dz in [-1, 0, 1]:
+			for sg: Array in road_index.get(c + Vector2i(dx, dz), []):
+				var a := Vector2(sg[0], sg[1]); var b := Vector2(sg[2], sg[3])
+				var ab := b - a
+				var t := clampf((p - a).dot(ab) / maxf(ab.length_squared(), 1e-6), 0.0, 1.0)
+				if p.distance_to(a + ab * t) < float(sg[4]) + margin:
+					return true
+	return false
+
 
 var props: Node3D
 

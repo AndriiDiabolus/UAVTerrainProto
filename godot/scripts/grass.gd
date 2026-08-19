@@ -183,7 +183,15 @@ func _rebuild(center: Vector3) -> void:
 				_: variant = [0, 2][int(r3 * 1.99)]; keep = 0.6
 			if r2 > keep:
 				continue
+			# полотно дороги (+1 м обочина), внутри зданий/у столбов, на грядках — без травы
+			if main.near_road(wx, wz, 1.0):
+				continue
 			var gy: float = main.height_at(wx, wz)
+			if main.check_crash(Vector3(wx, gy + 0.6, wz)) != "":
+				continue
+			var yards := main.get_node_or_null("Yards")
+			if yards != null and yards.in_garden(wx, wz):
+				continue
 			# склон: не растим на крутом
 			var e := 3.0
 			var dy := absf(main.height_at(wx + e, wz) - main.height_at(wx - e, wz)) + absf(main.height_at(wx, wz + e) - main.height_at(wx, wz - e))

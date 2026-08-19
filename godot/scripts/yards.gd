@@ -10,6 +10,7 @@ const CHUNK := 512.0
 const RADIUS := 1200.0
 var houses := {}              # Vector2i -> Array[Array] [x,z,w,d,ang]
 var chunks := {}              # Vector2i -> Node3D
+var gardens := {}             # Vector2i(чанк) -> Array[[cx, cz, yaw, hw, hd]] грядки (для исключения травы)
 var _acc := 0.0
 var _fence_mesh: QuadMesh
 var _fence_mat: StandardMaterial3D
@@ -118,6 +119,7 @@ func _process(dt: float) -> void:
 		if center.distance_to(Vector2(p.x, p.z)) > RADIUS + CHUNK * 1.5:
 			if chunks[c] != null: chunks[c].queue_free()
 			chunks.erase(c)
+			gardens.erase(c)
 
 
 func _gen(c: Vector2i) -> void:
@@ -166,6 +168,8 @@ func _gen(c: Vector2i) -> void:
 		var gcenter: Vector3 = pc + yaw * Vector3(0, 0, pd * 0.5 - gl * 0.5 - 1.0)
 		var gy0: float = main.height_at(gcenter.x, gcenter.z)
 		if rng.randf() < 0.8:
+			if not gardens.has(c): gardens[c] = []
+			gardens[c].append([gcenter.x, gcenter.z, -ang, (pw - 2.0) * 0.5, gl * 0.5])
 			var dec := Decal.new()
 			dec.texture_albedo = _garden_tex
 			dec.size = Vector3(pw - 2.0, 6.0, gl)
@@ -214,3 +218,17 @@ func _gen(c: Vector2i) -> void:
 		var tmi := MultiMeshInstance3D.new(); tmi.multimesh = tm
 		holder.add_child(tmi)
 	chunks[c] = holder
+
+
+## Точка на грядках какого-нибудь огорода (локальные координаты участка)?
+func in_garden(x: float, z: float) -> bool:
+	var c := Vector2i(int(floor(x / CHUNK)), int(floor(z / CHUNK)))
+	for dx in [-1, 0, 1]:
+		for dz in [-1, 0, 1]:
+			for g: Array in gardens.get(c + Vector2i(dx, dz), []):
+				var lx := x - float(g[0]); var lz := z - float(g[1])
+				var ca := cos(float(g[2])); var sa := sin(float(g[2]))
+				var rx := lx * ca - lz * sa; var rz := lx * sa + lz * ca   # обратный поворот Basis(UP, θ)
+				if absf(rx) < float(g[3]) and absf(rz) < float(g[4]):
+					return true
+	return false
