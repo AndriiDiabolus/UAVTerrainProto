@@ -165,7 +165,13 @@ func _build_terrain() -> void:
 		mat.set_shader_parameter(pair[0] + "_tex", _load_tex(pair[1] + "_diff.jpg"))
 		mat.set_shader_parameter(pair[0] + "_n", _load_tex(pair[1] + "_norm.jpg"))
 	mat.set_shader_parameter("noise_tex", _make_detail_noise())
+	var mimg := load_image(asset_path("mask.png"))
+	if mimg != null:
+		mat.set_shader_parameter("mask_tex", ImageTexture.create_from_image(mimg))
+		mat.set_shader_parameter("mask_px", float(mimg.get_width()))
 	mat.set_shader_parameter("uv_debug", "--uvdebug" in OS.get_cmdline_user_args())
+	mat.set_shader_parameter("mask_debug", "--maskdebug" in OS.get_cmdline_user_args())
+	print("mask_tex: ", mimg.get_width() if mimg != null else "НЕТ", " format ", mimg.get_format() if mimg != null else -1)
 	mesh.surface_set_material(0, mat)
 
 	var mi := MeshInstance3D.new()

@@ -101,22 +101,56 @@ func _gen_chunk(c: Vector2i) -> void:
 	var col_r := [1.4, 1.2, 2.8, 1.6, 1.4]
 	var col_h := [14.0, 18.0, 12.0, 13.0, 3.0]
 	var tcol: Array[Dictionary] = []
-	for i in ATTEMPTS:
+	var attempts: int = [420, 800, 1300][clampi(int(main.quality), 0, 2)]
+	for i in attempts:
 		var wx := (c.x + rng.randf()) * CHUNK
 		var wz := (c.y + rng.randf()) * CHUNK
 		if absf(wx) >= half or absf(wz) >= half:
 			continue
 		var mx := int((wx / main.size_m + 0.5) * (mpx - 1))
 		var mz := int((wz / main.size_m + 0.5) * (mpx - 1))
-		if int(round(mask.get_pixel(mx, mz).r * 255.0)) != 1:
-			continue
-		var ti := _pick_type(rng.randf())
-		var s := rng.randf_range(0.6, 1.45)
+		var mv := int(round(mask.get_pixel(mx, mz).r * 255.0))
 		var gy: float = main.height_at(wx, wz) - 0.3
+		var elev := gy
+		# --- биом: вероятность посадки и распределение видов ---
+		# типы: 0 ель, 1 сосна, 2 лиственное, 3 берёза, 4 куст
+		var accept := 0.0
+		var w: Array = [0.0, 0.0, 0.0, 0.0, 0.0]
+		var scale_k := 1.0
+		match mv:
+			1:   # лес — виды по высоте (бук/смешанный ↓1150, ель 1150–1550, криволесье ↑1550, полонина ↑1750)
+				if elev < 1150.0:
+					accept = 1.0; w = [0.25, 0.10, 0.50, 0.15, 0.0]
+				elif elev < 1550.0:
+					accept = 1.0; w = [0.72, 0.12, 0.08, 0.08, 0.0]
+				elif elev < 1750.0:
+					accept = 0.55; w = [0.45, 0.0, 0.0, 0.05, 0.5]; scale_k = 0.55
+				else:
+					accept = 0.15; w = [0.1, 0.0, 0.0, 0.0, 0.9]; scale_k = 0.5
+			6:   # кустарник
+				accept = 0.45; w = [0.05, 0.0, 0.1, 0.1, 0.75]
+			5:   # луг/полонина — одиночные деревья и кусты
+				accept = 0.035 if elev < 1500.0 else 0.012; w = [0.15, 0.05, 0.35, 0.2, 0.25]
+			9:   # болото/пойма — ива/ольха, кусты
+				accept = 0.2; w = [0.0, 0.0, 0.5, 0.2, 0.3]; scale_k = 0.75
+			4:   # пашня — почти ничего (редкие деревья на межах)
+				accept = 0.004; w = [0.0, 0.0, 0.6, 0.4, 0.0]
+			_:
+				accept = 0.01; w = [0.0, 0.0, 0.4, 0.2, 0.4]
+		if rng.randf() > accept:
+			continue
+		var ti := 0
+		var rr := rng.randf(); var acc := 0.0
+		for k in w.size():
+			acc += w[k]
+			if rr <= acc:
+				ti = k; break
+		var s := rng.randf_range(0.65, 1.4) * scale_k
 		var basis := Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(s, s * rng.randf_range(0.85, 1.2), s))
 		xf[ti].append(Transform3D(basis, Vector3(wx, gy, wz)))
-		var g := rng.randf_range(0.82, 1.14)                       # вариация зелени/яркости
-		cl[ti].append(Color(g * rng.randf_range(0.85, 1.0), g, g * rng.randf_range(0.72, 0.95)))
+		# вариация кроны: яркость ±25 %, оттенок ±5 % — лес не «одного цвета»
+		var g := rng.randf_range(0.72, 1.18)
+		cl[ti].append(Color(g * rng.randf_range(0.88, 1.0), g, g * rng.randf_range(0.75, 0.96)))
 		tcol.append({"pos": Vector3(wx, gy, wz), "r": col_r[ti] * s * 0.6, "top": col_h[ti] * s})
 	main.col_register_trees(c, tcol)
 	var total := 0

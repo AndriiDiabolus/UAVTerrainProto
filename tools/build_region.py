@@ -8,7 +8,7 @@
 roads.json, buildings.json, water.json, lakes.json). Запуск: ./run.sh --region=<name>.
 Регион по умолчанию (Карпаты) живёт прямо в godot/assets/.
 
-Шаги можно пропускать: --skip terrain,osm,water,lakes,bake. Кеши (tile_cache/, osm_cache/) общие.
+Шаги можно пропускать: --skip terrain,osm,water,lakes,landcover,bake. Кеши (tile_cache/, osm_cache/) общие.
 Объём загрузки на регион 52×52 км: DEM ~5 МБ, Sentinel-2 TCI 2–7 сцен по 100–300 МБ, OSM 10–60 МБ.
 """
 import argparse, os, subprocess, sys, time
@@ -51,6 +51,7 @@ run("terrain", "fetch_terrain.py")   # height.raw, meta.json, albedo.jpg
 run("osm", "fetch_osm.py")           # roads.json, buildings.json
 run("water", "fetch_water.py")       # water.json
 run("lakes", "fetch_lakes.py")       # lakes.json
+run("landcover", "fetch_landcover.py")  # landcover.png (ESA WorldCover 10 м, ~10 МБ через HTTP-Range)
 run("bake", "bake_overlay.py")       # albedo.jpg (+дороги/реки), mask.png, albedo_clean.jpg
 
 # импорт ресурсов Godot (albedo.jpg/mask.png → .import), чтобы регион грузился через load()

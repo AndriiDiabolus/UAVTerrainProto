@@ -16,21 +16,32 @@ if not clean_p.exists():
     (ASSETS / "albedo.jpg").rename(clean_p)
 alb = Image.open(clean_p).convert("RGB")
 W = alb.width                      # 8192
-MW = 2048                          # маска
+MW = 4096                          # маска (10 м/px WorldCover → ~12.7 м/px)
 mask = Image.new("L", (MW, MW), 0)
 
 def to_px(pt, w):
     return ((pt[0] / SIZE + 0.5) * w, (pt[1] / SIZE + 0.5) * w)
 
-# --- классификация леса (по чистому спутнику, downsample до 2048) ---
-print("Классифицирую лес...")
-small = alb.resize((MW, MW), Image.LANCZOS)
-md = mask.load(); sd = small.load()
-for y in range(MW):
-    for x in range(MW):
-        r, g, b = sd[x, y]
-        if g >= r + 6 and g >= b + 6 and (r + g + b) <= 68:
-            md[x, y] = 1
+# --- маска биомов: из ESA WorldCover (landcover.png, fetch_landcover.py), иначе — лес по яркости спутника.
+# Коды маски: 0 прочее, 1 лес, 2 дорога, 3 застройка, 4 пашня, 5 луг, 6 кустарник, 7 вода, 8 голая/снег, 9 болото
+lc_p = ASSETS / "landcover.png"
+if lc_p.exists():
+    print("Маска биомов из WorldCover...")
+    import numpy as np
+    lc = np.array(Image.open(lc_p).convert("L").resize((MW, MW), Image.NEAREST))
+    m = np.zeros_like(lc)
+    m[lc == 10] = 1; m[lc == 20] = 6; m[(lc == 30) | (lc == 100)] = 5; m[lc == 40] = 4
+    m[lc == 50] = 3; m[(lc == 60) | (lc == 70)] = 8; m[lc == 80] = 7; m[(lc == 90) | (lc == 95)] = 9
+    mask = Image.fromarray(m, "L")
+else:
+    print("Классифицирую лес по яркости спутника (нет landcover.png)...")
+    small = alb.resize((MW, MW), Image.LANCZOS)
+    md = mask.load(); sd = small.load()
+    for y in range(MW):
+        for x in range(MW):
+            r, g, b = sd[x, y]
+            if g >= r + 6 and g >= b + 6 and (r + g + b) <= 68:
+                md[x, y] = 1
 
 # --- реки (до дорог: мосты сверху) ---
 water_p = ASSETS / "water.json"
@@ -41,6 +52,7 @@ if water_p.exists():
     for wobj in ways:
         pts = [to_px(p, W) for p in wobj["p"]]
         if wobj["c"] == "river":
+            wdraw.line(pts, fill=(168, 162, 150), width=11, joint="curve")   # галечное русло (светлое, шире воды)
             wdraw.line(pts, fill=(58, 74, 78), width=5, joint="curve")
         else:
             wdraw.line(pts, fill=(52, 66, 66), width=1, joint="curve")

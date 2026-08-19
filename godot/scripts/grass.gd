@@ -6,12 +6,13 @@ extends Node3D
 var main: Node3D
 var enabled := true
 var radius := 70.0
-const SPACING := 1.4
+const SPACING := 1.15
 var mask: Image
 var mpx: int
 var _mm: MultiMesh
 var _mmi: MultiMeshInstance3D
 var _mat: ShaderMaterial
+var _rocks: MultiMesh
 var _last_center := Vector3(1e9, 0, 1e9)
 var _acc := 0.0
 var _cur_dir := Vector2(1, 0)
@@ -29,14 +30,29 @@ func setup(m: Node3D) -> void:
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, _clump_arrays(1.5, 0.62))
 	mesh.surface_set_material(0, _mat)
+	_mat.set_shader_parameter("sat_tex", main._load_albedo())
+	_mat.set_shader_parameter("world_size", main.size_m)
 	_mm = MultiMesh.new()
 	_mm.transform_format = MultiMesh.TRANSFORM_3D
 	_mm.use_colors = true
+	_mm.use_custom_data = true
 	_mm.mesh = mesh
 	_mmi = MultiMeshInstance3D.new()
 	_mmi.multimesh = _mm
 	_mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_mmi)
+	# камни — мелкий клаттер
+	var rm := SphereMesh.new(); rm.radius = 1.0; rm.height = 2.0; rm.radial_segments = 7; rm.rings = 4
+	var rmat := StandardMaterial3D.new()
+	rmat.albedo_color = Color(0.42, 0.40, 0.36)
+	rmat.roughness = 0.95
+	rm.material = rmat
+	_rocks = MultiMesh.new()
+	_rocks.transform_format = MultiMesh.TRANSFORM_3D
+	_rocks.mesh = rm
+	var rmi := MultiMeshInstance3D.new()
+	rmi.multimesh = _rocks
+	add_child(rmi)
 
 
 ## Два скрещённых квада, низ на y=0.
@@ -57,29 +73,41 @@ func _clump_arrays(w: float, h: float) -> Array:
 	return arr
 
 
-## Процедурная текстура пучка: ~18 сужающихся к верху травинок с изгибом, светлее к кончику.
+## Атлас 2×2 пучков (256²): 0 узкие злаки, 1 широкий пучок, 2 сухостой (солома), 3 цветущий (метёлки/цветки).
+## Фон заливается цветом травы с альфой 0 — иначе альфа-вырезка даёт тёмную обводку.
 func _grass_tex() -> ImageTexture:
-	var S := 128
+	var S := 256
 	var img := Image.create(S, S, false, Image.FORMAT_RGBA8)
-	img.fill(Color(0, 0, 0, 0))
+	img.fill(Color(0.42, 0.48, 0.22, 0.0))
 	var rng := RandomNumberGenerator.new(); rng.seed = 7
-	for b in 18:
-		var x0 := rng.randf_range(0.30, 0.70)
-		var top := rng.randf_range(0.05, 0.35)          # y кончика (0 = верх)
-		var bend := rng.randf_range(-0.28, 0.28)
-		var wid := rng.randf_range(0.022, 0.04)
-		var lum := rng.randf_range(0.7, 1.15)
-		var steps := 90
-		for k in steps:
-			var t := k / float(steps - 1)               # 0 у корня, 1 у кончика
-			var y := lerpf(1.0, top, t)
-			var x := x0 + bend * t * t
-			var w := wid * (1.0 - t * 0.85)
-			var l := lum * (0.55 + 0.6 * t)
-			var px0 := int((x - w) * S); var px1 := int((x + w) * S)
-			var py := int(y * (S - 1))
-			for px in range(maxi(px0, 0), mini(px1, S - 1) + 1):
-				img.set_pixel(px, py, Color(l * 0.86, l * 0.9, l * 0.5, 1.0))
+	for v in 4:
+		var ox := (v % 2) * 128; var oy := (v / 2) * 128
+		var nb: int = [34, 18, 26, 28][v]
+		for b in nb:
+			var x0 := rng.randf_range(0.25, 0.75)
+			var top := rng.randf_range(0.04, 0.35)
+			var bend := rng.randf_range(-0.3, 0.3)
+			var wid: float = [0.028, 0.06, 0.024, 0.03][v] * rng.randf_range(0.8, 1.3)
+			var lum := rng.randf_range(0.7, 1.15)
+			var col_base: Vector3 = [Vector3(0.86, 0.9, 0.5), Vector3(0.8, 0.9, 0.55), Vector3(1.1, 0.95, 0.55), Vector3(0.85, 0.9, 0.5)][v]
+			var steps := 70
+			for k in steps:
+				var t := k / float(steps - 1)
+				var y := lerpf(1.0, top, t)
+				var x := x0 + bend * t * t
+				var w := wid * (1.0 - t * 0.85)
+				var l := lum * (0.55 + 0.6 * t)
+				var px0 := int((x - w) * 128); var px1 := int((x + w) * 128)
+				var py := int(y * 127)
+				for px in range(maxi(px0, 0), mini(px1, 127) + 1):
+					img.set_pixel(ox + px, oy + py, Color(l * col_base.x, l * col_base.y, l * col_base.z, 1.0))
+			if v == 3 and rng.randf() < 0.6:      # цветок/метёлка на кончике
+				var fx := int((x0 + bend) * 128); var fy := int(top * 127)
+				var fc := Color(0.95, 0.9, 0.7) if rng.randf() < 0.5 else Color(0.95, 0.85, 0.3)
+				for dy in range(-2, 3):
+					for dx in range(-2, 3):
+						if dx * dx + dy * dy <= 4:
+							img.set_pixel(clampi(ox + fx + dx, ox, ox + 127), clampi(oy + fy + dy, oy, oy + 127), fc)
 	img.generate_mipmaps()
 	return ImageTexture.create_from_image(img)
 
@@ -116,6 +144,8 @@ func _rebuild(center: Vector3) -> void:
 	_mat.set_shader_parameter("fade_end", radius)
 	var xf: Array[Transform3D] = []
 	var col: Array[Color] = []
+	var cust: Array[Color] = []
+	var rocks: Array[Transform3D] = []
 	var n := int(radius / SPACING)
 	var half: float = main.size_m * 0.5
 	var cx := floorf(center.x / SPACING) * SPACING
@@ -133,12 +163,26 @@ func _rebuild(center: Vector3) -> void:
 				continue
 			if absf(wx) >= half or absf(wz) >= half:
 				continue
+			var mv := 5
 			if mask != null:
 				var mx := int((wx / main.size_m + 0.5) * (mpx - 1))
 				var mz := int((wz / main.size_m + 0.5) * (mpx - 1))
-				var mv := int(round(mask.get_pixel(mx, mz).r * 255.0))
-				if mv == 2 or mv == 3:          # дорога / застройка
+				mv = int(round(mask.get_pixel(mx, mz).r * 255.0))
+				if mv == 2 or mv == 7:    # дорога / вода
 					continue
+			# вид пучка по биому: луг — злаки/широкие/цветущие, пашня — сухостой реже, лес — редкий подлесок, кустарник — сухой
+			var variant := 0
+			var keep := 1.0
+			match mv:
+				5: variant = [0, 0, 1, 3, 0, 1][int(r3 * 5.99)] as int
+				4: variant = 2; keep = 0.35
+				1: variant = [0, 1][int(r3 * 1.99)]; keep = 0.25
+				6: variant = [2, 2, 0][int(r3 * 2.99)]; keep = 0.7
+				9: variant = [0, 1, 1][int(r3 * 2.99)]
+				3: variant = [0, 1, 3][int(r3 * 2.99)]; keep = 0.7
+				_: variant = [0, 2][int(r3 * 1.99)]; keep = 0.6
+			if r2 > keep:
+				continue
 			var gy: float = main.height_at(wx, wz)
 			# склон: не растим на крутом
 			var e := 3.0
@@ -149,7 +193,18 @@ func _rebuild(center: Vector3) -> void:
 			var basis := Basis(Vector3.UP, r1 * TAU).scaled(Vector3(s, s, s))
 			xf.append(Transform3D(basis, Vector3(wx, gy - 0.02, wz)))
 			col.append(Color(0.9 + r2 * 0.25, 0.85 + r3 * 0.2, 0.75 + r1 * 0.3))
+			cust.append(Color(float(variant), 0, 0, 0))
+			# камни: редко на лугах/голой земле, чаще у воды
+			var rock_p := 0.012 if mv == 5 else (0.05 if mv == 8 else 0.004)
+			if r1 * 0.37 + r2 * 0.63 < rock_p:
+				var rs := 0.12 + r3 * 0.35
+				rocks.append(Transform3D(Basis(Vector3.UP, r2 * TAU).scaled(Vector3(rs * 1.4, rs * 0.7, rs)), Vector3(wx + 0.6, gy - rs * 0.25, wz - 0.4)))
 	_mm.instance_count = xf.size()
 	for i in xf.size():
 		_mm.set_instance_transform(i, xf[i])
 		_mm.set_instance_color(i, col[i])
+		_mm.set_instance_custom_data(i, cust[i])
+	if _rocks != null:
+		_rocks.instance_count = rocks.size()
+		for i in rocks.size():
+			_rocks.set_instance_transform(i, rocks[i])

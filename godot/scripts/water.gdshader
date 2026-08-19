@@ -6,8 +6,8 @@ render_mode cull_disabled, depth_draw_always;
 // + SSR из Environment. Цвет глубины отдельно от цвета отражения.
 
 uniform sampler2D wave_tex : filter_linear_mipmap, repeat_enable;
-uniform vec3 shallow_color : source_color = vec3(0.16, 0.30, 0.30);
-uniform vec3 deep_color : source_color = vec3(0.05, 0.12, 0.16);
+uniform vec3 shallow_color : source_color = vec3(0.21, 0.25, 0.20);   // мутная серо-зелёная (горная река после дождей / пруд)
+uniform vec3 deep_color : source_color = vec3(0.07, 0.10, 0.09);
 uniform float wave_scale = 0.06;
 uniform float wave_speed = 0.03;
 uniform float wave_strength = 0.5;
@@ -37,12 +37,12 @@ void fragment() {
 
 	// френель: под острым углом — зеркало, сверху — цвет воды
 	vec3 view = normalize(CAMERA_POSITION_WORLD - wpos);
-	float fres = pow(1.0 - clamp(dot(view, wn), 0.0, 1.0), 3.0);
+	float fres = pow(1.0 - clamp(dot(view, wn), 0.0, 1.0), 2.2);   // сверху тоже заметное отражение неба
 
 	vec3 base = mix(shallow_color, deep_color, clamp(h1 * 0.6 + 0.3, 0.0, 1.0));
 	ALBEDO = base;
-	METALLIC = mix(0.15, 0.85, fres);        // к горизонту — зеркальнее
-	ROUGHNESS = mix(0.14, 0.03, fres);
+	METALLIC = mix(0.35, 0.9, fres);         // к горизонту — зеркальнее
+	ROUGHNESS = mix(0.18, 0.04, fres);
 	SPECULAR = 0.9;
 	// блики на гребнях
 	float crest = smoothstep(0.72, 0.95, h1 * 0.6 + h2 * 0.4);
