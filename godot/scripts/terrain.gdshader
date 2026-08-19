@@ -14,6 +14,9 @@ uniform sampler2D rock_n    : filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D noise_tex : filter_linear_mipmap, repeat_enable;   // бесшовный шум (main._make_detail_noise)
 uniform sampler2D mask_tex : filter_nearest;      // маска биомов (mask.png): 0 прочее 1 лес 2 дорога 3 застройка 4 пашня 5 луг 6 кустарник 7 вода 8 голая 9 болото
 uniform float mask_px = 4096.0;
+// тепловизор: thermal_params = (режим 0/1, ночь 0/1, остывание 0..1, —). В режиме: ALBEDO=0, EMISSION=температура 0..1
+global uniform vec4 thermal_params;
+
 uniform float detail_range = 1400.0;
 uniform bool uv_debug = false;
 uniform bool mask_debug = false;
@@ -161,6 +164,19 @@ void fragment() {
 
 		ALBEDO = base * cloud_shadow(wpos.xz);
 		if (mask_debug) { ALBEDO = vec3(cls / 10.0, forest, crop + meadow * 0.5); }
+		if (thermal_params.x > 0.5) {
+			// температура поверхности: вода холодная, лес прохладный, пашня/голая земля тёплые, дорога/застройка горячие;
+			// южные склоны теплее, низины холоднее; ночью всё остывает, асфальт и камень держат тепло
+			float night = thermal_params.y;
+			float tmp = 0.40;
+			tmp = mix(tmp, 0.30, forest); tmp = mix(tmp, 0.38, meadow); tmp = mix(tmp, 0.44 + 0.06 * stub, crop);
+			tmp = mix(tmp, 0.48, bare); tmp = mix(tmp, 0.52, builtc); tmp = mix(tmp, 0.14, waterc);
+			float road = step(1.5, cls) * step(cls, 2.5);
+			tmp = mix(tmp, 0.62, road);
+			tmp += wnorm.z * 0.05 - (0.5 - nA) * 0.06 + rockW * 0.06;
+			tmp = mix(tmp, tmp * 0.72 + road * 0.08 + rockW * 0.06, night);
+			ALBEDO = vec3(0.0); EMISSION = vec3(tmp); ROUGHNESS = 1.0; SPECULAR = 0.0;
+		}
 		ROUGHNESS = 0.88 + 0.12 * nB - grassW * 0.05;
 		SPECULAR = 0.12;
 	}

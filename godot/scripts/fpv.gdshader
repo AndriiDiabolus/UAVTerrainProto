@@ -19,6 +19,8 @@ uniform float sun_vis = 0.0;
 uniform float night = 0.0;
 uniform float lost = 0.0;
 uniform float frame_t = 0.0;
+uniform float thermal = 0.0;
+uniform int thermal_palette = 0;
 uniform float vignette : hint_range(0.0, 1.5) = 0.55;
 uniform vec3 white_balance : source_color = vec3(1.04, 1.0, 0.94);   // тёплая камера (Caddx-like)
 
@@ -29,6 +31,15 @@ vec3 hsv2rgb(vec3 c) {
 }
 
 vec3 fetch(vec2 uv) { return texture(video, uv).rgb; }
+vec3 ironbow(float t) {
+	// чёрный → фиолетовый → красный → оранжевый → жёлтый → белый
+	vec3 c1 = vec3(0.0, 0.0, 0.0), c2 = vec3(0.25, 0.0, 0.45), c3 = vec3(0.75, 0.05, 0.25), c4 = vec3(0.95, 0.45, 0.05), c5 = vec3(1.0, 0.85, 0.3), c6 = vec3(1.0);
+	if (t < 0.2) return mix(c1, c2, t / 0.2);
+	if (t < 0.4) return mix(c2, c3, (t - 0.2) / 0.2);
+	if (t < 0.6) return mix(c3, c4, (t - 0.4) / 0.2);
+	if (t < 0.8) return mix(c4, c5, (t - 0.6) / 0.2);
+	return mix(c5, c6, (t - 0.8) / 0.2);
+}
 
 void fragment() {
 	vec2 uv = UV;
@@ -67,7 +78,37 @@ void fragment() {
 	src = clamp(src, vec2(0.001), vec2(0.999));
 
 	vec3 col;
-	if (link_type == 0) {
+	if (thermal > 0.5) {
+		// --- LWIR 256×192: температура в люме кадра (EMISSION наших материалов) ---
+		vec2 res = vec2(256.0, 192.0);
+		vec2 tuv = (floor(src * res) + 0.5) / res;
+		float px = 1.0 / res.x, py = 1.0 / res.y;
+		float t0 = dot(fetch(tuv), vec3(0.299, 0.587, 0.114));
+		// AGC: окно вокруг средней температуры кадра (среднее — из грубого мипа), горячее — клип
+		// среднее по земле (нижние 2/3 кадра, грубый мип), а не по всему кадру с холодным небом
+		float m = 0.0;
+		for (int i = 0; i < 3; i++) for (int j = 0; j < 2; j++) {
+			m += dot(textureLod(video, vec2(0.2 + 0.3 * float(i), 0.55 + 0.3 * float(j)), 6.0).rgb, vec3(0.299, 0.587, 0.114));
+		}
+		m /= 6.0;
+		float lo = m - 0.20, hi = m + 0.24;
+		float tv = clamp((t0 - lo) / (hi - lo), 0.0, 1.0);
+		// ореол (halo) вокруг горячих объектов: размытый избыток
+		float hot = 0.0;
+		for (int i = -2; i <= 2; i++) for (int j = -2; j <= 2; j++) {
+			float tt = dot(fetch(tuv + vec2(float(i) * px, float(j) * py) * 1.5), vec3(0.299, 0.587, 0.114));
+			hot += max(tt - (m + 0.25), 0.0);
+		}
+		tv += hot / 25.0 * 1.6;
+		// «кипение» матрицы: пространственно-временной шум + фиксированный паттерн (FPN)
+		tv += (rnd(tuv * res + floor(t * 25.0) * 3.7) - 0.5) * 0.05 + (rnd(tuv * res * 3.1) - 0.5) * 0.02;
+		tv = clamp(tv, 0.0, 1.0);
+		if (thermal_palette == 0) col = vec3(tv);
+		else if (thermal_palette == 1) col = vec3(1.0 - tv);
+		else col = ironbow(tv);
+		// мягкая билинейная «размазанность» апскейла: смешать с соседним пикселем
+		col = mix(col, col * 0.92 + 0.08 * vec3(tv), 0.5);
+	} else if (link_type == 0) {
 		// --- аналог ---
 		// люма полная, цветность размыта по горизонтали (NTSC) + хроматическая аберрация к краю
 		float px = 1.0 / tex_size.x;

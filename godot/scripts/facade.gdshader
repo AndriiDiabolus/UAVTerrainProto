@@ -17,6 +17,9 @@ varying vec2 vuv;
 varying float bseed;
 varying vec2 wxz;
 varying float vy;
+// тепловизор: thermal_params = (режим 0/1, ночь 0/1, остывание 0..1, —). В режиме: ALBEDO=0, EMISSION=температура 0..1
+global uniform vec4 thermal_params;
+
 // тени облаков (глобальные uniform'ы)
 global uniform sampler2D cloud_shadow_tex;
 global uniform vec4 cloud_shadow_params;
@@ -134,5 +137,9 @@ void fragment() {
 	col *= base_ao * (0.92 + 0.16 * h11(bseed + 31.0));
 	ALBEDO = col * cloud_shadow(wxz);
 	EMISSION = emit;
+	if (thermal_params.x > 0.5) {
+		float hot = step(0.5, length(emit));          // освещённое окно — тёплое
+		ALBEDO = vec3(0.0); EMISSION = vec3(mix(mix(0.46, 0.40, thermal_params.y), 0.78, hot));
+	}
 	ROUGHNESS = (zface || xface) ? 0.85 : 1.0;
 }

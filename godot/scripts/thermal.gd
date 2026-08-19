@@ -1,0 +1,106 @@
+extends Node
+## Тепловизор (LWIR): глобальный uniform thermal_params для своих шейдеров + material_override
+## (unshaded emission = «температура» 0..1) для мешей со StandardMaterial3D: дороги, крыши, столбы, техника,
+## машины, вода-озёра, мачты РЭБ. Техника/люди/двигатели — горячие, взрывы — очень горячие с остыванием.
+## Пост-обработка (256×192, шум, AGC, ореол, палитры, FFC-фризы) — в fpv.gdshader, управляется из fpv_link.
+
+var main: Node3D
+var active := false
+var palette := 0                  # 0 white-hot, 1 black-hot, 2 ironbow
+const PALETTES := ["WHITE HOT", "BLACK HOT", "IRONBOW"]
+var _mats := {}                   # temp -> StandardMaterial3D
+var _acc := 0.0
+# температуры по группам (день); ночью ×0.8 кроме техники/людей
+const T_ROAD := 0.62
+const T_ROOF := 0.56
+const T_PROP := 0.42
+const T_VEHICLE := 0.88
+const T_SOLDIER := 0.95
+const T_CAR := 0.80
+const T_WRECK := 1.0
+const T_LAKE := 0.14
+const T_EW := 0.55
+
+
+func setup(m: Node3D) -> void:
+	main = m
+	RenderingServer.global_shader_parameter_set("thermal_params", Vector4(0, 0, 0, 0))
+
+
+func _mat(t: float) -> StandardMaterial3D:
+	var key := snappedf(t, 0.01)
+	if not _mats.has(key):
+		var mt := StandardMaterial3D.new()
+		mt.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mt.albedo_color = Color(t, t, t)
+		mt.vertex_color_use_as_albedo = false
+		_mats[key] = mt
+	return _mats[key]
+
+
+func toggle() -> void:
+	set_active(not active)
+
+
+func set_active(on: bool) -> void:
+	active = on
+	_apply_overrides()
+	_update_global()
+	print("Тепловизор: ", "ВКЛ (%s)" % PALETTES[palette] if on else "ВЫКЛ")
+
+
+func cycle_palette() -> void:
+	palette = (palette + 1) % PALETTES.size()
+
+
+func _update_global() -> void:
+	var night := 0.0
+	if main.weather != null and int(main.weather.idx) == 4: night = 1.0
+	RenderingServer.global_shader_parameter_set("thermal_params", Vector4(1.0 if active else 0.0, night, 0.0, 0.0))
+
+
+func _night_k() -> float:
+	if main.weather != null and int(main.weather.idx) == 4: return 0.8
+	return 1.0
+
+
+func _override(node: Node, t: float) -> void:
+	if node is GeometryInstance3D:
+		node.material_override = _mat(t * _night_k()) if active else null
+	for ch in node.get_children():
+		_override(ch, t)
+
+
+func _apply_overrides() -> void:
+	var nk := _night_k()
+	for nm_t: Array in [["Roads", T_ROAD], ["Roofs", T_ROOF], ["BlockRoofs", T_ROOF], ["Chimneys", T_ROOF + 0.1],
+			["Props", T_PROP], ["Traffic", T_CAR], ["EW", T_EW], ["Yards", T_PROP]]:
+		var n := main.get_node_or_null(str(nm_t[0]))
+		if n != null:
+			_override(n, float(nm_t[1]))
+	# вода-озёра/реки — свой шейдер (ветка в water.gdshader); цели — по типу
+	if main.targets != null:
+		for t: Dictionary in main.targets.targets:
+			var temp: float = T_SOLDIER if t.kind == "soldier" else T_VEHICLE
+			if not t.alive: temp = T_WRECK * clampf(1.0 - float(t.wreck_t) / 60.0, 0.4, 1.0)
+			if t.node is GeometryInstance3D:
+				t.node.material_override = _mat(temp) if active else null
+			for ch in t.node.get_children():
+				if ch is GeometryInstance3D:
+					ch.visible = not active       # маркеры-столбы в тепле не видны
+	# снаряды/взрывы — обломки горячие (через targets._projs: мелкие сферы)
+	if main.targets != null:
+		for pr: Dictionary in main.targets._projs:
+			if pr.node is GeometryInstance3D:
+				pr.node.material_override = _mat(0.7) if active else null
+
+
+func _process(dt: float) -> void:
+	if not active:
+		return
+	_acc += dt
+	if _acc < 0.5:
+		return
+	_acc = 0.0
+	_apply_overrides()          # новые цели/машины/снаряды получают override
+	_update_global()

@@ -12,6 +12,9 @@ uniform float wave_scale = 0.06;
 uniform float wave_speed = 0.03;
 uniform float wave_strength = 0.5;
 uniform vec2 flow_dir = vec2(1.0, 0.35);
+// тепловизор: thermal_params = (режим 0/1, ночь 0/1, остывание 0..1, —). В режиме: ALBEDO=0, EMISSION=температура 0..1
+global uniform vec4 thermal_params;
+
 
 varying vec3 wpos;
 
@@ -48,4 +51,5 @@ void fragment() {
 	float crest = smoothstep(0.72, 0.95, h1 * 0.6 + h2 * 0.4);
 	EMISSION = vec3(0.25, 0.3, 0.32) * crest * 0.35;
 	ALPHA = mix(0.82, 0.98, fres);
+	if (thermal_params.x > 0.5) { ALBEDO = vec3(0.0); EMISSION = vec3(0.14); METALLIC = 0.0; ROUGHNESS = 1.0; ALPHA = 1.0; }
 }

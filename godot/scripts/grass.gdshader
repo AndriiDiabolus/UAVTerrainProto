@@ -12,6 +12,9 @@ uniform float fade_start = 40.0;
 uniform float fade_end = 70.0;
 uniform sampler2D sat_tex : source_color, filter_linear_mipmap;   // спутник — цвет травы в точке
 uniform float world_size = 52211.0;
+// тепловизор: thermal_params = (режим 0/1, ночь 0/1, остывание 0..1, —). В режиме: ALBEDO=0, EMISSION=температура 0..1
+global uniform vec4 thermal_params;
+
 varying vec3 sat_tint;
 varying vec2 auv;
 
@@ -57,4 +60,5 @@ void fragment() {
 	ROUGHNESS = 0.95;
 	SPECULAR = 0.1;
 	BACKLIGHT = vec3(0.35, 0.4, 0.15) * c.rgb;
+	if (thermal_params.x > 0.5) { ALBEDO = vec3(0.0); EMISSION = vec3(mix(0.37, 0.30, thermal_params.y)); BACKLIGHT = vec3(0.0); }
 }

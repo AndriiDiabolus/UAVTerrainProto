@@ -8,6 +8,9 @@ uniform vec2 wind_dir = vec2(1.0, 0.0);
 uniform float wind_strength : hint_range(0.0, 3.0) = 0.3;
 uniform float pivot_y = 0.0;      // высота, ниже которой смещения нет (комель)
 uniform vec3 base_color : source_color = vec3(0.15, 0.3, 0.12);
+// тепловизор: thermal_params = (режим 0/1, ночь 0/1, остывание 0..1, —). В режиме: ALBEDO=0, EMISSION=температура 0..1
+global uniform vec4 thermal_params;
+
 
 // тени облаков (глобальные uniform'ы: текстура шума + (offset.xy, сила, масштаб 1/м))
 global uniform sampler2D cloud_shadow_tex;
@@ -43,5 +46,6 @@ void vertex() {
 
 void fragment() {
 	ALBEDO = base_color * COLOR.rgb * cloud_shadow(wxz);   // цвет части × per-instance вариация
+	if (thermal_params.x > 0.5) { ALBEDO = vec3(0.0); EMISSION = vec3(mix(0.36, 0.30, thermal_params.y)); }
 	ROUGHNESS = 1.0;
 }

@@ -13,6 +13,9 @@ uniform vec3 cloud_dark : source_color = vec3(0.55, 0.58, 0.62);
 uniform float coverage : hint_range(0.0, 1.0) = 0.4;
 uniform float night : hint_range(0.0, 1.0) = 0.0;
 uniform vec2 wind_dir = vec2(1.0, 0.3);
+// тепловизор: thermal_params = (режим 0/1, ночь 0/1, остывание 0..1, —). В режиме: ALBEDO=0, EMISSION=температура 0..1
+global uniform vec4 thermal_params;
+
 
 float hash(vec2 p) {
 	p = fract(p * vec2(123.34, 345.45));
@@ -90,5 +93,11 @@ void sky() {
 		col = mix(col, ccol, cl * 0.9);
 	}
 
+	if (thermal_params.x > 0.5) {
+		// небо холодное; облака чуть теплее; солнце — горячая точка
+		float cl2 = 0.0;
+		if (up > 0.01) { vec2 cuv2 = dir.xz / (up + 0.12) * 0.6 + wind_dir * TIME * 0.006; cl2 = smoothstep(1.0 - coverage, 1.25 - coverage, fbm(cuv2)) * smoothstep(0.02, 0.22, up); }
+		col = vec3(mix(0.02, 0.10, cl2)) + vec3(pow(sd, 2500.0)) * 1.0 + vec3(0.12) * clamp(-up * 6.0, 0.0, 1.0);
+	}
 	COLOR = col;
 }

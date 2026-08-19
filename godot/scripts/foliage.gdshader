@@ -10,6 +10,9 @@ uniform float wind_strength : hint_range(0.0, 3.0) = 0.3;
 uniform float pivot_y = 0.0;
 uniform vec3 base_color : source_color = vec3(0.15, 0.3, 0.12);
 uniform float leaf_flutter = 1.0;   // хвоя дрожит меньше, листва больше
+// тепловизор: thermal_params = (режим 0/1, ночь 0/1, остывание 0..1, —). В режиме: ALBEDO=0, EMISSION=температура 0..1
+global uniform vec4 thermal_params;
+
 
 
 // тени облаков (глобальные uniform'ы: текстура шума + (offset.xy, сила, масштаб 1/м))
@@ -57,4 +60,5 @@ void fragment() {
 	ROUGHNESS = 0.92;
 	SPECULAR = 0.15;
 	BACKLIGHT = vec3(0.30, 0.34, 0.16) * c.rgb;   // просвет листвы на солнце
+	if (thermal_params.x > 0.5) { ALBEDO = vec3(0.0); EMISSION = vec3(mix(0.31, 0.26, thermal_params.y)); BACKLIGHT = vec3(0.0); }
 }

@@ -25,6 +25,9 @@ var _rng := RandomNumberGenerator.new()
 var _sun_vis := 0.0
 var _frame_t := 0.0
 const FOV_H := 150.0
+const FOV_THERMAL := 42.0
+var _ffc_t := 0.0          # до следующего FFC (калибровки затвора)
+var _ffc_hold := 0.0       # длительность фриза
 
 
 func setup(m: Node3D, osd: Control) -> void:
@@ -157,10 +160,29 @@ func _process(dt: float) -> void:
 		else:
 			frozen = false
 			lost_t = 0.0
-	# --- частота кадров видеолинка: 30 (аналог) / 60 (цифра) ---
+	# --- тепловизор: узкий FOV, 25 к/с, FFC-фриз 0.4 с каждые 45–120 с ---
+	var th: bool = main.thermal != null and main.thermal.active
+	cam.fov = FOV_THERMAL if th else FOV_H
+	(cam.attributes as CameraAttributesPractical).auto_exposure_enabled = not th
+	mat.set_shader_parameter("fov_render", cam.fov)
+	mat.set_shader_parameter("fov_target", FOV_THERMAL if th else FOV_H)
+	mat.set_shader_parameter("thermal", 1.0 if th else 0.0)
+	mat.set_shader_parameter("thermal_palette", main.thermal.palette if th else 0)
+	var ffc_now := false
+	if th:
+		if _ffc_hold > 0.0:
+			_ffc_hold -= dt; ffc_now = true
+		else:
+			_ffc_t -= dt
+			if _ffc_t <= 0.0:
+				_ffc_t = _rng.randf_range(45.0, 120.0)
+				_ffc_hold = 0.4
+				if main.sound != null: main.sound.shot()     # щелчок затвора (условно)
+	# --- частота кадров видеолинка: 30 (аналог) / 60 (цифра) / 25 (тепло) ---
 	_acc += dt
 	var period := 1.0 / 30.0 if link_type == 0 else 1.0 / 60.0
-	if _acc >= period and not frozen:
+	if th: period = 1.0 / 25.0
+	if _acc >= period and not frozen and not ffc_now:
 		_acc = fmod(_acc, period)
 		vp.render_target_update_mode = SubViewport.UPDATE_ONCE
 	# --- солнце в объектив ---

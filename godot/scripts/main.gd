@@ -53,6 +53,7 @@ func _ready() -> void:
 	_build_targets()
 	_build_traffic()
 	_build_ew()
+	_build_thermal()
 	_build_sound()
 	_build_hud()
 	_build_mission()
@@ -665,6 +666,16 @@ func _build_traffic() -> void:
 	traffic.setup(self)
 
 
+var thermal: Node
+
+func _build_thermal() -> void:
+	thermal = Node.new()
+	thermal.name = "Thermal"
+	thermal.set_script(load("res://scripts/thermal.gd"))
+	add_child(thermal)
+	thermal.setup(self)
+
+
 var ew: Node3D
 
 func _build_ew() -> void:
@@ -832,6 +843,13 @@ func _unhandled_input(event: InputEvent) -> void:
 			_respawn()
 		elif event.keycode == KEY_G:
 			apply_quality((quality + 1) % 3)
+		elif event.keycode == KEY_T:
+			if thermal != null:
+				if not hud.fpv_on:
+					hud._toggle_fpv()          # тепловизор — это камера дрона: только через FPV
+				thermal.toggle()
+		elif event.keycode == KEY_Y and thermal != null:
+			thermal.cycle_palette()
 
 
 func _latlon_at(x: float, z: float) -> Vector2:

@@ -53,6 +53,10 @@ func _schedule_screenshot() -> void:
 		await RenderingServer.frame_post_draw
 	if "--fpv" in OS.get_cmdline_user_args():
 		main.hud._toggle_fpv()
+		if "--thermal" in OS.get_cmdline_user_args() and main.thermal != null:
+			main.thermal.set_active(true)
+			for _i in 30:
+				await get_tree().process_frame
 		main.hud._fpv_osd.flight_t = 143.0
 		main.hud._fpv_osd.battery = 0.62
 	if "--lowshot" in OS.get_cmdline_user_args():
