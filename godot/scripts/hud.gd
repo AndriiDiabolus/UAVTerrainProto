@@ -5,7 +5,7 @@ extends CanvasLayer
 var main: Node3D
 var hud_label: Label
 var _crash_label: Label
-var _fpv_rect: ColorRect
+var fpv_link: Node
 var _fpv_osd: Control
 var fpv_on := false
 var target_marker: Label
@@ -30,17 +30,15 @@ func _toggle_sound() -> void:
 ## FPV-подача: широкий угол + «аналоговое видео» + OSD дрона.
 func _toggle_fpv() -> void:
 	fpv_on = not fpv_on
-	_fpv_rect.visible = fpv_on
-	_fpv_osd.visible = fpv_on
 	hud_label.visible = not fpv_on
 	target_marker.visible = not fpv_on
-	# обычный HUD прячем — в FPV своя приборка
+	# обычный HUD прячем — в FPV своя приборка (OSD живёт внутри видеотракта)
 	for c: Node in [_wind_label, _wind_flag, _sound_btn]:
 		if c != null:
 			c.visible = not fpv_on
-	main.cam.fov = 105.0 if fpv_on else 75.0
+	if fpv_link != null:
+		fpv_link.set_enabled(fpv_on)
 	if fpv_on:
-		_fpv_osd.home = main.cam.global_position
 		_fpv_osd.flight_t = 0.0
 
 
@@ -114,7 +112,7 @@ func setup(m: Node3D) -> void:
 	_sticks.set_script(load("res://scripts/sticks.gd"))
 	_sticks.set("main", main)
 	_sticks.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
-	_sticks.position = Vector2(-330, -118)
+	_sticks.position = Vector2(-178, -235)
 	layer.add_child(_sticks)
 
 	# надпись о столкновении по центру экрана
@@ -132,25 +130,17 @@ func setup(m: Node3D) -> void:
 	_crash_label.visible = false
 	layer.add_child(_crash_label)
 
-	# FPV-слой: пост-эффект видео + OSD (поверх всего, включается на F)
-	var fpv_layer := CanvasLayer.new()
-	fpv_layer.layer = 5
-	main.add_child(fpv_layer)
-	_fpv_rect = ColorRect.new()
-	_fpv_rect.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_fpv_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var fmat := ShaderMaterial.new()
-	fmat.shader = load("res://scripts/fpv.gdshader")
-	_fpv_rect.material = fmat
-	_fpv_rect.visible = false
-	fpv_layer.add_child(_fpv_rect)
+	# FPV: OSD (считает RSSI/батарею всегда, рисуется внутри видеотракта fpv_link) + видеотракт
 	_fpv_osd = Control.new()
 	_fpv_osd.set_script(load("res://scripts/fpv_osd.gd"))
 	_fpv_osd.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_fpv_osd.set("main", main)
-	_fpv_osd.home = main._home_pos          # точка оператора = точка взлёта (иначе до нажатия F канал считался от (0,0,0))
-	_fpv_osd.visible = false
-	fpv_layer.add_child(_fpv_osd)
+	_fpv_osd.home = main._home_pos          # точка оператора = точка взлёта
+	fpv_link = Node.new()
+	fpv_link.name = "FPVLink"
+	fpv_link.set_script(load("res://scripts/fpv_link.gd"))
+	main.add_child(fpv_link)
+	fpv_link.setup(main, _fpv_osd)
 
 	# результат миссии по центру
 	_result_label = Label.new()
@@ -242,11 +232,7 @@ func _process(_dt: float) -> void:
 		ll.x, ll.y, int(p.y), int(p.y - ground), int(spd), int(Engine.get_frames_per_second()), fline, tline, wline]
 	_update_target_marker(p)
 	_update_mission_marker()
-	if fpv_on and _fpv_rect != null:
-		# картинка сыпется по мере падения сигнала; при краше — полная статика
-		var q: float = 0.0 if main.crashed else _fpv_osd.signal_q
-		_fpv_rect.material.set_shader_parameter("noise_burst", clampf(1.0 - q, 0.0, 1.0) * 0.9)
-		_fpv_rect.material.set_shader_parameter("grain", 0.05 + (1.0 - q) * 0.12)
+
 
 
 
