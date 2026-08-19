@@ -47,9 +47,11 @@ func _ready() -> void:
 	_spawn_camera()
 	_build_weather()
 	_build_forest()
+	_build_yards()
 	_build_grass()
 	_build_smoke()
 	_build_targets()
+	_build_traffic()
 	_build_ew()
 	_build_sound()
 	_build_hud()
@@ -306,8 +308,13 @@ func _build_buildings() -> void:
 		Color(0.80,0.79,0.75), Color(0.73,0.68,0.61), Color(0.62,0.70,0.64)]
 	var wood := [Color(0.50,0.38,0.26), Color(0.44,0.34,0.24)]
 	var blockc := [Color(0.78,0.78,0.76), Color(0.72,0.74,0.72), Color(0.82,0.80,0.75)]
-	var roof_cols := [Color(1,1,1.02), Color(0.82,0.82,0.86), Color(1.15,0.6,0.42),
-		Color(1.0,0.5,0.38), Color(0.75,0.72,0.7)]
+	# крыши (множитель к текстуре черепицы): шифер серый 45 %, жесть зелёная 20 %, коричневая 15 %, красная 15 %, тёмная 5 %
+	var roof_cols := [Color(0.55,0.55,0.57), Color(0.50,0.50,0.52), Color(0.60,0.60,0.62), Color(0.46,0.47,0.50), Color(0.58,0.57,0.55),
+		Color(0.42,0.44,0.46), Color(0.52,0.53,0.56), Color(0.57,0.56,0.54), Color(0.48,0.48,0.50),
+		Color(0.28,0.42,0.30), Color(0.24,0.38,0.28), Color(0.30,0.45,0.33), Color(0.26,0.40,0.30),
+		Color(0.48,0.32,0.22), Color(0.44,0.30,0.20), Color(0.52,0.36,0.26),
+		Color(0.68,0.30,0.22), Color(0.62,0.27,0.20), Color(0.72,0.34,0.26),
+		Color(0.30,0.30,0.32)]
 	var cnt := {"cottage": 0, "house": 0, "barn": 0, "block": 0}
 
 	for b: Array in arr:
@@ -323,6 +330,8 @@ func _build_buildings() -> void:
 		elif h >= 6.0:
 			t = "house"
 		cnt[t] += 1
+		if t == "cottage" or t == "house":
+			yard_houses.append([b[0], b[1], w, d, float(b[4])])
 		var ht := height_at(b[0], b[1])
 		var yaw := Basis(Vector3.UP, -float(b[4]))
 		var hsh := int(abs(b[0]) * 7.0 + abs(b[1]) * 13.0)
@@ -381,6 +390,7 @@ func _build_roads() -> void:
 
 
 var _chimney_pos: PackedVector3Array = PackedVector3Array()
+var yard_houses: Array = []
 
 func _build_smoke() -> void:
 	if _chimney_pos.is_empty():
@@ -593,6 +603,16 @@ func _build_forest() -> void:
 	forest.setup(self)
 
 
+func _build_yards() -> void:
+	if yard_houses.is_empty():
+		return
+	var y := Node3D.new()
+	y.name = "Yards"
+	y.set_script(load("res://scripts/yards.gd"))
+	add_child(y)
+	y.setup(self, yard_houses)
+
+
 func _build_grass() -> void:
 	var g := Node3D.new()
 	g.name = "Grass"
@@ -633,6 +653,16 @@ func _build_telemetry() -> void:
 	add_child(telemetry)
 	telemetry.replay_label = _replay_label
 	telemetry.setup(self)
+
+
+var traffic: Node3D
+
+func _build_traffic() -> void:
+	traffic = Node3D.new()
+	traffic.name = "Traffic"
+	traffic.set_script(load("res://scripts/traffic.gd"))
+	add_child(traffic)
+	traffic.setup(self)
 
 
 var ew: Node3D

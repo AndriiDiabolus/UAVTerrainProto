@@ -61,10 +61,10 @@ if water_p.exists():
 print("Рисую дороги...")
 roads = json.loads((ASSETS / "roads.json").read_text())["roads"]
 STYLE = {  # класс: (ширина заливки px@8192, цвет)
-    "track":        (1, (106, 90, 68)),
-    "service":      (1, (118, 116, 112)),
+    "track":        (1, (152, 138, 112)),   # светлая пыльная грунтовка (сверху почти белая)
+    "service":      (1, (146, 136, 118)),
     "residential":  (1, (128, 126, 122)),
-    "unclassified": (1, (126, 124, 120)),
+    "unclassified": (1, (144, 134, 116)),
     "tertiary":     (2, (133, 131, 126)),
     "secondary":    (2, (138, 135, 129)),
     "primary":      (3, (144, 140, 131)),

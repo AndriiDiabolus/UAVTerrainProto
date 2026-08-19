@@ -98,8 +98,8 @@ func _gen_chunk(c: Vector2i) -> void:
 	for k in tree_meshes.size():
 		xf.append([] as Array[Transform3D]); cl.append([] as Array[Color])
 	# коллизия: радиус ствола/кроны и высота по типу (× масштаб экземпляра)
-	var col_r := [1.4, 1.2, 2.8, 1.6, 1.4]
-	var col_h := [14.0, 18.0, 12.0, 13.0, 3.0]
+	var col_r := [1.4, 1.2, 2.8, 1.6, 1.4, 1.7]
+	var col_h := [14.0, 18.0, 12.0, 13.0, 3.0, 2.8]
 	var tcol: Array[Dictionary] = []
 	var attempts: int = [420, 800, 1300][clampi(int(main.quality), 0, 2)]
 	for i in attempts:
@@ -115,28 +115,28 @@ func _gen_chunk(c: Vector2i) -> void:
 		# --- биом: вероятность посадки и распределение видов ---
 		# типы: 0 ель, 1 сосна, 2 лиственное, 3 берёза, 4 куст
 		var accept := 0.0
-		var w: Array = [0.0, 0.0, 0.0, 0.0, 0.0]
+		var w: Array = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 		var scale_k := 1.0
 		match mv:
 			1:   # лес — виды по высоте (бук/смешанный ↓1150, ель 1150–1550, криволесье ↑1550, полонина ↑1750)
 				if elev < 1150.0:
-					accept = 1.0; w = [0.25, 0.10, 0.50, 0.15, 0.0]
+					accept = 1.0; w = [0.25, 0.10, 0.50, 0.15, 0.0, 0.0]
 				elif elev < 1550.0:
-					accept = 1.0; w = [0.72, 0.12, 0.08, 0.08, 0.0]
+					accept = 1.0; w = [0.72, 0.12, 0.08, 0.08, 0.0, 0.0]
 				elif elev < 1750.0:
-					accept = 0.55; w = [0.45, 0.0, 0.0, 0.05, 0.5]; scale_k = 0.55
+					accept = 0.55; w = [0.45, 0.0, 0.0, 0.05, 0.5, 0.0]; scale_k = 0.55
 				else:
-					accept = 0.15; w = [0.1, 0.0, 0.0, 0.0, 0.9]; scale_k = 0.5
+					accept = 0.15; w = [0.1, 0.0, 0.0, 0.0, 0.9, 0.0]; scale_k = 0.5
 			6:   # кустарник
-				accept = 0.45; w = [0.05, 0.0, 0.1, 0.1, 0.75]
+				accept = 0.45; w = [0.05, 0.0, 0.1, 0.1, 0.75, 0.0]
 			5:   # луг/полонина — одиночные деревья и кусты
-				accept = 0.035 if elev < 1500.0 else 0.012; w = [0.15, 0.05, 0.35, 0.2, 0.25]
+				accept = 0.05 if elev < 1500.0 else 0.012; w = [0.12, 0.04, 0.26, 0.14, 0.19, 0.25]   # + стога
 			9:   # болото/пойма — ива/ольха, кусты
-				accept = 0.2; w = [0.0, 0.0, 0.5, 0.2, 0.3]; scale_k = 0.75
+				accept = 0.2; w = [0.0, 0.0, 0.5, 0.2, 0.3, 0.0]; scale_k = 0.75
 			4:   # пашня — почти ничего (редкие деревья на межах)
-				accept = 0.004; w = [0.0, 0.0, 0.6, 0.4, 0.0]
+				accept = 0.004; w = [0.0, 0.0, 0.6, 0.4, 0.0, 0.0]
 			_:
-				accept = 0.01; w = [0.0, 0.0, 0.4, 0.2, 0.4]
+				accept = 0.01; w = [0.0, 0.0, 0.4, 0.2, 0.4, 0.0]
 		if rng.randf() > accept:
 			continue
 		var ti := 0
@@ -335,4 +335,8 @@ func _make_trees() -> Array[ArrayMesh]:
 		{"tex": birch, "w": 6.0, "h": 7.5, "y0": 5.0, "color": Color(0.46, 0.58, 0.24), "flutter": 1.4}))
 	# куст
 	out.append(_tree([], {"tex": bush, "w": 3.2, "h": 2.6, "y0": 0.0, "color": Color(0.30, 0.44, 0.18), "flutter": 1.0}))
+	# стог сена (цилиндр + купол), соломенный
+	var straw := Color(0.62, 0.52, 0.30)
+	var dome := SphereMesh.new(); dome.radius = 1.7; dome.height = 2.2; dome.radial_segments = 10; dome.rings = 5
+	out.append(_tree([[_cyl(1.7, 1.5, 1.6), 0.8, straw], [dome, 1.6, straw]], {}))
 	return out

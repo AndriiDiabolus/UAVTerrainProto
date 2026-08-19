@@ -16,6 +16,7 @@ varying vec3 lnorm;
 varying vec2 vuv;
 varying float bseed;
 varying vec2 wxz;
+varying float vy;
 // тени облаков (глобальные uniform'ы)
 global uniform sampler2D cloud_shadow_tex;
 global uniform vec4 cloud_shadow_params;
@@ -46,6 +47,7 @@ void vertex() {
 	vuv = UV;
 	bseed = float(INSTANCE_ID);
 	wxz = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xz;
+	vy = VERTEX.y + 0.5;   // 0 у основания, 1 у карниза (BoxMesh)
 }
 
 void fragment() {
@@ -126,6 +128,10 @@ void fragment() {
 		}
 	}
 
+	// AO и грязевой поясок у основания (0–0.7 м), лёгкое потемнение к низу стены; яркость стен ±8 % по дому
+	float hm = vy * h;
+	float base_ao = 0.62 + 0.38 * smoothstep(0.0, 0.8, hm);
+	col *= base_ao * (0.92 + 0.16 * h11(bseed + 31.0));
 	ALBEDO = col * cloud_shadow(wxz);
 	EMISSION = emit;
 	ROUGHNESS = (zface || xface) ? 0.85 : 1.0;

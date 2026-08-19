@@ -7,9 +7,9 @@ const TILE := 7.0          # период текстуры, м
 
 # класс -> [полуширина(м), асфальт?]
 const CLASS := {
-	"motorway": [4.2, true], "trunk": [4.0, true], "primary": [3.6, true],
-	"secondary": [3.2, true], "tertiary": [2.7, true], "unclassified": [2.4, true],
-	"residential": [2.2, true], "service": [1.7, true], "track": [1.7, false],
+	"motorway": [4.5, true], "trunk": [4.0, true], "primary": [3.75, true],
+	"secondary": [3.25, true], "tertiary": [2.75, true], "unclassified": [2.25, false],
+	"residential": [2.2, true], "service": [1.8, false], "track": [1.5, false],
 }
 
 
