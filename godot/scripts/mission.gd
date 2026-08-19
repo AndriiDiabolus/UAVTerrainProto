@@ -30,6 +30,7 @@ var _hold_t := 0.0
 var _result_label: Label
 var _strike_targets: Array = []
 var result_text := ""
+var _hint_t := 0.0
 
 const MISSIONS := [
 	{},   # 0 — нет
@@ -118,8 +119,28 @@ func start(id: int) -> void:
 		main.cam.reset()
 	if main.targets != null:
 		main.targets.reset_ammo()
+	# рекомендованный режим: с пультом ставим сразу; на клавиатуре из GPS — не ломаем привычное управление,
+	# только подсказываем (Tab). В любом случае показываем шпаргалку по управлению на 8 с.
 	var want: String = str(m.get("mode", "angle"))
-	main.cam.mode = {"gps": 0, "angle": 1, "acro": 2}.get(want, 1)
+	var want_i: int = {"gps": 0, "angle": 1, "acro": 2}.get(want, 1)
+	var has_joy: bool = str(main.cam.get("joy_name")) != ""
+	var switched := false
+	if has_joy or int(main.cam.mode) != 0:
+		main.cam.mode = want_i
+		switched = true
+	var names := ["GPS", "ANGLE", "ACRO"]
+	var tips := {
+		0: "GPS: W/S вперёд-назад · A/D вбок · E/Q вверх-вниз · мышь — камера",
+		1: "ANGLE: W/S наклон · A/D крен · E/Q газ (без удержания высоты) · мышь/←→ рыскание",
+		2: "ACRO: W/S — скорость тангажа · A/D — крена · E/Q газ · мышь/←→ рыскание · выравнивания нет",
+	}
+	var cur: int = int(main.cam.mode)
+	var hint := "МИССИЯ %s\nРежим полёта: %s%s\n%s\nTab — сменить режим · N — следующая миссия" % [
+		m["name"], names[cur], "" if switched or cur == want_i else "  (рекомендуется %s — нажми Tab)" % names[want_i], tips[cur]]
+	if _result_label != null:
+		_result_label.text = hint
+		_result_label.visible = true
+		_hint_t = 8.0
 	_steps = []
 	for s: Dictionary in m["steps"]:
 		var st := s.duplicate()
@@ -275,6 +296,10 @@ func current_step() -> Dictionary:
 
 
 func _process(dt: float) -> void:
+	if _hint_t > 0.0:
+		_hint_t -= dt
+		if _hint_t <= 0.0 and _result_label != null and result_text == "":
+			_result_label.visible = false
 	if not active or main == null or main.cam == null:
 		return
 	if step >= _steps.size():
