@@ -15,6 +15,17 @@ var _mat: ShaderMaterial
 var _rocks: MultiMesh
 var _last_center := Vector3(1e9, 0, 1e9)
 var _acc := 0.0
+# инкрементальная пересборка: обходим сетку порциями по кадрам, чтобы не было микрофризов
+var _job_active := false
+var _job_center := Vector3.ZERO
+var _job_i := 0
+var _job_n := 0
+var _job_xf: Array[Transform3D] = []
+var _job_col: Array[Color] = []
+var _job_cust: Array[Color] = []
+var _job_rocks: Array[Transform3D] = []
+var _yards: Node = null
+const JOB_BUDGET := 1400          # точек сетки за кадр
 var _cur_dir := Vector2(1, 0)
 var _cur_str := 0.2
 
@@ -129,6 +140,9 @@ func _process(dt: float) -> void:
 	_mmi.visible = show
 	if not show:
 		return
+	if _job_active:
+		_job_step()
+		return
 	_acc += dt
 	if _acc < 0.15:
 		return
@@ -136,22 +150,34 @@ func _process(dt: float) -> void:
 	if Vector2(p.x - _last_center.x, p.z - _last_center.z).length() < 5.0:
 		return
 	_last_center = p
-	_rebuild(p)
+	_start_job(p)
 
 
-func _rebuild(center: Vector3) -> void:
+func _start_job(center: Vector3) -> void:
 	_mat.set_shader_parameter("fade_start", radius * 0.55)
 	_mat.set_shader_parameter("fade_end", radius)
-	var xf: Array[Transform3D] = []
-	var col: Array[Color] = []
-	var cust: Array[Color] = []
-	var rocks: Array[Transform3D] = []
-	var n := int(radius / SPACING)
+	_job_center = center
+	_job_i = 0
+	_job_n = int(radius / SPACING)
+	_job_xf = []; _job_col = []; _job_cust = []; _job_rocks = []
+	_yards = main.get_node_or_null("Yards")
+	_job_active = true
+
+
+## Порция сетки за кадр; по завершении — атомарная подмена MultiMesh.
+func _job_step() -> void:
+	var n := _job_n
+	var side := 2 * n + 1
+	var total := side * side
+	var center := _job_center
 	var half: float = main.size_m * 0.5
 	var cx := floorf(center.x / SPACING) * SPACING
 	var cz := floorf(center.z / SPACING) * SPACING
-	for i in range(-n, n + 1):
-		for j in range(-n, n + 1):
+	var xf := _job_xf; var col := _job_col; var cust := _job_cust; var rocks := _job_rocks
+	var end := mini(_job_i + JOB_BUDGET, total)
+	for idx in range(_job_i, end):
+			var i := idx / side - n
+			var j := idx % side - n
 			var gx := cx + i * SPACING; var gz := cz + j * SPACING
 			# детерминированный джиттер от координат ячейки — сетка не «ползёт» за камерой
 			var hsh := int(gx * 3.7) * 73856093 ^ int(gz * 3.7) * 19349663
@@ -183,15 +209,15 @@ func _rebuild(center: Vector3) -> void:
 				_: variant = [0, 2][int(r3 * 1.99)]; keep = 0.6
 			if r2 > keep:
 				continue
-			# полотно дороги (+1 м обочина), внутри зданий/у столбов, на грядках — без травы
+			# полотно дороги (+1 м обочина); в застройке — внутри зданий и на грядках не растим
 			if main.near_road(wx, wz, 1.0):
 				continue
 			var gy: float = main.height_at(wx, wz)
-			if main.check_crash(Vector3(wx, gy + 0.6, wz)) != "":
-				continue
-			var yards := main.get_node_or_null("Yards")
-			if yards != null and yards.in_garden(wx, wz):
-				continue
+			if mv == 3:
+				if main.check_crash(Vector3(wx, gy + 0.6, wz)) != "":
+					continue
+				if _yards != null and _yards.in_garden(wx, wz):
+					continue
 			# склон: не растим на крутом
 			var e := 3.0
 			var dy := absf(main.height_at(wx + e, wz) - main.height_at(wx - e, wz)) + absf(main.height_at(wx, wz + e) - main.height_at(wx, wz - e))
@@ -207,6 +233,10 @@ func _rebuild(center: Vector3) -> void:
 			if r1 * 0.37 + r2 * 0.63 < rock_p:
 				var rs := 0.12 + r3 * 0.35
 				rocks.append(Transform3D(Basis(Vector3.UP, r2 * TAU).scaled(Vector3(rs * 1.4, rs * 0.7, rs)), Vector3(wx + 0.6, gy - rs * 0.25, wz - 0.4)))
+	_job_i = end
+	if _job_i < total:
+		return
+	_job_active = false
 	_mm.instance_count = xf.size()
 	for i in xf.size():
 		_mm.set_instance_transform(i, xf[i])
