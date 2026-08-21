@@ -447,6 +447,7 @@ func _build_props() -> void:
 
 # ======================= Качество (пресеты под слабые ПК) =======================
 var quality := 2                       # 0 низкое / 1 среднее / 2 высокое
+var _quality_from_flag := false
 const QUALITY_NAMES := ["низкое", "среднее", "высокое"]
 const SETTINGS_PATH := "user://settings.cfg"
 
@@ -458,6 +459,7 @@ func _load_quality() -> void:
 		if a.begins_with("--quality="):
 			var v := a.substr(10).to_lower()
 			quality = {"low": 0, "0": 0, "medium": 1, "med": 1, "1": 1, "high": 2, "2": 2}.get(v, quality)
+			_quality_from_flag = true            # флаг не должен перезаписывать сохранённый выбор игрока
 
 
 func apply_quality(q: int) -> void:
@@ -484,7 +486,7 @@ func apply_quality(q: int) -> void:
 			vp.use_taa = true
 			vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA
 			sun.shadow_enabled = true
-			sun.directional_shadow_max_distance = 3500.0
+			sun.directional_shadow_max_distance = 2500.0
 			environment.ssr_enabled = false
 			environment.glow_enabled = true
 			environment.ssao_enabled = true
@@ -498,19 +500,20 @@ func apply_quality(q: int) -> void:
 			vp.use_taa = true
 			vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA
 			sun.shadow_enabled = true
-			sun.directional_shadow_max_distance = 6000.0
+			sun.directional_shadow_max_distance = 3500.0
 			environment.ssr_enabled = true
 			environment.glow_enabled = true
 			environment.ssao_enabled = true
-			environment.ssil_enabled = true
-			environment.volumetric_fog_enabled = true
+			environment.ssil_enabled = false          # SSIL дорог (−5–8 FPS), выигрыш малозаметен
+			environment.volumetric_fog_enabled = valley_fog != null and valley_fog.enabled
 			if forest != null: forest.radius = 3000.0
 			if grass != null: grass.enabled = true; grass.radius = 70.0
 			if props != null: props.pool = 24
-	var cfg := ConfigFile.new()
-	cfg.load(SETTINGS_PATH)
-	cfg.set_value("video", "quality", quality)
-	cfg.save(SETTINGS_PATH)
+	if not _quality_from_flag:
+		var cfg := ConfigFile.new()
+		cfg.load(SETTINGS_PATH)
+		cfg.set_value("video", "quality", quality)
+		cfg.save(SETTINGS_PATH)
 	print("Качество: ", QUALITY_NAMES[quality])
 
 
@@ -622,6 +625,8 @@ func _add_mm(nm: String, mesh: Mesh, mat: Material, xforms: Array, colors: Array
 
 
 func _build_forest() -> void:
+	if "--noforest" in OS.get_cmdline_user_args():
+		return
 	if not FileAccess.file_exists(ProjectSettings.globalize_path(asset_path("mask.png"))) \
 			and not ResourceLoader.exists(asset_path("mask.png")):
 		return
@@ -633,7 +638,7 @@ func _build_forest() -> void:
 
 
 func _build_yards() -> void:
-	if yard_houses.is_empty():
+	if yard_houses.is_empty() or "--noyards" in OS.get_cmdline_user_args():
 		return
 	var y := Node3D.new()
 	y.name = "Yards"
@@ -643,6 +648,8 @@ func _build_yards() -> void:
 
 
 func _build_grass() -> void:
+	if "--nograss" in OS.get_cmdline_user_args():
+		return
 	var g := Node3D.new()
 	g.name = "Grass"
 	g.set_script(load("res://scripts/grass.gd"))
@@ -687,6 +694,8 @@ func _build_telemetry() -> void:
 var traffic: Node3D
 
 func _build_traffic() -> void:
+	if "--notraffic" in OS.get_cmdline_user_args():
+		return
 	traffic = Node3D.new()
 	traffic.name = "Traffic"
 	traffic.set_script(load("res://scripts/traffic.gd"))
@@ -813,7 +822,7 @@ func _build_environment() -> void:
 	sun.light_color = Color(1.0, 0.96, 0.88)
 	sun.light_angular_distance = 0.53           # реальный угловой размер солнца → мягкие края теней
 	sun.shadow_enabled = true
-	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
+	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS   # 2 каскада: −40 % треугольников, +10 FPS; при 4096 px и 3.5 км хватает
 	sun.directional_shadow_split_1 = 0.03
 	sun.directional_shadow_split_2 = 0.10
 	sun.directional_shadow_split_3 = 0.32
@@ -880,6 +889,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif event.keycode == KEY_R and crashed:
 			_respawn()
 		elif event.keycode == KEY_G:
+			_quality_from_flag = false
 			apply_quality((quality + 1) % 3)
 		elif event.keycode == KEY_T or event.keycode == KEY_C:
 			if hud.fpv_link != null:

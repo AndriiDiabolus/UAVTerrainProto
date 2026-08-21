@@ -72,7 +72,7 @@ func set_enabled(on: bool, reset: bool = true, persist: bool = false, s0: float 
 	for v in _vols:
 		v.visible = on
 	if main.environment != null:
-		main.environment.volumetric_fog_enabled = on or int(main.quality) == 2
+		main.environment.volumetric_fog_enabled = on
 		if on:
 			main.environment.volumetric_fog_length = 3500.0
 			main.environment.volumetric_fog_detail_spread = 2.0

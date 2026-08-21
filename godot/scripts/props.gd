@@ -13,6 +13,7 @@ const LIGHT_RANGE := 30.0
 var lamp_head_mat: StandardMaterial3D
 var _main: Node3D
 var _lamp_pos: PackedVector3Array = PackedVector3Array()
+var _lamp_grid := {}            # Vector2i(256 м) -> PackedInt32Array индексов фонарей — не перебирать 27k каждые 0.3 с
 var _lights: Array[OmniLight3D] = []
 var _accum := 0.0
 
@@ -53,6 +54,10 @@ func setup(main: Node3D) -> void:
 	# позиции плафонов для стриминга живого света
 	for t in lamps:
 		_lamp_pos.append(t.origin + Vector3(0, 4.8, 0) + t.basis * Vector3(0.9, 0, 0))
+	for i in _lamp_pos.size():
+		var gk := Vector2i(int(floor(_lamp_pos[i].x / 256.0)), int(floor(_lamp_pos[i].z / 256.0)))
+		if not _lamp_grid.has(gk): _lamp_grid[gk] = PackedInt32Array()
+		_lamp_grid[gk].append(i)
 	for i in pool:
 		var l := OmniLight3D.new()
 		l.light_color = Color(1.0, 0.80, 0.48)
@@ -84,7 +89,12 @@ func _process(dt: float) -> void:
 	# найти pool ближайших плафонов к камере
 	var cam: Vector3 = _main.cam.global_position
 	var best: Array = []                    # [dist2, index]
-	for i in _lamp_pos.size():
+	var gc := Vector2i(int(floor(cam.x / 256.0)), int(floor(cam.z / 256.0)))
+	var cand := PackedInt32Array()
+	for dx in [-1, 0, 1]:
+		for dz in [-1, 0, 1]:
+			cand.append_array(_lamp_grid.get(gc + Vector2i(dx, dz), PackedInt32Array()))
+	for i in cand:
 		var d2 := cam.distance_squared_to(_lamp_pos[i])
 		if d2 > 300.0 * 300.0:
 			continue

@@ -4,11 +4,12 @@ extends Node3D
 const CHUNK := 512.0
 var radius := 3000.0          # радиус стриминга (меняется пресетом качества)
 const ATTEMPTS := 420          # попыток посадки на чанк (~сетка 25 м)
-const ATTEMPTS_PER_FRAME := 500    # бюджет посадок за кадр (чанк 420–1300 попыток строится за 1–3 кадра)
+const ATTEMPTS_PER_FRAME := 300    # бюджет посадок за кадр (чанк 420–1300 попыток строится за 1–3 кадра)
 
 var main: Node3D
 var mask: Image
 var mpx: int
+var _mask_bytes := PackedByteArray()
 var tree_meshes: Array[ArrayMesh] = []
 var tree_weights := [0.40, 0.15, 0.30, 0.10, 0.05]   # ель/сосна/листв./берёза/куст
 var chunks := {}               # Vector2i -> Node3D (набор MultiMesh) или null (пустой чанк)
@@ -26,6 +27,9 @@ func setup(m: Node3D) -> void:
 		push_warning("scatter: mask.png не найдена")
 		return
 	mpx = mask.get_width()
+	if mask.get_format() != Image.FORMAT_L8:
+		mask.convert(Image.FORMAT_L8)
+	_mask_bytes = mask.get_data()
 	tree_meshes = _make_trees()
 
 
@@ -65,6 +69,15 @@ func _update_wanted() -> void:
 			var center := Vector2((cx + 0.5) * CHUNK, (cy + 0.5) * CHUNK)
 			if center.distance_to(Vector2(p.x, p.z)) <= radius:
 				_queue.append(c)
+	# тени деревьев — только вблизи (4 каскада × все чанки слишком дорого)
+	for c: Vector2i in chunks:
+		var h = chunks[c]
+		if h == null: continue
+		var center := Vector2((c.x + 0.5) * CHUNK, (c.y + 0.5) * CHUNK)
+		var near := center.distance_to(Vector2(p.x, p.z)) < 1200.0
+		for mmi in h.get_children():
+			if mmi is GeometryInstance3D:
+				mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if near else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	# выгрузка дальних
 	var to_free: Array[Vector2i] = []
 	for c: Vector2i in chunks:
@@ -137,7 +150,7 @@ func _gen_step() -> void:
 			continue
 		var mx := int((wx / main.size_m + 0.5) * (mpx - 1))
 		var mz := int((wz / main.size_m + 0.5) * (mpx - 1))
-		var mv := int(round(mask.get_pixel(mx, mz).r * 255.0))
+		var mv := int(_mask_bytes[mz * mpx + mx])
 		var gy: float = main.height_at(wx, wz) - 0.3
 		var elev := gy
 		var accept := 0.0
@@ -198,9 +211,16 @@ func _gen_step() -> void:
 		mm.use_colors = true
 		mm.mesh = tree_meshes[k]
 		mm.instance_count = _cg_xf[k].size()
+		var buf := PackedFloat32Array()
+		buf.resize(_cg_xf[k].size() * 16)
 		for i in _cg_xf[k].size():
-			mm.set_instance_transform(i, _cg_xf[k][i])
-			mm.set_instance_color(i, _cg_cl[k][i])
+			var tf: Transform3D = _cg_xf[k][i]; var col: Color = _cg_cl[k][i]
+			var o: int = i * 16
+			buf[o] = tf.basis.x.x; buf[o + 1] = tf.basis.y.x; buf[o + 2] = tf.basis.z.x; buf[o + 3] = tf.origin.x
+			buf[o + 4] = tf.basis.x.y; buf[o + 5] = tf.basis.y.y; buf[o + 6] = tf.basis.z.y; buf[o + 7] = tf.origin.y
+			buf[o + 8] = tf.basis.x.z; buf[o + 9] = tf.basis.y.z; buf[o + 10] = tf.basis.z.z; buf[o + 11] = tf.origin.z
+			buf[o + 12] = col.r; buf[o + 13] = col.g; buf[o + 14] = col.b; buf[o + 15] = col.a
+		mm.buffer = buf
 		var mmi := MultiMeshInstance3D.new()
 		mmi.multimesh = mm
 		holder.add_child(mmi)

@@ -123,6 +123,7 @@ func _emit(main: Node3D, a: Dictionary, mat: Material, nm: String) -> void:
 	var mi := MeshInstance3D.new()
 	mi.name = nm
 	mi.mesh = mesh
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF   # плоское на земле — тень не видна
 	add_child(mi)
 
 

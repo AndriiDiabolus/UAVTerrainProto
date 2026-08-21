@@ -6,6 +6,7 @@ const RADIUS := 260.0
 
 var _main: Node3D
 var _pos: PackedVector3Array
+var _grid := {}                 # Vector2i(256 м) -> индексы труб
 var _emit: Array[GPUParticles3D] = []
 var _accum := 0.0
 
@@ -13,6 +14,10 @@ var _accum := 0.0
 func setup(main: Node3D, positions: PackedVector3Array) -> void:
 	_main = main
 	_pos = positions
+	for i in _pos.size():
+		var gk := Vector2i(int(floor(_pos[i].x / 256.0)), int(floor(_pos[i].z / 256.0)))
+		if not _grid.has(gk): _grid[gk] = PackedInt32Array()
+		_grid[gk].append(i)
 	var puff := _puff_texture()
 	var mesh := QuadMesh.new()
 	mesh.size = Vector2(2.4, 2.4)
@@ -87,7 +92,12 @@ func _process(dt: float) -> void:
 		wind = _main.weather.wind_vec()
 	var cam: Vector3 = _main.cam.global_position
 	var best: Array = []
-	for i in _pos.size():
+	var gc := Vector2i(int(floor(cam.x / 256.0)), int(floor(cam.z / 256.0)))
+	var cand := PackedInt32Array()
+	for dx in [-1, 0, 1]:
+		for dz in [-1, 0, 1]:
+			cand.append_array(_grid.get(gc + Vector2i(dx, dz), PackedInt32Array()))
+	for i in cand:
 		var d2 := cam.distance_squared_to(_pos[i])
 		if d2 > RADIUS * RADIUS:
 			continue

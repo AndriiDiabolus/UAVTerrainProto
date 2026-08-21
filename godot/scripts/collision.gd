@@ -48,6 +48,19 @@ func col_unregister_trees(chunk: Vector2i) -> void:
 	_tree_col.erase(chunk)
 
 
+## Только здания (без столбов/деревьев) — дёшево, для расстановки травы/клаттера.
+func in_building(x: float, z: float, margin: float) -> bool:
+	var k := Vector2i(int(floor(x / COL_CELL)), int(floor(z / COL_CELL)))
+	for dx in [-1, 0, 1]:
+		for dz in [-1, 0, 1]:
+			for b: Dictionary in _col_box.get(k + Vector2i(dx, dz), []):
+				var lx: float = (x - b.cx) * b.cs + (z - b.cz) * b.sn
+				var lz: float = -(x - b.cx) * b.sn + (z - b.cz) * b.cs
+				if absf(lx) < b.hw + margin and absf(lz) < b.hd + margin:
+					return true
+	return false
+
+
 ## Проверка столкновения с твёрдыми объектами (не рельеф). "" если чисто.
 func check_crash(pos: Vector3) -> String:
 	var k := Vector2i(int(floor(pos.x / COL_CELL)), int(floor(pos.z / COL_CELL)))

@@ -66,6 +66,7 @@ func _mm(mesh: Mesh, colors: bool) -> MultiMesh:
 		mm.set_instance_transform(i, Transform3D(Basis().scaled(Vector3.ZERO), Vector3(0, -1000, 0)))
 	var mi := MultiMeshInstance3D.new()
 	mi.multimesh = mm
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(mi)
 	return mm
 

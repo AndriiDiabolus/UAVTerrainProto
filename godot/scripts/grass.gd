@@ -9,10 +9,11 @@ var enabled := true
 var radius := 70.0
 const SPACING := 1.15
 const CH := 32.0                    # размер чанка, м
-const GEN_PER_FRAME := 2            # новых чанков за кадр (≈1 мс каждый)
+const GEN_PER_FRAME := 1            # новых чанков за кадр
 const CACHE_MAX := 220              # чанков в кэше (≈ 8 МБ)
 var mask: Image
 var mpx: int
+var _mask_bytes := PackedByteArray()   # сырые байты маски (L8) — get_pixel слишком дорог для тысяч точек
 var _mesh: ArrayMesh
 var _mat: ShaderMaterial
 var _rock_mesh: SphereMesh
@@ -29,6 +30,9 @@ func setup(m: Node3D) -> void:
 	mask = main.load_image(main.asset_path("mask.png"))
 	if mask != null:
 		mpx = mask.get_width()
+		if mask.get_format() != Image.FORMAT_L8:
+			mask.convert(Image.FORMAT_L8)
+		_mask_bytes = mask.get_data()
 	_mat = ShaderMaterial.new()
 	_mat.shader = load("res://scripts/grass.gdshader")
 	_mat.set_shader_parameter("tex", _grass_tex())
@@ -165,6 +169,31 @@ func _gen_chunk(c: Vector2i) -> void:
 	var rocks: Array[Transform3D] = []
 	var n := int(CH / SPACING) + 1
 	var ox := c.x * CH; var oz := c.y * CH
+	# сегменты дорог, касающиеся чанка (+8 м), — один раз на чанк, а не 9 ячеек на каждую точку
+	var segs: Array = []
+	var seen := {}
+	for cx in range(int(floor((ox - 8.0) / 32.0)), int(floor((ox + CH + 8.0) / 32.0)) + 1):
+		for cz in range(int(floor((oz - 8.0) / 32.0)), int(floor((oz + CH + 8.0) / 32.0)) + 1):
+			for sg in main.road_index.get(Vector2i(cx, cz), []):
+				if not seen.has(sg):
+					seen[sg] = true; segs.append(sg)
+	# грядки усадеб, пересекающие чанк, — один раз на чанк
+	var gards: Array = []
+	if _yards != null:
+		var yc := Vector2i(int(floor(ox / 512.0)), int(floor(oz / 512.0)))
+		for dx in [-1, 0, 1]:
+			for dz in [-1, 0, 1]:
+				for g: Array in _yards.gardens.get(yc + Vector2i(dx, dz), []):
+					var rr := maxf(float(g[3]), float(g[4])) + CH
+					if absf(float(g[0]) - (ox + CH * 0.5)) < rr and absf(float(g[1]) - (oz + CH * 0.5)) < rr:
+						gards.append(g)
+	# склон — раз на чанк (ячейка меша 51 м больше чанка)
+	var e := 6.0
+	var mxz := ox + CH * 0.5; var mzz := oz + CH * 0.5
+	var steep := absf(main.height_at(mxz + e, mzz) - main.height_at(mxz - e, mzz)) + absf(main.height_at(mxz, mzz + e) - main.height_at(mxz, mzz - e)) > 8.0
+	if steep:
+		_touch[c] = _tick; _chunks[c] = null
+		return
 	for i in n:
 		for j in n:
 			var gx := ox + i * SPACING; var gz := oz + j * SPACING
@@ -178,10 +207,10 @@ func _gen_chunk(c: Vector2i) -> void:
 			if absf(wx) >= half or absf(wz) >= half:
 				continue
 			var mv := 5
-			if mask != null:
+			if mpx > 0:
 				var mx := int((wx / main.size_m + 0.5) * (mpx - 1))
 				var mz := int((wz / main.size_m + 0.5) * (mpx - 1))
-				mv = int(round(mask.get_pixel(mx, mz).r * 255.0))
+				mv = _mask_bytes[mz * mpx + mx]
 				if mv == 2 or mv == 7:
 					continue
 			var variant := 0
@@ -196,18 +225,28 @@ func _gen_chunk(c: Vector2i) -> void:
 				_: variant = [0, 2][int(r3 * 1.99)]; keep = 0.6
 			if r2 > keep:
 				continue
-			if main.near_road(wx, wz, 1.0):
+			var on_road := false
+			if not segs.is_empty():
+				var pp := Vector2(wx, wz)
+				for sg: Array in segs:
+					var a := Vector2(sg[0], sg[1]); var ab := Vector2(sg[2], sg[3]) - a
+					var tt := clampf((pp - a).dot(ab) / maxf(ab.length_squared(), 1e-6), 0.0, 1.0)
+					if pp.distance_squared_to(a + ab * tt) < (float(sg[4]) + 1.0) * (float(sg[4]) + 1.0):
+						on_road = true; break
+			if on_road:
 				continue
 			var gy: float = main.height_at(wx, wz)
 			if mv == 3:
-				if main.check_crash(Vector3(wx, gy + 0.6, wz)) != "":
+				if main.collision.in_building(wx, wz, 0.8):
 					continue
-				if _yards != null and _yards.in_garden(wx, wz):
+				var ing := false
+				for g: Array in gards:
+					var lx := wx - float(g[0]); var lz := wz - float(g[1])
+					var ca2 := cos(float(g[2])); var sa2 := sin(float(g[2]))
+					if absf(lx * ca2 - lz * sa2) < float(g[3]) and absf(lx * sa2 + lz * ca2) < float(g[4]):
+						ing = true; break
+				if ing:
 					continue
-			var e := 3.0
-			var dy := absf(main.height_at(wx + e, wz) - main.height_at(wx - e, wz)) + absf(main.height_at(wx, wz + e) - main.height_at(wx, wz - e))
-			if dy > 4.0:
-				continue
 			var s := 0.75 + r3 * 0.6
 			var ca := cos(r1 * TAU) * s; var sa := sin(r1 * TAU) * s
 			buf.append_array(PackedFloat32Array([

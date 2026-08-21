@@ -43,6 +43,7 @@ func setup(main: Node3D) -> void:
 	var mi := MeshInstance3D.new()
 	mi.name = "WaterSurface"
 	mi.mesh = mesh
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(mi)
 	print("Water: %d водотоков, %d водоёмов, %d вершин за %d мс" % [
 		nriv, nlake, V.size(), Time.get_ticks_msec() - t0])

@@ -6,6 +6,8 @@ var main: Node3D
 
 func setup(m: Node3D) -> void:
 	main = m
+	if "--bench" in OS.get_cmdline_user_args():
+		_bench()
 	if "--targetreport" in OS.get_cmdline_user_args():
 		_debug_report_targets()
 	if "--screenshot" in OS.get_cmdline_user_args():
@@ -121,3 +123,40 @@ func _debug_report_targets() -> void:
 		print("  %s  %.0f м" % [e[1], e[0]])
 	get_tree().quit()
 
+
+
+## Бенчмарк: 10 с полёта на 25 м AGL со скоростью 30 м/с над селом (от старта на юг), печатает
+## средний/мин FPS, долю времени скриптов (process) и число объектов/примитивов в кадре.
+func _bench() -> void:
+	await get_tree().process_frame
+	for i in 60:
+		await get_tree().process_frame
+	main.replaying = true                        # отключаем физику дрона — ведём камеру вручную
+	var cam: Camera3D = main.cam
+	var start: Vector3 = main._home_pos
+	var dir := Vector3(0, 0, 1)                   # на юг вдоль долины
+	var t := 0.0
+	var frames := 0
+	var fps_sum := 0.0; var fps_min := 1e9
+	var proc_sum := 0.0; var render_sum := 0.0
+	var objs := 0; var prims := 0
+	while t < 10.0:
+		var dt := get_process_delta_time()
+		t += dt
+		var pos := start + dir * (t * 30.0)
+		pos.y = main.height_at(pos.x, pos.z) + 25.0
+		cam.global_position = pos
+		cam.global_transform.basis = Basis.looking_at(dir + Vector3(0, -0.25, 0), Vector3.UP)
+		cam.body = cam.global_transform.basis
+		if t > 1.0:
+			var f := Engine.get_frames_per_second()
+			frames += 1; fps_sum += f; fps_min = minf(fps_min, f)
+			proc_sum += Performance.get_monitor(Performance.TIME_PROCESS)
+			objs = int(Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME))
+			prims = int(Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME))
+		await get_tree().process_frame
+	var avg := fps_sum / maxf(frames, 1)
+	var proc_ms := proc_sum / maxf(frames, 1) * 1000.0
+	print("BENCH fps avg=%.1f min=%.1f | process(script) %.1f мс/кадр из %.1f | объектов %d примитивов %.1fM | quality=%d" % [
+		avg, fps_min, proc_ms, 1000.0 / maxf(avg, 1.0), objs, prims / 1e6, int(main.quality)])
+	get_tree().quit()

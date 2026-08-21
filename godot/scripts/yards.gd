@@ -22,7 +22,7 @@ var _cur_fences: Array[Transform3D] = []
 var _cur_trees: Array[Transform3D] = []
 var _cur_tree_cols: Array[Color] = []
 var _cur_rng: RandomNumberGenerator = null
-const HOUSES_PER_FRAME := 3
+const HOUSES_PER_FRAME := 6
 var _fence_mesh: QuadMesh
 var _fence_mat: StandardMaterial3D
 var _garden_tex: ImageTexture
@@ -138,7 +138,15 @@ func _job_step() -> void:
 	if _cur_holder == null:
 		if _q.is_empty():
 			return
-		_cur = _q.pop_front()
+		# ближайший к камере чанк — первым
+		var cp: Vector3 = main.cam.global_position
+		var bi := 0; var bd := 1e18
+		for qi in _q.size():
+			var qc := _q[qi]
+			var d := Vector2((qc.x + 0.5) * CHUNK - cp.x, (qc.y + 0.5) * CHUNK - cp.z).length_squared()
+			if d < bd: bd = d; bi = qi
+		_cur = _q[bi]
+		_q.remove_at(bi)
 		if chunks.has(_cur) or not houses.has(_cur):
 			return
 		_cur_houses = houses[_cur]
@@ -176,6 +184,8 @@ func _job_step() -> void:
 		_cur_holder.add_child(tmi)
 	add_child(_cur_holder)
 	chunks[_cur] = _cur_holder
+	if OS.is_debug_build() and "--yardsdebug" in OS.get_cmdline_user_args():
+		print("Yards: чанк %s домов %d заборов %d деревьев %d" % [_cur, _cur_houses.size(), _cur_fences.size(), _cur_trees.size()])
 	_cur_holder = null
 
 
