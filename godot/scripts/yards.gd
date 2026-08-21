@@ -12,6 +12,17 @@ var houses := {}              # Vector2i -> Array[Array] [x,z,w,d,ang]
 var chunks := {}              # Vector2i -> Node3D
 var gardens := {}             # Vector2i(чанк) -> Array[[cx, cz, yaw, hw, hd]] грядки (для исключения травы)
 var _acc := 0.0
+# инкрементальная генерация: очередь чанков, по HOUSES_PER_FRAME домов за кадр — без рывков над селом
+var _q: Array[Vector2i] = []
+var _cur: Vector2i
+var _cur_houses: Array = []
+var _cur_i := 0
+var _cur_holder: Node3D = null
+var _cur_fences: Array[Transform3D] = []
+var _cur_trees: Array[Transform3D] = []
+var _cur_tree_cols: Array[Color] = []
+var _cur_rng: RandomNumberGenerator = null
+const HOUSES_PER_FRAME := 3
 var _fence_mesh: QuadMesh
 var _fence_mat: StandardMaterial3D
 var _garden_tex: ImageTexture
@@ -95,6 +106,7 @@ func _ao_texture() -> ImageTexture:
 func _process(dt: float) -> void:
 	if main == null or main.cam == null:
 		return
+	_job_step()
 	_acc += dt
 	if _acc < 0.3:
 		return
@@ -105,15 +117,14 @@ func _process(dt: float) -> void:
 		return
 	var cc := Vector2i(int(floor(p.x / CHUNK)), int(floor(p.z / CHUNK)))
 	var r := int(ceil(RADIUS / CHUNK))
-	var built := 0
 	for cy in range(cc.y - r, cc.y + r + 1):
 		for cx in range(cc.x - r, cc.x + r + 1):
 			var c := Vector2i(cx, cy)
-			if chunks.has(c) or not houses.has(c):
+			if chunks.has(c) or not houses.has(c) or _q.has(c) or (_cur_holder != null and _cur == c):
 				continue
 			var center := Vector2((cx + 0.5) * CHUNK, (cy + 0.5) * CHUNK)
-			if center.distance_to(Vector2(p.x, p.z)) <= RADIUS and built < 2:
-				_gen(c); built += 1
+			if center.distance_to(Vector2(p.x, p.z)) <= RADIUS:
+				_q.append(c)
 	for c: Vector2i in chunks.keys():
 		var center := Vector2((c.x + 0.5) * CHUNK, (c.y + 0.5) * CHUNK)
 		if center.distance_to(Vector2(p.x, p.z)) > RADIUS + CHUNK * 1.5:
@@ -122,102 +133,123 @@ func _process(dt: float) -> void:
 			gardens.erase(c)
 
 
-func _gen(c: Vector2i) -> void:
-	var rng := RandomNumberGenerator.new()
-	rng.seed = (int(c.x) * 92821) ^ (int(c.y) * 68917)
-	var holder := Node3D.new()
-	add_child(holder)
-	var fences: Array[Transform3D] = []
-	var trees: Array[Transform3D] = []
-	var tree_cols: Array[Color] = []
-	for h: Array in houses[c]:
-		var x: float = h[0]; var z: float = h[1]; var w: float = h[2]; var d: float = h[3]; var ang: float = h[4]
-		if rng.randf() < 0.25:
-			continue                                 # не у всех домов забор (и так плотно)
-		var yaw := Basis(Vector3.UP, -ang)
-		# участок: ширина по фасаду w+10, вглубь d+16; дом смещён к фасадной стороне
-		var pw := w + 10.0 + rng.randf_range(0.0, 6.0)
-		var pd := d + 14.0 + rng.randf_range(0.0, 10.0)
-		var back := Vector3(0, 0, 1)                 # «назад» в локальных координатах дома
-		var center_off: Vector3 = yaw * (back * (pd * 0.5 - d * 0.5 - 3.0))
-		var pc := Vector3(x, 0, z) + center_off
-		# забор по периметру: 4 стороны, панели по 2 м, с калиткой-проёмом на фасаде
-		var sides := [[Vector3(-pw * 0.5, 0, -pd * 0.5), Vector3(pw * 0.5, 0, -pd * 0.5)],
-			[Vector3(pw * 0.5, 0, -pd * 0.5), Vector3(pw * 0.5, 0, pd * 0.5)],
-			[Vector3(pw * 0.5, 0, pd * 0.5), Vector3(-pw * 0.5, 0, pd * 0.5)],
-			[Vector3(-pw * 0.5, 0, pd * 0.5), Vector3(-pw * 0.5, 0, -pd * 0.5)]]
-		var side_i := 0
-		for sd: Array in sides:
-			var a: Vector3 = sd[0]; var b: Vector3 = sd[1]
-			var L := a.distance_to(b)
-			var n := int(L / 2.0)
-			var gate := rng.randi_range(0, maxi(n - 1, 0)) if side_i == 0 else -1
-			for i in n:
-				if i == gate: continue
-				var t0 := (i + 0.5) / n
-				var lp: Vector3 = a.lerp(b, t0)
-				var wp: Vector3 = pc + yaw * lp
-				var gy: float = main.height_at(wp.x, wp.z)
-				var dirv: Vector3 = (yaw * (b - a)).normalized()
-				var bs := Basis(Vector3.UP, atan2(-dirv.z, dirv.x) + PI * 0.5)  # квад в плоскости XY смотрит по -Z → развернуть вдоль стороны
-				bs = Basis.looking_at(dirv.cross(Vector3.UP), Vector3.UP)
-				fences.append(Transform3D(bs, Vector3(wp.x, gy - 0.05, wp.z)))
-			side_i += 1
-		# огород — decal сзади участка
-		var gl := pd * 0.45
-		var gcenter: Vector3 = pc + yaw * Vector3(0, 0, pd * 0.5 - gl * 0.5 - 1.0)
-		var gy0: float = main.height_at(gcenter.x, gcenter.z)
-		if rng.randf() < 0.8:
-			if not gardens.has(c): gardens[c] = []
-			gardens[c].append([gcenter.x, gcenter.z, -ang, (pw - 2.0) * 0.5, gl * 0.5])
-			var dec := Decal.new()
-			dec.texture_albedo = _garden_tex
-			dec.size = Vector3(pw - 2.0, 6.0, gl)
-			dec.albedo_mix = 0.85
-			dec.cull_mask = 1
-			dec.distance_fade_enabled = true
-			dec.distance_fade_begin = 500.0
-			dec.distance_fade_length = 150.0
-			dec.transform = Transform3D(yaw, Vector3(gcenter.x, gy0, gcenter.z))
-			holder.add_child(dec)
-		# AO-пятно под домом
-		var ao := Decal.new()
-		ao.texture_albedo = _ao_tex
-		ao.size = Vector3(w + 6.0, 5.0, d + 6.0)
-		ao.albedo_mix = 0.8
-		ao.distance_fade_enabled = true
-		ao.distance_fade_begin = 400.0
-		ao.distance_fade_length = 120.0
-		ao.transform = Transform3D(yaw, Vector3(x, main.height_at(x, z), z))
-		holder.add_child(ao)
-		# плодовые деревья во дворе/огороде
-		var nt := rng.randi_range(0, 3)
-		for i in nt:
-			var lp := Vector3(rng.randf_range(-pw * 0.4, pw * 0.4), 0, rng.randf_range(d * 0.5 + 2.0, pd * 0.5 - 2.0) - (pd * 0.5 - d * 0.5 - 3.0))
-			var wp: Vector3 = pc + yaw * lp
-			var sc := rng.randf_range(0.35, 0.55)
-			trees.append(Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(sc, sc, sc)), Vector3(wp.x, main.height_at(wp.x, wp.z) - 0.2, wp.z)))
-			tree_cols.append(Color(rng.randf_range(0.85, 1.0), rng.randf_range(0.9, 1.1), rng.randf_range(0.8, 0.95)))
-	if not fences.is_empty():
+## Порция домов за кадр; чанк собирается за несколько кадров и добавляется атомарно.
+func _job_step() -> void:
+	if _cur_holder == null:
+		if _q.is_empty():
+			return
+		_cur = _q.pop_front()
+		if chunks.has(_cur) or not houses.has(_cur):
+			return
+		_cur_houses = houses[_cur]
+		_cur_i = 0
+		_cur_holder = Node3D.new()
+		_cur_fences = []; _cur_trees = []; _cur_tree_cols = []
+		_cur_rng = RandomNumberGenerator.new()
+		_cur_rng.seed = (int(_cur.x) * 92821) ^ (int(_cur.y) * 68917)
+	var rng := _cur_rng
+	var done := mini(_cur_i + HOUSES_PER_FRAME, _cur_houses.size())
+	for hi in range(_cur_i, done):
+		_gen_house(_cur_houses[hi], rng)
+	_cur_i = done
+	if _cur_i < _cur_houses.size():
+		return
+	# чанк готов — публикуем
+	if not _cur_fences.is_empty():
 		var mm := MultiMesh.new()
 		mm.transform_format = MultiMesh.TRANSFORM_3D
 		mm.mesh = _fence_mesh
-		mm.instance_count = fences.size()
-		for i in fences.size(): mm.set_instance_transform(i, fences[i])
+		mm.instance_count = _cur_fences.size()
+		for i in _cur_fences.size(): mm.set_instance_transform(i, _cur_fences[i])
 		var mi := MultiMeshInstance3D.new(); mi.multimesh = mm
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		holder.add_child(mi)
-	if _tree_mesh != null and not trees.is_empty():
+		_cur_holder.add_child(mi)
+	if _tree_mesh != null and not _cur_trees.is_empty():
 		var tm := MultiMesh.new()
 		tm.transform_format = MultiMesh.TRANSFORM_3D
 		tm.use_colors = true
 		tm.mesh = _tree_mesh
-		tm.instance_count = trees.size()
-		for i in trees.size():
-			tm.set_instance_transform(i, trees[i]); tm.set_instance_color(i, tree_cols[i])
+		tm.instance_count = _cur_trees.size()
+		for i in _cur_trees.size():
+			tm.set_instance_transform(i, _cur_trees[i]); tm.set_instance_color(i, _cur_tree_cols[i])
 		var tmi := MultiMeshInstance3D.new(); tmi.multimesh = tm
-		holder.add_child(tmi)
-	chunks[c] = holder
+		_cur_holder.add_child(tmi)
+	add_child(_cur_holder)
+	chunks[_cur] = _cur_holder
+	_cur_holder = null
+
+
+func _gen_house(h: Array, rng: RandomNumberGenerator) -> void:
+	var x: float = h[0]; var z: float = h[1]; var w: float = h[2]; var d: float = h[3]; var ang: float = h[4]
+	if rng.randf() < 0.25:
+		return                                   # не у всех домов забор (и так плотно)
+	var yaw := Basis(Vector3.UP, -ang)
+	var pw := w + 10.0 + rng.randf_range(0.0, 6.0)
+	var pd := d + 14.0 + rng.randf_range(0.0, 10.0)
+	var back := Vector3(0, 0, 1)
+	var center_off: Vector3 = yaw * (back * (pd * 0.5 - d * 0.5 - 3.0))
+	var pc := Vector3(x, 0, z) + center_off
+	var sides := [[Vector3(-pw * 0.5, 0, -pd * 0.5), Vector3(pw * 0.5, 0, -pd * 0.5)],
+		[Vector3(pw * 0.5, 0, -pd * 0.5), Vector3(pw * 0.5, 0, pd * 0.5)],
+		[Vector3(pw * 0.5, 0, pd * 0.5), Vector3(-pw * 0.5, 0, pd * 0.5)],
+		[Vector3(-pw * 0.5, 0, pd * 0.5), Vector3(-pw * 0.5, 0, -pd * 0.5)]]
+	var side_i := 0
+	for sd: Array in sides:
+		var a: Vector3 = sd[0]; var b: Vector3 = sd[1]
+		var wa: Vector3 = pc + yaw * a
+		var wb: Vector3 = pc + yaw * b
+		# высота: по концам стороны + середина, панели интерполируются (3 запроса вместо 20+)
+		var ha: float = main.height_at(wa.x, wa.z)
+		var hb: float = main.height_at(wb.x, wb.z)
+		var wm: Vector3 = (wa + wb) * 0.5
+		var hm: float = main.height_at(wm.x, wm.z)
+		var L := a.distance_to(b)
+		var n := int(L / 2.0)
+		var gate := rng.randi_range(0, maxi(n - 1, 0)) if side_i == 0 else -1
+		var dirv: Vector3 = (wb - wa).normalized()
+		var bs := Basis.looking_at(dirv.cross(Vector3.UP), Vector3.UP)
+		for i in n:
+			if i == gate: continue
+			var t0 := (i + 0.5) / n
+			var wp: Vector3 = wa.lerp(wb, t0)
+			var gy := lerpf(ha, hm, t0 * 2.0) if t0 < 0.5 else lerpf(hm, hb, (t0 - 0.5) * 2.0)
+			_cur_fences.append(Transform3D(bs, Vector3(wp.x, gy - 0.05, wp.z)))
+		side_i += 1
+	# огород — decal сзади участка
+	var gl := pd * 0.45
+	var gcenter: Vector3 = pc + yaw * Vector3(0, 0, pd * 0.5 - gl * 0.5 - 1.0)
+	var gy0: float = main.height_at(gcenter.x, gcenter.z)
+	if rng.randf() < 0.8:
+		if not gardens.has(_cur): gardens[_cur] = []
+		gardens[_cur].append([gcenter.x, gcenter.z, -ang, (pw - 2.0) * 0.5, gl * 0.5])
+		var dec := Decal.new()
+		dec.texture_albedo = _garden_tex
+		dec.size = Vector3(pw - 2.0, 6.0, gl)
+		dec.albedo_mix = 0.85
+		dec.cull_mask = 1
+		dec.distance_fade_enabled = true
+		dec.distance_fade_begin = 500.0
+		dec.distance_fade_length = 150.0
+		dec.transform = Transform3D(yaw, Vector3(gcenter.x, gy0, gcenter.z))
+		_cur_holder.add_child(dec)
+	# AO-пятно под домом
+	var ao := Decal.new()
+	ao.texture_albedo = _ao_tex
+	ao.size = Vector3(w + 6.0, 5.0, d + 6.0)
+	ao.albedo_mix = 0.8
+	ao.distance_fade_enabled = true
+	ao.distance_fade_begin = 400.0
+	ao.distance_fade_length = 120.0
+	ao.transform = Transform3D(yaw, Vector3(x, main.height_at(x, z), z))
+	_cur_holder.add_child(ao)
+	# плодовые деревья
+	var nt := rng.randi_range(0, 3)
+	for i in nt:
+		var lp := Vector3(rng.randf_range(-pw * 0.4, pw * 0.4), 0, rng.randf_range(d * 0.5 + 2.0, pd * 0.5 - 2.0) - (pd * 0.5 - d * 0.5 - 3.0))
+		var wp: Vector3 = pc + yaw * lp
+		var sc := rng.randf_range(0.35, 0.55)
+		_cur_trees.append(Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(sc, sc, sc)), Vector3(wp.x, main.height_at(wp.x, wp.z) - 0.2, wp.z)))
+		_cur_tree_cols.append(Color(rng.randf_range(0.85, 1.0), rng.randf_range(0.9, 1.1), rng.randf_range(0.8, 0.95)))
 
 
 ## Точка на грядках какого-нибудь огорода (локальные координаты участка)?

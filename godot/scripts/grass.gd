@@ -25,7 +25,7 @@ var _job_col: Array[Color] = []
 var _job_cust: Array[Color] = []
 var _job_rocks: Array[Transform3D] = []
 var _yards: Node = null
-const JOB_BUDGET := 1400          # точек сетки за кадр
+const JOB_BUDGET := 900           # точек сетки за кадр
 var _cur_dir := Vector2(1, 0)
 var _cur_str := 0.2
 
