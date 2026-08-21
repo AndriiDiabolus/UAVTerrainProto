@@ -64,6 +64,8 @@ func _ready() -> void:
 	_build_debug()
 
 
+var _node_hs := PackedFloat32Array()   # кэш высот узлов меша — height_at зовётся тысячами за кадр
+
 func _load_data() -> void:
 	var mtxt := FileAccess.get_file_as_string(asset_path("meta.json"))
 	if mtxt.is_empty():
@@ -76,6 +78,16 @@ func _load_data() -> void:
 	size_m = float(meta["size_m"])
 	e_min = float(meta["elev_min_m"])
 	e_max = float(meta["elev_max_m"])
+	# предрасчёт высот узлов (1024² float ≈ 4 МБ): decode_u16 на каждый вызов height_at был главным CPU-костом
+	var n := MESH_RES
+	_node_hs.resize(n * n)
+	var espan := e_max - e_min
+	for iz in n:
+		var py := (iz * (px - 1)) / (n - 1)
+		var row := py * px
+		for ix in n:
+			var pxx := (ix * (px - 1)) / (n - 1)
+			_node_hs[iz * n + ix] = e_min + espan * height_bytes.decode_u16(2 * (row + pxx)) / 65535.0
 
 
 ## Высота узла ТЕРРЕЙН-МЕША (ix,iz) — та же выборка, что при построении меша
@@ -83,12 +95,7 @@ func _load_data() -> void:
 ## на видимую поверхность, а не на детальную карту 4096².
 func _node_h(ix: int, iz: int) -> float:
 	var n := MESH_RES
-	ix = clampi(ix, 0, n - 1)
-	iz = clampi(iz, 0, n - 1)
-	var pxx := (ix * (px - 1)) / (n - 1)
-	var py := (iz * (px - 1)) / (n - 1)
-	var v := height_bytes.decode_u16(2 * (py * px + pxx))
-	return e_min + (e_max - e_min) * v / 65535.0
+	return _node_hs[clampi(iz, 0, n - 1) * n + clampi(ix, 0, n - 1)]
 
 
 ## Высота рельефа в мировой точке (x, z) = ТОЧНАЯ поверхность террейн-меша.

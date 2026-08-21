@@ -4,7 +4,7 @@ extends Node3D
 const CHUNK := 512.0
 var radius := 3000.0          # радиус стриминга (меняется пресетом качества)
 const ATTEMPTS := 420          # попыток посадки на чанк (~сетка 25 м)
-const GEN_PER_TICK := 2
+const ATTEMPTS_PER_FRAME := 500    # бюджет посадок за кадр (чанк 420–1300 попыток строится за 1–3 кадра)
 
 var main: Node3D
 var mask: Image
@@ -50,10 +50,7 @@ func _process(dt: float) -> void:
 	if _accum >= 0.25:
 		_accum = 0.0
 		_update_wanted()
-	for i in GEN_PER_TICK:
-		if _queue.is_empty():
-			break
-		_gen_chunk(_queue.pop_front())
+	_gen_step()
 
 
 func _update_wanted() -> void:
@@ -90,19 +87,50 @@ func _pick_type(r: float) -> int:
 	return 0
 
 
-func _gen_chunk(c: Vector2i) -> void:
-	var rng := RandomNumberGenerator.new()
-	rng.seed = (int(c.x) * 73856093) ^ (int(c.y) * 19349663)
+# --- инкрементальная генерация чанка: состояние текущей работы ---
+var _cg_active := false
+var _cg_c: Vector2i
+var _cg_rng: RandomNumberGenerator
+var _cg_i := 0
+var _cg_attempts := 0
+var _cg_xf: Array = []
+var _cg_cl: Array = []
+var _cg_tcol: Array[Dictionary] = []
+const COL_R := [1.4, 1.2, 2.8, 1.6, 1.4, 1.7]
+const COL_H := [14.0, 18.0, 12.0, 13.0, 3.0, 2.8]
+
+
+func _gen_step() -> void:
+	if not _cg_active:
+		if _queue.is_empty():
+			return
+		# ближайший к камере чанк — первым (на скорости важно, что появляется прямо по курсу)
+		var cp: Vector3 = main.cam.global_position
+		var best_i := 0
+		var best_d := 1e18
+		for qi in _queue.size():
+			var qc := _queue[qi]
+			var d := Vector2((qc.x + 0.5) * CHUNK - cp.x, (qc.y + 0.5) * CHUNK - cp.z).length_squared()
+			if d < best_d:
+				best_d = d; best_i = qi
+		_cg_c = _queue[best_i]
+		_queue.remove_at(best_i)
+		if chunks.has(_cg_c):
+			return
+		_cg_rng = RandomNumberGenerator.new()
+		_cg_rng.seed = (int(_cg_c.x) * 73856093) ^ (int(_cg_c.y) * 19349663)
+		_cg_i = 0
+		_cg_attempts = [420, 800, 1300][clampi(int(main.quality), 0, 2)]
+		_cg_xf = []; _cg_cl = []
+		for k in tree_meshes.size():
+			_cg_xf.append([] as Array[Transform3D]); _cg_cl.append([] as Array[Color])
+		_cg_tcol = []
+		_cg_active = true
+	var rng := _cg_rng
 	var half: float = main.size_m * 0.5
-	var xf: Array = []; var cl: Array = []
-	for k in tree_meshes.size():
-		xf.append([] as Array[Transform3D]); cl.append([] as Array[Color])
-	# коллизия: радиус ствола/кроны и высота по типу (× масштаб экземпляра)
-	var col_r := [1.4, 1.2, 2.8, 1.6, 1.4, 1.7]
-	var col_h := [14.0, 18.0, 12.0, 13.0, 3.0, 2.8]
-	var tcol: Array[Dictionary] = []
-	var attempts: int = [420, 800, 1300][clampi(int(main.quality), 0, 2)]
-	for i in attempts:
+	var c := _cg_c
+	var end := mini(_cg_i + ATTEMPTS_PER_FRAME, _cg_attempts)
+	for i in range(_cg_i, end):
 		var wx := (c.x + rng.randf()) * CHUNK
 		var wz := (c.y + rng.randf()) * CHUNK
 		if absf(wx) >= half or absf(wz) >= half:
@@ -112,13 +140,11 @@ func _gen_chunk(c: Vector2i) -> void:
 		var mv := int(round(mask.get_pixel(mx, mz).r * 255.0))
 		var gy: float = main.height_at(wx, wz) - 0.3
 		var elev := gy
-		# --- биом: вероятность посадки и распределение видов ---
-		# типы: 0 ель, 1 сосна, 2 лиственное, 3 берёза, 4 куст
 		var accept := 0.0
 		var w: Array = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 		var scale_k := 1.0
 		match mv:
-			1:   # лес — виды по высоте (бук/смешанный ↓1150, ель 1150–1550, криволесье ↑1550, полонина ↑1750)
+			1:
 				if elev < 1150.0:
 					accept = 1.0; w = [0.25, 0.10, 0.50, 0.15, 0.0, 0.0]
 				elif elev < 1550.0:
@@ -127,13 +153,13 @@ func _gen_chunk(c: Vector2i) -> void:
 					accept = 0.55; w = [0.45, 0.0, 0.0, 0.05, 0.5, 0.0]; scale_k = 0.55
 				else:
 					accept = 0.15; w = [0.1, 0.0, 0.0, 0.0, 0.9, 0.0]; scale_k = 0.5
-			6:   # кустарник
+			6:
 				accept = 0.45; w = [0.05, 0.0, 0.1, 0.1, 0.75, 0.0]
-			5:   # луг/полонина — одиночные деревья и кусты
-				accept = 0.05 if elev < 1500.0 else 0.012; w = [0.12, 0.04, 0.26, 0.14, 0.19, 0.25]   # + стога
-			9:   # болото/пойма — ива/ольха, кусты
+			5:
+				accept = 0.05 if elev < 1500.0 else 0.012; w = [0.12, 0.04, 0.26, 0.14, 0.19, 0.25]
+			9:
 				accept = 0.2; w = [0.0, 0.0, 0.5, 0.2, 0.3, 0.0]; scale_k = 0.75
-			4:   # пашня — почти ничего (редкие деревья на межах)
+			4:
 				accept = 0.004; w = [0.0, 0.0, 0.6, 0.4, 0.0, 0.0]
 			_:
 				accept = 0.01; w = [0.0, 0.0, 0.4, 0.2, 0.4, 0.0]
@@ -145,33 +171,36 @@ func _gen_chunk(c: Vector2i) -> void:
 			acc += w[k]
 			if rr <= acc:
 				ti = k; break
-		var s := rng.randf_range(0.65, 1.4) * scale_k
-		var basis := Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(s, s * rng.randf_range(0.85, 1.2), s))
-		xf[ti].append(Transform3D(basis, Vector3(wx, gy, wz)))
-		# вариация кроны: яркость ±25 %, оттенок ±5 % — лес не «одного цвета»
+		var sc := rng.randf_range(0.65, 1.4) * scale_k
+		var basis := Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(sc, sc * rng.randf_range(0.85, 1.2), sc))
+		_cg_xf[ti].append(Transform3D(basis, Vector3(wx, gy, wz)))
 		var g := rng.randf_range(0.72, 1.18)
-		cl[ti].append(Color(g * rng.randf_range(0.88, 1.0), g, g * rng.randf_range(0.75, 0.96)))
-		tcol.append({"pos": Vector3(wx, gy, wz), "r": col_r[ti] * s * 0.6, "top": col_h[ti] * s})
-	main.col_register_trees(c, tcol)
+		_cg_cl[ti].append(Color(g * rng.randf_range(0.88, 1.0), g, g * rng.randf_range(0.75, 0.96)))
+		_cg_tcol.append({"pos": Vector3(wx, gy, wz), "r": COL_R[ti] * sc * 0.6, "top": COL_H[ti] * sc})
+	_cg_i = end
+	if _cg_i < _cg_attempts:
+		return
+	_cg_active = false
+	main.col_register_trees(c, _cg_tcol)
 	var total := 0
-	for k in xf.size():
-		total += xf[k].size()
+	for k in _cg_xf.size():
+		total += _cg_xf[k].size()
 	if total == 0:
 		chunks[c] = null
 		return
 	var holder := Node3D.new()
 	add_child(holder)
 	for k in tree_meshes.size():
-		if xf[k].is_empty():
+		if _cg_xf[k].is_empty():
 			continue
 		var mm := MultiMesh.new()
 		mm.transform_format = MultiMesh.TRANSFORM_3D
 		mm.use_colors = true
 		mm.mesh = tree_meshes[k]
-		mm.instance_count = xf[k].size()
-		for i in xf[k].size():
-			mm.set_instance_transform(i, xf[k][i])
-			mm.set_instance_color(i, cl[k][i])
+		mm.instance_count = _cg_xf[k].size()
+		for i in _cg_xf[k].size():
+			mm.set_instance_transform(i, _cg_xf[k][i])
+			mm.set_instance_color(i, _cg_cl[k][i])
 		var mmi := MultiMeshInstance3D.new()
 		mmi.multimesh = mm
 		holder.add_child(mmi)

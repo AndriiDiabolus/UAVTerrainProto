@@ -20,9 +20,8 @@ var _job_active := false
 var _job_center := Vector3.ZERO
 var _job_i := 0
 var _job_n := 0
-var _job_xf: Array[Transform3D] = []
-var _job_col: Array[Color] = []
-var _job_cust: Array[Color] = []
+var _job_buf := PackedFloat32Array()   # 20 float/инстанс (transform 12 + color 4 + custom 4) → MultiMesh.buffer
+var _job_count := 0
 var _job_rocks: Array[Transform3D] = []
 var _yards: Node = null
 const JOB_BUDGET := 900           # точек сетки за кадр
@@ -147,7 +146,9 @@ func _process(dt: float) -> void:
 	if _acc < 0.15:
 		return
 	_acc = 0.0
-	if Vector2(p.x - _last_center.x, p.z - _last_center.z).length() < 5.0:
+	# на скорости пересобираем реже (каждые ~0.5 с пути), иначе очередь пересборок душит кадр
+	var spd: float = main.cam.speed() if main.cam.has_method("speed") else 0.0
+	if Vector2(p.x - _last_center.x, p.z - _last_center.z).length() < maxf(5.0, spd * 0.5):
 		return
 	_last_center = p
 	_start_job(p)
@@ -159,7 +160,7 @@ func _start_job(center: Vector3) -> void:
 	_job_center = center
 	_job_i = 0
 	_job_n = int(radius / SPACING)
-	_job_xf = []; _job_col = []; _job_cust = []; _job_rocks = []
+	_job_buf = PackedFloat32Array(); _job_count = 0; _job_rocks = []
 	_yards = main.get_node_or_null("Yards")
 	_job_active = true
 
@@ -173,7 +174,7 @@ func _job_step() -> void:
 	var half: float = main.size_m * 0.5
 	var cx := floorf(center.x / SPACING) * SPACING
 	var cz := floorf(center.z / SPACING) * SPACING
-	var xf := _job_xf; var col := _job_col; var cust := _job_cust; var rocks := _job_rocks
+	var rocks := _job_rocks
 	var end := mini(_job_i + JOB_BUDGET, total)
 	for idx in range(_job_i, end):
 			var i := idx / side - n
@@ -224,10 +225,15 @@ func _job_step() -> void:
 			if dy > 4.0:
 				continue
 			var s := 0.75 + r3 * 0.6
-			var basis := Basis(Vector3.UP, r1 * TAU).scaled(Vector3(s, s, s))
-			xf.append(Transform3D(basis, Vector3(wx, gy - 0.02, wz)))
-			col.append(Color(0.9 + r2 * 0.25, 0.85 + r3 * 0.2, 0.75 + r1 * 0.3))
-			cust.append(Color(float(variant), 0, 0, 0))
+			var ca := cos(r1 * TAU) * s; var sa := sin(r1 * TAU) * s
+			# transform (12, row-major строки базиса + origin), color (4), custom (4)
+			_job_buf.append_array(PackedFloat32Array([
+				ca, 0.0, sa, wx,
+				0.0, s, 0.0, gy - 0.02,
+				-sa, 0.0, ca, wz,
+				0.9 + r2 * 0.25, 0.85 + r3 * 0.2, 0.75 + r1 * 0.3, 1.0,
+				float(variant), 0.0, 0.0, 0.0]))
+			_job_count += 1
 			# камни: редко на лугах/голой земле, чаще у воды
 			var rock_p := 0.012 if mv == 5 else (0.05 if mv == 8 else 0.004)
 			if r1 * 0.37 + r2 * 0.63 < rock_p:
@@ -237,11 +243,9 @@ func _job_step() -> void:
 	if _job_i < total:
 		return
 	_job_active = false
-	_mm.instance_count = xf.size()
-	for i in xf.size():
-		_mm.set_instance_transform(i, xf[i])
-		_mm.set_instance_color(i, col[i])
-		_mm.set_instance_custom_data(i, cust[i])
+	_mm.instance_count = _job_count
+	if _job_count > 0:
+		_mm.buffer = _job_buf                 # одна дешёвая запись вместо 15k вызовов
 	if _rocks != null:
 		_rocks.instance_count = rocks.size()
 		for i in rocks.size():
