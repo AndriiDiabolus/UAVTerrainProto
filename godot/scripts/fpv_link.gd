@@ -118,6 +118,13 @@ func set_camera(c: int) -> void:
 		main.thermal.set_active(camera == 3)
 	_apply_profile()
 	print("Камера: ", CAMERA_NAMES[camera])
+	if main.hud != null and main.hud.has_method("toast"):
+		var subs := ["1200TVL, объектив 150°, 5.8 ГГц аналог · C — следующая, T — тепловизор",
+			"цифровой HD-линк 16:9: чисто, при потере — фриз/SIGNAL LOST · C — следующая",
+			"ночная ч/б, усиление до ×40 · 5.8 ГГц аналог · C — следующая",
+			"LWIR 256×192, FOV 42°, палитра — Y · T/C — обратно"]
+		var cols := [Color(1.0, 0.75, 0.31), Color(0.43, 0.67, 1.0), Color(0.55, 1.0, 0.59), Color(0.96, 0.96, 0.96)]
+		main.hud.toast("КАМЕРА · " + CAMERA_NAMES[camera], subs[camera], cols[camera])
 
 
 func camera_name() -> String:

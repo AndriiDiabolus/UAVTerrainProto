@@ -22,18 +22,25 @@ var mission_marker: Label
 func _toggle_sound() -> void:
 	_sound_muted = not _sound_muted
 	AudioServer.set_bus_mute(0, _sound_muted)
-	if _sound_btn != null:
-		_sound_btn.text = "  Звук: ВЫКЛ  " if _sound_muted else "  Звук: ВКЛ  "
+	toast("ЗВУК: ВЫКЛ" if _sound_muted else "ЗВУК: ВКЛ", "", Color(0.8, 0.8, 0.8), 1.2)
+
+
+var _min: Control
+var _info_held := false
+
+## Тост по центру сверху (смена камеры/режима/звука).
+func toast(text: String, sub: String = "", col: Color = Color(1, 1, 1), dur: float = 2.5) -> void:
+	if _min != null:
+		_min.toast(text, sub, col, dur)
 
 
 
 ## FPV-подача: широкий угол + «аналоговое видео» + OSD дрона.
 func _toggle_fpv() -> void:
 	fpv_on = not fpv_on
-	hud_label.visible = not fpv_on
 	target_marker.visible = not fpv_on
 	# обычный HUD прячем — в FPV своя приборка (OSD живёт внутри видеотракта)
-	for c: Node in [_wind_label, _wind_flag, _sound_btn]:
+	for c: Node in [_wind_label, _wind_flag, _min]:
 		if c != null:
 			c.visible = not fpv_on
 	if fpv_link != null:
@@ -47,11 +54,14 @@ func _toggle_fpv() -> void:
 
 func setup(m: Node3D) -> void:
 	main = m
+	if "--nohud" in OS.get_cmdline_user_args():
+		visible = false
 	var layer := self
 	hud_label = Label.new()
 	hud_label.position = Vector2(16, 12)
 	hud_label.add_theme_font_size_override("font_size", 15)
-	hud_label.add_theme_color_override("font_color", Color(1, 1, 1, 0.95))
+	hud_label.add_theme_color_override("font_color", Color(0.9, 0.9, 0.88, 0.95))
+	hud_label.visible = false                     # полная телеметрия — пока удерживается I
 	hud_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.8))
 	hud_label.add_theme_constant_override("shadow_offset_x", 1)
 	hud_label.add_theme_constant_override("shadow_offset_y", 1)
@@ -65,6 +75,7 @@ func setup(m: Node3D) -> void:
 	_sound_btn.set_anchors_preset(Control.PRESET_TOP_RIGHT)
 	_sound_btn.position = Vector2(-150, 12)
 	_sound_btn.pressed.connect(_toggle_sound)
+	_sound_btn.visible = false                    # вариант G: без кнопки, звук — M (тост)
 	layer.add_child(_sound_btn)
 
 	# перекрестие
@@ -107,6 +118,7 @@ func setup(m: Node3D) -> void:
 	_wind_label.add_theme_constant_override("shadow_offset_y", 1)
 	_wind_label.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
 	_wind_label.position = Vector2(16, -54)
+	_wind_label.visible = false
 	layer.add_child(_wind_label)
 
 	# индикатор стиков пульта — правый нижний угол
@@ -116,6 +128,13 @@ func setup(m: Node3D) -> void:
 	_sticks.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
 	_sticks.position = Vector2(-178, -235)
 	layer.add_child(_sticks)
+
+	# минимальный HUD (вариант G): строка статуса, контекстные блоки, тосты
+	_min = Control.new()
+	_min.set_script(load("res://scripts/hud_min.gd"))
+	_min.set("main", main)
+	_min.set_anchors_preset(Control.PRESET_FULL_RECT)
+	layer.add_child(_min)
 
 	# надпись о столкновении по центру экрана
 	_crash_label = Label.new()
@@ -185,7 +204,7 @@ func setup(m: Node3D) -> void:
 	var attrib := Label.new()
 	attrib.text = str(main.meta.get("attribution", ""))
 	attrib.add_theme_font_size_override("font_size", 11)
-	attrib.add_theme_color_override("font_color", Color(1, 1, 1, 0.55))
+	attrib.add_theme_color_override("font_color", Color(1, 1, 1, 0.38))
 	attrib.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
 	attrib.position = Vector2(16, -24)
 	layer.add_child(attrib)
@@ -234,6 +253,13 @@ func _process(_dt: float) -> void:
 		ll.x, ll.y, int(p.y), int(p.y - ground), int(spd), int(Engine.get_frames_per_second()), fline, tline, wline]
 	_update_target_marker(p)
 	_update_mission_marker()
+	# полная телеметрия — по удержанию I; флажок ветра — при ветре ≥ 5 м/с; стики — только с пультом (или I)
+	_info_held = Input.is_key_pressed(KEY_I)
+	hud_label.visible = _info_held and not fpv_on
+	if _wind_flag != null and main.weather != null:
+		_wind_flag.visible = (not fpv_on) and (main.weather.wind_vec().length() >= 5.0 or _info_held)
+	if _sticks != null:
+		_sticks.visible = (str(cam.joy_name) != "" or _info_held)
 
 
 

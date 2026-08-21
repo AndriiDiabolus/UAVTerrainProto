@@ -147,6 +147,11 @@ func set_drone(id: String) -> void:
 
 func cycle_mode() -> void:
 	mode = (mode + 1) % 3
+	if main != null and main.hud != null and main.hud.has_method("toast"):
+		var tips := ["W/S вперёд-назад · A/D вбок · E/Q вверх-вниз · мышь — камера",
+			"W/S наклон · A/D крен · E/Q газ · мышь/←→ рыскание · выравнивается сам",
+			"стики = угловая скорость · E/Q газ · выравнивания нет"]
+		main.hud.toast("РЕЖИМ · " + MODE_NAMES[mode], tips[mode], Color(0.9, 0.9, 0.9))
 	if mode == MODE_GPS:
 		# при возврате в GPS подвес выравнивается по текущему курсу
 		var e := body.get_euler()
@@ -158,6 +163,8 @@ func cycle_mode() -> void:
 func cycle_drone() -> void:
 	var keys := DRONES.keys()
 	set_drone(keys[(keys.find(drone_id) + 1) % keys.size()])
+	if main != null and main.hud != null and main.hud.has_method("toast"):
+		main.hud.toast("ДРОН · " + drone_name(), "масса %.2f кг · T/W %.1f · до %d°/с" % [float(P["mass"]), float(P["tw"]), int(P["rate"])], Color(0.9, 0.9, 0.9))
 
 
 func mode_name() -> String:

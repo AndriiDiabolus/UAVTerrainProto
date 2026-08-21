@@ -515,6 +515,8 @@ func apply_quality(q: int) -> void:
 		cfg.set_value("video", "quality", quality)
 		cfg.save(SETTINGS_PATH)
 	print("Качество: ", QUALITY_NAMES[quality])
+	if hud != null and hud.has_method("toast"):
+		hud.toast("КАЧЕСТВО · " + QUALITY_NAMES[quality].to_upper(), "", Color(0.85, 0.85, 0.85), 1.5)
 
 
 # ======================= Столкновения, краш, HUD =======================
