@@ -123,7 +123,7 @@ func apply(i: int) -> void:
 	sky.set_shader_parameter("wind_dir", Vector2(cos(wa), sin(wa)))
 	# воздушная перспектива: экспоненциальный туман ×40 относительно старых значений
 	# (ясно → видимость ~60 км, пасмурно ~15 км, шторм ~6 км); цвет дымки уводим к небу
-	env.fog_density = float(p.fog) * 40.0
+	env.fog_density = float(p.fog) * (40.0 if idx == 0 else 20.0)   # пасмурные пресеты: дымка вдвое слабее, иначе читается как туман
 	env.fog_light_color = Color(p.fogc).lerp(Color(p.hor), 0.5)
 	env.fog_aerial_perspective = 0.85
 	env.fog_sky_affect = 0.18
@@ -145,7 +145,9 @@ func apply(i: int) -> void:
 	else:
 		env.glow_intensity = 0.35
 	# объёмная дымка гуще в пасмурную/дождливую погоду
-	env.volumetric_fog_density = 0.00006 + float(p.fog) * 12.0
+	# глобальная плотность объёмного тумана почти нулевая: туман живёт в пятнах по долинам (valley_fog),
+	# а не равномерной дымкой по всему кадру; дальняя дымка — это fog_density (воздушная перспектива)
+	env.volumetric_fog_density = 0.00001 + float(p.fog) * 1.5
 	env.background_energy_multiplier = 1.0
 	wind_speed = p.wind
 	var a := deg_to_rad(p.wdir)
@@ -160,7 +162,7 @@ func apply(i: int) -> void:
 		if _fog_extra:
 			main.valley_fog.set_enabled(true, true, idx in [1, 2, 5], 1.0)
 		else:
-			var auto := {1: 0.35, 2: 0.6, 3: 0.35, 4: 0.45, 5: 0.5}
+			var auto := {2: 0.5, 5: 0.35}      # сам включается только в дождь/шторм и пасмурно; остальное — клавиша 6
 			if auto.has(idx):
 				main.valley_fog.set_enabled(true, true, idx in [1, 2, 5], float(auto[idx]))
 			else:
