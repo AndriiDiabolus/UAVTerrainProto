@@ -182,13 +182,13 @@ func _draw_panel() -> void:
 			d.draw_rect(Rect2(22, y - 24, 390, 36), Color(ACC.r, ACC.g, ACC.b, 0.15))
 			d.draw_rect(Rect2(22, y - 24, 390, 36), Color(ACC.r, ACC.g, ACC.b, 0.7), false, 1.5)
 		var name := it.capitalize()
-		d.draw_string(f, Vector2(40, y), icons[it] + "  " + name, HORIZONTAL_ALIGNMENT_LEFT, -1, 19, ACC if selc else TXT)
+		d.draw_string(f, Vector2(40, y), icons[it] + "  " + name, HORIZONTAL_ALIGNMENT_LEFT, -1, 20, ACC if selc else TXT)
 		var v: String = vals[it]
 		if v != "":
 			var arrows := ("◂ %s ▸" % v) if selc and it != "полёт" else v
-			d.draw_string(f, Vector2(408 - f.get_string_size(arrows, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x, y), arrows, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, ACC if selc else DIM)
+			d.draw_string(f, Vector2(408 - f.get_string_size(arrows, HORIZONTAL_ALIGNMENT_LEFT, -1, 14).x, y), arrows, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, ACC if selc else DIM)
 		y += 50.0
-	d.draw_string(f, Vector2(40, y + 6), "↑↓ пункт · ◂▸ значение · Enter — выбрать · Esc — продолжить", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, DIM)
+	d.draw_string(f, Vector2(40, y + 6), "↑↓ пункт · ◂▸ значение · Enter — выбрать · Esc — продолжить", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, DIM)
 	# памятка справа внизу
 	var px := vp.x - 560.0; var py := vp.y - 300.0
 	d.draw_rect(Rect2(px, py, 520, 262), Color(0.03, 0.04, 0.055, 0.72))
@@ -201,6 +201,6 @@ func _draw_panel() -> void:
 	var yy := py + 52.0
 	for r in rows:
 		d.draw_rect(Rect2(px + 20, yy - 14, f.get_string_size(r[0], HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x + 12, 20), Color(1, 1, 1, 0.1))
-		d.draw_string(f, Vector2(px + 26, yy), r[0], HORIZONTAL_ALIGNMENT_LEFT, -1, 12, TXT)
-		d.draw_string(f, Vector2(px + 210, yy), r[1], HORIZONTAL_ALIGNMENT_LEFT, -1, 12, DIM)
+		d.draw_string(f, Vector2(px + 26, yy), r[0], HORIZONTAL_ALIGNMENT_LEFT, -1, 13, TXT)
+		d.draw_string(f, Vector2(px + 210, yy), r[1], HORIZONTAL_ALIGNMENT_LEFT, -1, 13, DIM)
 		yy += 23.0
