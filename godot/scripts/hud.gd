@@ -104,7 +104,7 @@ func setup(m: Node3D) -> void:
 	_wind_flag.set_script(load("res://scripts/windflag.gd"))
 	_wind_flag.set("main", main)
 	_wind_flag.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
-	_wind_flag.position = Vector2(14, -150)
+	_wind_flag.position = Vector2(16, -252)   # вымпел выше блока «ветер N м/с», чтобы не накладывались
 	_wind_flag.custom_minimum_size = Vector2(110, 92)
 	_wind_flag.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	layer.add_child(_wind_flag)

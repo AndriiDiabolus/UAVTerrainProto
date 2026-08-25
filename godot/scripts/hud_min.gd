@@ -116,8 +116,8 @@ func _draw() -> void:
 	if main.weather != null:
 		var w3: Vector3 = main.weather.wind_vec()
 		if w3.length() >= 5.0:
-			_panel(Rect2(14, vp.y - 130, 150, 36), 0.35, Color(0.78, 0.86, 1.0, 0.35))
-			_txt(f, Vector2(24, vp.y - 106), "ветер %d м/с %s" % [int(w3.length()), main.hud._wind_arrow(w3)], 14, Color(0.8, 0.88, 1.0))
+			_panel(Rect2(14, vp.y - 164, 176, 36), 0.35, Color(0.78, 0.86, 1.0, 0.35))
+			_txt(f, Vector2(24, vp.y - 140), "ветер %d м/с %s" % [int(w3.length()), main.hud._wind_arrow(w3)], 14, Color(0.8, 0.88, 1.0))
 	# --- тост ---
 	if _toast_t > 0.0:
 		var a := clampf(_toast_t / 0.5, 0.0, 1.0)
