@@ -211,8 +211,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		if mouse_captured:
 			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 			mouse_captured = false
-		else:
-			get_tree().quit()
+		elif main != null and main.menu != null:
+			main.menu.set_open(true)          # выход из игры — из меню
 
 
 # ============================ ввод ============================
@@ -308,7 +308,7 @@ func reset() -> void:
 
 
 func _process(dt: float) -> void:
-	if main == null or main.get("replaying") == true:
+	if main == null or main.get("replaying") == true or main.get("menu_open") == true:
 		return
 	dt = minf(dt, 0.1)
 	_t += dt

@@ -13,6 +13,8 @@ func asset_path(f: String) -> String:
 
 var meta: Dictionary
 var seed_value := 1
+var menu_open := false
+var menu: CanvasLayer
 var height_bytes: PackedByteArray
 var px: int                    # пикселей heightmap по стороне
 var size_m: float              # размер мира в метрах
@@ -31,10 +33,16 @@ func _ready() -> void:
 			sv = int(a.substr(7))
 	seed_value = sv
 	seed(hash(sv))
+	var rcfg := ConfigFile.new()
+	if rcfg.load("user://settings.cfg") == OK:
+		region = str(rcfg.get_value("game", "region", ""))
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--region="):
 			region = a.substr(9)
-			asset_dir = "res://assets/regions/%s/" % region
+	if region != "":
+		asset_dir = "res://assets/regions/%s/" % region
+		if not FileAccess.file_exists(ProjectSettings.globalize_path(asset_dir + "meta.json")) and not ResourceLoader.exists(asset_dir + "meta.json"):
+			region = ""; asset_dir = "res://assets/"
 	_load_quality()
 	collision = load("res://scripts/collision.gd").new(self)
 	_load_data()
@@ -62,6 +70,15 @@ func _ready() -> void:
 	apply_quality(quality)
 	_build_selftest()
 	_build_debug()
+	_build_menu()
+
+
+func _build_menu() -> void:
+	menu = CanvasLayer.new()
+	menu.name = "Menu"
+	menu.set_script(load("res://scripts/menu.gd"))
+	add_child(menu)
+	menu.setup(self)
 
 
 var _node_hs := PackedFloat32Array()   # кэш высот узлов меша — height_at зовётся тысячами за кадр

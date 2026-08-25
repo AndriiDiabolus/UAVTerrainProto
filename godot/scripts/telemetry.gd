@@ -94,6 +94,22 @@ func _exit_tree() -> void:
 			print("Телеметрия сохранена: ", ProjectSettings.globalize_path(path))
 
 
+## Запуск реплея из меню (закрывает запись текущего полёта).
+func start_replay(p: String) -> void:
+	if recording and _f != null:
+		_f.close(); recording = false
+	_frames = []; _events = []; _rt = 0.0; _idx = 0; _paused = false; _speed = 1.0
+	_load_replay(p)
+
+
+func stop_replay() -> void:
+	replaying = false
+	main.replaying = false
+	_frames = []
+	if replay_label != null:
+		replay_label.text = ""
+
+
 # ============================ реплей ============================
 
 func _load_replay(p: String) -> void:
