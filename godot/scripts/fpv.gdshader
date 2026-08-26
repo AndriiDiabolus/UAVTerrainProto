@@ -24,8 +24,29 @@ uniform float night_cam = 0.0;    // ночная ч/б камера (Night Eagl
 uniform int thermal_palette = 0;
 uniform float vignette : hint_range(0.0, 1.5) = 0.55;
 uniform vec3 white_balance : source_color = vec3(1.04, 1.0, 0.94);   // тёплая камера (Caddx-like)
+uniform float rain : hint_range(0.0, 1.0) = 0.0;   // капли на линзе (в дождь)
 
 float rnd(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+
+// Капли на линзе: сетка ячеек, в части ячеек капля-линза (рефракция + блик).
+// Крупные капли медленно сползают вниз. Возврат: смещение выборки; hl — блик.
+vec2 drops(vec2 uv, float t, float amt, out float hl) {
+	hl = 0.0;
+	if (amt < 0.01) return vec2(0.0);
+	vec2 g = uv * vec2(7.0, 5.0);
+	vec2 id = floor(g);
+	float h = rnd(id);
+	float cycle = floor(t / 9.0 + h * 13.0);
+	if (rnd(id + cycle * 0.37) > amt * 0.8) return vec2(0.0);
+	vec2 c = vec2(rnd(id + cycle + 1.0), rnd(id + cycle + 2.0)) * 0.6 + 0.2;
+	float big = step(0.72, rnd(id + cycle + 3.0));
+	c.y += big * fract(t / 9.0 + h * 13.0) * 0.9;      // сползание
+	vec2 d = (fract(g) - c) * vec2(1.0, 1.35);
+	float rr = 0.07 + 0.09 * rnd(id + cycle + 4.0) + big * 0.09;
+	float m = smoothstep(rr, rr * 0.3, length(d));
+	hl = m * smoothstep(rr * 0.6, rr * 0.2, length(d - vec2(rr * 0.25))) * 0.5;
+	return -d * m * 1.6;
+}
 vec3 hsv2rgb(vec3 c) {
 	vec3 p = abs(fract(c.xxx + vec3(0.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - 3.0);
 	return c.z * mix(vec3(1.0), clamp(p - 1.0, 0.0, 1.0), c.y);
@@ -77,6 +98,10 @@ void fragment() {
 	vec2 dirn = (r > 1e-5) ? q / length(q) : vec2(0.0);
 	vec2 src = dirn * rs * halfw / vec2(aspect, 1.0) + 0.5;
 	bool outside = outside0;
+	float rain_hl = 0.0;
+	float rain_amt = rain * (1.0 - thermal);           // LWIR капли видит иначе — не рисуем
+	vec2 rain_off = drops(UV, t, rain_amt, rain_hl);
+	src += rain_off * 0.13;
 	src = clamp(src, vec2(0.001), vec2(0.999));
 
 	vec3 col;
@@ -214,5 +239,6 @@ void fragment() {
 	if (lost > 0.5) {
 		col = mix(col, vec3(dot(col, vec3(0.33))), 0.8) * 0.55;
 	}
+	col += vec3(rain_hl) * 0.6;
 	COLOR = vec4(col, 1.0);
 }

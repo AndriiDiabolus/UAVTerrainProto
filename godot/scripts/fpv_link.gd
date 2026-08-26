@@ -229,6 +229,10 @@ func _process(dt: float) -> void:
 	mat.set_shader_parameter("sun_uv", sun_uv)
 	mat.set_shader_parameter("sun_vis", _sun_vis)
 	mat.set_shader_parameter("night", night)
+	var rain_v := 0.0
+	if main.weather != null and main.weather.raining():
+		rain_v = 1.0
+	mat.set_shader_parameter("rain", rain_v)
 	mat.set_shader_parameter("night_cam", 1.0 if camera == 2 else 0.0)
 	mat.set_shader_parameter("lost", 1.0 if (frozen and lost_t > 1.5) else 0.0)
 	mat.set_shader_parameter("frame_t", _frame_t)

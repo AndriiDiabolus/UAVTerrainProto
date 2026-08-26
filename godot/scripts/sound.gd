@@ -91,7 +91,7 @@ func _process(dt: float) -> void:
 	_windlvl = lerpf(_windlvl, wind_t, clampf(dt * 2.0, 0.0, 1.0))
 	# дождь: шум тем громче, чем ниже дрон (у земли слышно капли по листве)
 	var rain_t := 0.0
-	if main.get("weather") != null and main.weather.get("_rain_extra") != null and main.weather._rain_extra:
+	if main.get("weather") != null and main.weather.raining():
 		var cp0: Vector3 = main.cam.global_position
 		var agl0: float = cp0.y - main.height_at(cp0.x, cp0.z)
 		rain_t = 0.65 * clampf(1.0 - agl0 / 400.0, 0.25, 1.0)

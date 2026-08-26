@@ -190,6 +190,7 @@ func _build_terrain() -> void:
 		ResourceSaver.save(mesh, cache_path)
 
 	var mat := ShaderMaterial.new()
+	terrain_mat = mat
 	var sh := "res://scripts/terrain_unshaded.gdshader" if "--unshaded" in OS.get_cmdline_user_args() else "res://scripts/terrain.gdshader"
 	mat.shader = load(sh)
 	mat.set_shader_parameter("albedo_tex", _load_albedo())
@@ -444,6 +445,7 @@ func _build_smoke() -> void:
 
 var _lamp_mat: StandardMaterial3D
 
+var terrain_mat: ShaderMaterial
 var road_index := {}       # Vector2i(32 м) -> Array[[ax,az,bx,bz,hw]] — заполняет roads.gd
 var deck_index := {}       # Vector2i(32 м) -> Array[[ax,az,bx,bz,hw,ya,yb]] — палубы мостов (roads.gd)
 

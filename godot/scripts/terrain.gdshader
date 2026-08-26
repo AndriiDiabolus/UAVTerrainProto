@@ -1,5 +1,7 @@
 shader_type spatial;
 
+uniform float wetness : hint_range(0.0, 1.0) = 0.0;
+
 // Реальные CC0-фототекстуры (Poly Haven, aerial) как ближний слой:
 //   трава — на пологих, камень — на склонах, грунт — на «полевых» (бурых) пятнах.
 // Спутник задаёт крупную раскладку и цвет; фото даёт чёткую фактуру и рельеф вблизи.
@@ -162,7 +164,7 @@ void fragment() {
 		vec3 wn = normalize(wnorm + (vec3(1,0,0) * nd.x + vec3(0,0,1) * nd.y) * (0.9 * near));
 		NORMAL = normalize((VIEW_MATRIX * vec4(wn, 0.0)).xyz);
 
-		ALBEDO = base * cloud_shadow(wpos.xz);
+		ALBEDO = base * cloud_shadow(wpos.xz) * (1.0 - 0.28 * wetness);
 		if (mask_debug) { ALBEDO = vec3(cls / 10.0, forest, crop + meadow * 0.5); }
 		if (thermal_params.x > 0.5) {
 			// температура поверхности: вода холодная, лес прохладный, пашня/голая земля тёплые, дорога/застройка горячие;
@@ -177,7 +179,8 @@ void fragment() {
 			tmp = mix(tmp, tmp * 0.72 + road * 0.08 + rockW * 0.06, night);
 			ALBEDO = vec3(0.0); EMISSION = vec3(tmp); ROUGHNESS = 1.0; SPECULAR = 0.0;
 		}
-		ROUGHNESS = 0.88 + 0.12 * nB - grassW * 0.05;
+		ROUGHNESS = mix(0.88 + 0.12 * nB - grassW * 0.05, 0.34, wetness * 0.8);
+		SPECULAR = mix(0.5, 0.7, wetness);
 		SPECULAR = 0.12;
 	}
 }

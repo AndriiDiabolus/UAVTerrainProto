@@ -33,7 +33,7 @@ const PRESETS := [
 	{"name": "🌧 Дождь, шторм", "srot": Vector3(-62, -90, 0), "se": 0.32, "sc": Color(0.7, 0.72, 0.76),
 	 "amb": Color(0.4, 0.42, 0.46), "ae": 0.45, "top": Color(0.38, 0.4, 0.44), "hor": Color(0.5, 0.51, 0.54),
 	 "gnd": Color(0.44, 0.45, 0.48), "fog": 0.000016, "fogc": Color(0.55, 0.57, 0.6),
-	 "br": 0.92, "sat": 0.7, "rain": 0.0, "lit": 0.12, "fh": 1150, "fhd": 0.0, "cov": 0.92, "ccol": Color(0.6,0.62,0.66), "cdark": Color(0.3,0.32,0.36), "wind": 10.0, "wdir": 220.0},
+	 "br": 0.92, "sat": 0.7, "rain": 1.0, "lit": 0.12, "fh": 1150, "fhd": 0.0, "cov": 0.92, "ccol": Color(0.6,0.62,0.66), "cdark": Color(0.3,0.32,0.36), "wind": 10.0, "wdir": 220.0},
 
 	{"name": "🌇 Закат", "srot": Vector3(-8, -95, 0), "se": 1.4, "sc": Color(1.0, 0.62, 0.32),
 	 "amb": Color(0.5, 0.4, 0.42), "ae": 0.3, "top": Color(0.28, 0.3, 0.55), "hor": Color(0.95, 0.55, 0.32),
@@ -97,63 +97,102 @@ func _build_rain() -> void:
 	_rain_holder.add_child(_rain)
 
 
-func apply(i: int) -> void:
+## Непрерывные параметры пресета (интерполируются при смене погоды).
+func _cont_of(p: Dictionary, i: int) -> Dictionary:
+	var night := 1.0 if i == 4 else 0.0
+	return {
+		"srot": Vector3(p.srot),
+		"se": float(p.se) * 1.35 * (2.6 if i == 4 else 1.0),
+		"sc": Color(p.sc), "amb": Color(p.amb),
+		"ae": float(p.ae) * 1.1 * (2.6 if i == 4 else 1.0),
+		"top": Color(p.top), "hor": Color(p.hor), "gnd": Color(p.gnd),
+		"cov": float(p.get("cov", 0.4)), "ccol": Color(p.get("ccol", Color(1, 1, 1))),
+		"cdark": Color(p.get("cdark", Color(0.55, 0.58, 0.62))),
+		"night": night,
+		"fogd": float(p.fog) * (40.0 if i == 0 else 20.0),
+		"fogc": Color(p.fogc).lerp(Color(p.hor), 0.5),
+		"br": 0.92 + (float(p.br) - 1.0) * 0.5 + (0.22 if i == 4 else 0.0),
+		"sat": 0.86 + (float(p.sat) - 1.0) * 0.5,
+		"wind": float(p.wind), "wdir": float(p.wdir),
+		"lit": float(p.get("lit", 0.03)),
+		"cldstr": {0: 0.45, 1: 0.22, 2: 0.0, 3: 0.40, 4: 0.12, 5: 0.0}.get(i, 0.3),
+	}
+
+
+func _mix_cont(a: Dictionary, b: Dictionary, t: float) -> Dictionary:
+	var o := {}
+	for k in b:
+		var vb = b[k]
+		var va = a.get(k, vb)
+		if vb is Color: o[k] = (va as Color).lerp(vb, t)
+		elif k == "wdir": o[k] = rad_to_deg(lerp_angle(deg_to_rad(float(va)), deg_to_rad(float(vb)), t))
+		elif vb is Vector3: o[k] = (va as Vector3).lerp(vb, t)
+		else: o[k] = lerpf(float(va), float(vb), t)
+	return o
+
+
+## Применить непрерывный набор к сцене.
+func _apply_cont(c: Dictionary) -> void:
+	_cur_cont = c
+	sun.rotation_degrees = c.srot
+	sun.light_energy = c.se
+	sun.light_color = c.sc
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	env.ambient_light_color = c.amb
+	env.ambient_light_energy = c.ae
+	sky.set_shader_parameter("top_color", c.top)
+	sky.set_shader_parameter("horizon_color", c.hor)
+	sky.set_shader_parameter("ground_color", c.gnd)
+	sky.set_shader_parameter("sun_color", c.sc)
+	sky.set_shader_parameter("coverage", c.cov)
+	sky.set_shader_parameter("cloud_color", c.ccol)
+	sky.set_shader_parameter("cloud_dark", c.cdark)
+	sky.set_shader_parameter("night", c.night)
+	if _sun_by_time:
+		_apply_ephemeris()
+	sky.set_shader_parameter("sun_dir", -sun.global_transform.basis.z)
+	var wa: float = deg_to_rad(float(c.wdir))
+	sky.set_shader_parameter("wind_dir", Vector2(cos(wa), sin(wa)))
+	env.fog_density = c.fogd
+	env.fog_light_color = c.fogc
+	env.adjustment_brightness = c.br
+	env.adjustment_saturation = c.sat
+	_cloud_strength = c.cldstr
+	wind_speed = c.wind
+	wind = Vector3(cos(wa), 0, sin(wa)) * wind_speed
+	if main != null and main.has_method("set_window_light"):
+		main.set_window_light(c.lit)
+
+
+var _cur_cont := {}
+var _trans_from := {}
+var _trans_to := {}
+var _trans := 1.0
+const TRANS_SEC := 18.0        # плавная смена погоды ~18 с
+
+
+func apply(i: int, instant: bool = false) -> void:
 	idx = (i + PRESETS.size()) % PRESETS.size()
 	var p: Dictionary = PRESETS[idx]
 	label = p.name
-	sun.rotation_degrees = p.srot
-	sun.light_energy = p.se
-	sun.light_color = p.sc
-	sun.shadow_enabled = p.se > 0.25
-	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = p.amb
-	env.ambient_light_energy = p.ae
-	sky.set_shader_parameter("top_color", p.top)
-	sky.set_shader_parameter("horizon_color", p.hor)
-	sky.set_shader_parameter("ground_color", p.gnd)
-	sky.set_shader_parameter("sun_color", p.sc)
-	sky.set_shader_parameter("sun_dir", -sun.global_transform.basis.z)
-	sky.set_shader_parameter("coverage", p.get("cov", 0.4))
-	sky.set_shader_parameter("cloud_color", p.get("ccol", Color(1, 1, 1)))
-	sky.set_shader_parameter("cloud_dark", p.get("cdark", Color(0.55, 0.58, 0.62)))
-	sky.set_shader_parameter("night", 1.0 if idx == 4 else 0.0)
-	if _sun_by_time:
-		_apply_ephemeris()
-	var wa := deg_to_rad(p.wdir)
-	sky.set_shader_parameter("wind_dir", Vector2(cos(wa), sin(wa)))
-	# воздушная перспектива: экспоненциальный туман ×40 относительно старых значений
-	# (ясно → видимость ~60 км, пасмурно ~15 км, шторм ~6 км); цвет дымки уводим к небу
-	env.fog_density = float(p.fog) * (40.0 if idx == 0 else 20.0)   # пасмурные пресеты: дымка вдвое слабее, иначе читается как туман
-	env.fog_light_color = Color(p.fogc).lerp(Color(p.hor), 0.5)
+	# дискретное — сразу (целевые флаги)
+	sun.shadow_enabled = float(p.se) > 0.25
+	sun.shadow_opacity = 0.35 if idx == 5 else 0.92      # пасмурно: мягкие слабые тени
 	env.fog_aerial_perspective = 0.85
 	env.fog_sky_affect = 0.18
-	# тени облаков: сила по пресету (нет при сплошной облачности/ночью почти нет)
-	_cloud_strength = {0: 0.45, 1: 0.22, 2: 0.0, 3: 0.40, 4: 0.12, 5: 0.0}.get(idx, 0.3)
-	sun.shadow_opacity = 0.35 if idx == 5 else 0.92      # пасмурно: мягкие слабые тени
 	env.fog_height = p.get("fh", 0.0)
-	env.fog_height_density = p.get("fhd", 0.0)
-	# под ACES-тонмаппинг: пресеты писались под FILMIC с br 1.25 — приводим к естественному
-	env.adjustment_brightness = 0.92 + (float(p.br) - 1.0) * 0.5
-	env.adjustment_saturation = 0.86 + (float(p.sat) - 1.0) * 0.5
-	sun.light_energy = float(p.se) * 1.35
-	env.ambient_light_energy = float(p.ae) * 1.1
-	if idx == 4:                                   # ночь: под ACES темнее, чем задумано — компенсируем
-		env.ambient_light_energy *= 2.6
-		env.adjustment_brightness += 0.22
-		sun.light_energy *= 2.6                    # «луна» — иначе рельеф не читается вовсе
-		env.glow_intensity = 0.6
-	else:
-		env.glow_intensity = 0.35
-	# объёмная дымка гуще в пасмурную/дождливую погоду
-	# глобальная плотность объёмного тумана почти нулевая: туман живёт в пятнах по долинам (valley_fog),
-	# а не равномерной дымкой по всему кадру; дальняя дымка — это fog_density (воздушная перспектива)
+	env.glow_intensity = 0.6 if idx == 4 else 0.35
+	# глобальная плотность объёмного тумана почти нулевая: туман живёт в пятнах по долинам (valley_fog)
 	env.volumetric_fog_density = 0.00001 + float(p.fog) * 1.5
 	env.background_energy_multiplier = 1.0
-	wind_speed = p.wind
-	var a := deg_to_rad(p.wdir)
-	wind = Vector3(cos(a), 0, sin(a)) * wind_speed
-	if main != null and main.has_method("set_window_light"):
-		main.set_window_light(p.get("lit", 0.03))
+	# непрерывное — через переход
+	_trans_to = _cont_of(p, idx)
+	if instant or _cur_cont.is_empty():
+		_trans = 1.0
+		_apply_cont(_trans_to)
+	else:
+		_trans_from = _cur_cont.duplicate()
+		_trans = 0.0
 	# ручные тумблеры (6/7) поверх любого пресета
 	# туман по долинам (объёмный, пятнами): клавиша 6 — включить с полной плотностью (рассеется на солнце);
 	# пасмурно/дождь/ночь/закат — держится сам с меньшей плотностью
@@ -174,6 +213,13 @@ func apply(i: int) -> void:
 
 var _fog_extra := false
 var _rain_extra := false
+
+
+## Идёт ли дождь (пресет шторма или клавиша 7) — для звука, мокрости, капель на линзе.
+func raining() -> bool:
+	return _rain_extra or float(PRESETS[idx].get("rain", 0.0)) > 0.0
+var wetness := 0.0       # мокрая земля: растёт в дождь (~45 с), сохнет (~4 мин)
+var _wet_applied := -1.0
 
 # --- солнце по дате/времени (--date=YYYY-MM-DD --time=HH:MM, локальное время Киева UTC+3) ---
 var _sun_by_time := false
@@ -254,6 +300,15 @@ func _process(dt: float) -> void:
 	RenderingServer.global_shader_parameter_set("cloud_shadow_params",
 		Vector4(_cloud_off.x, _cloud_off.y, _cloud_strength, 0.0004))
 	_t += dt
+	var wet_tgt := 1.0 if raining() else 0.0
+	wetness = move_toward(wetness, wet_tgt, dt / (45.0 if raining() else 240.0))
+	if absf(wetness - _wet_applied) > 0.02:
+		_wet_applied = wetness
+		_push_wetness()
+	if _trans < 1.0:
+		_trans = minf(1.0, _trans + dt / TRANS_SEC)
+		var tt := smoothstep(0.0, 1.0, _trans)
+		_apply_cont(_mix_cont(_trans_from, _trans_to, tt))
 	if main != null and main.cam != null:
 		_rain_holder.global_position = main.cam.global_position
 	# порывы ветра гуляют по направлению и силе
@@ -264,8 +319,27 @@ func _process(dt: float) -> void:
 			_flash = 1.0
 			if main.get("sound") != null:
 				main.sound.thunder()
-		env.adjustment_brightness = 0.92 + (float(PRESETS[idx].br) - 1.0) * 0.5 + _flash * 0.9
+		env.adjustment_brightness = float(_cur_cont.get("br", 1.0)) + _flash * 0.9
 		env.background_energy_multiplier = 1.0 + _flash * 2.0
+
+
+## Мокрая земля/дороги: террейну — uniform, дорогам — roughness/albedo напрямую.
+func _push_wetness() -> void:
+	if main == null:
+		return
+	var tm = main.get("terrain_mat")
+	if tm != null:
+		tm.set_shader_parameter("wetness", wetness)
+	var rn := main.get_node_or_null("Roads")
+	if rn != null:
+		for mi in rn.get_children():
+			if mi is MeshInstance3D and mi.mesh != null and mi.mesh.get_surface_count() > 0:
+				var m: Material = mi.mesh.surface_get_material(0)
+				if m is StandardMaterial3D:
+					m.roughness = lerpf(0.82, 0.18, wetness)
+					var base := 0.78 if mi.name == "Asphalt" else 0.9
+					var g := base * (1.0 - 0.3 * wetness)
+					m.albedo_color = Color(g, g, g * 1.02)
 
 
 ## Текущий вектор ветра с порывами (для дрона и HUD).
