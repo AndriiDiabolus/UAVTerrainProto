@@ -50,6 +50,7 @@ func _ready() -> void:
 	_build_terrain()
 	_build_water()
 	_build_roads()
+	_build_fx()
 	_build_props()
 	_build_buildings()
 	_spawn_camera()
@@ -408,6 +409,16 @@ func _build_water() -> void:
 	w.set_script(load("res://scripts/water.gd"))
 	add_child(w)
 	w.setup(self)
+
+
+var fx: Node3D
+
+func _build_fx() -> void:
+	fx = Node3D.new()
+	fx.name = "FX"
+	fx.set_script(load("res://scripts/fx.gd"))
+	add_child(fx)
+	fx.setup(self)
 
 
 func _build_roads() -> void:

@@ -262,6 +262,8 @@ func _process(dt: float) -> void:
 		_flash = maxf(0.0, _flash - dt * 3.5)
 		if randf() < dt * 0.09:
 			_flash = 1.0
+			if main.get("sound") != null:
+				main.sound.thunder()
 		env.adjustment_brightness = 0.92 + (float(PRESETS[idx].br) - 1.0) * 0.5 + _flash * 0.9
 		env.background_energy_multiplier = 1.0 + _flash * 2.0
 

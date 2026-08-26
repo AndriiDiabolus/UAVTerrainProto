@@ -178,7 +178,8 @@ func _spawn_vehicle(kind: String, road: Dictionary, d: float) -> void:
 		"dir": 1.0 if randf() < 0.5 else -1.0,
 		"speed": randf_range(3.0, 5.0) if kind == "tank" else randf_range(6.0, 9.0),
 		"radius": 5.0, "alive": true, "leader": true, "wreck_t": 0.0, "offset": 0.0,
-		"alert": false, "aa_t": randf_range(0.0, 1.5)})
+		"alert": false, "aa_t": randf_range(0.0, 1.5),
+		"dust": main.fx.dust(mi) if main.get("fx") != null else null})
 
 
 func _spawn_squad(road: Dictionary, d: float) -> void:
@@ -295,12 +296,14 @@ func _process(dt: float) -> void:
 			fwd = (fwd - up * fwd.dot(up)).normalized()
 			var rgt := fwd.cross(up).normalized()
 			t.node.transform = Transform3D(Basis(fwd, up, rgt), Vector3(wx, y + 0.25, wz))
+			if t.get("dust") != null:
+				t.dust.emitting = t.speed > 2.5 and dist_d < 900.0
 		# таран дроном
 		if cam_pos.distance_to(t.node.position) < RAM_DIST + t.radius:
 			_kill(t, t.node.position)
 	# чистка старых обломков
 	for t: Dictionary in targets.duplicate():
-		if not t.alive and t.wreck_t > 25.0:
+		if not t.alive and t.wreck_t > (90.0 if t.kind != "soldier" else 25.0):
 			t.node.queue_free()
 			targets.erase(t)
 
@@ -402,6 +405,8 @@ func _explode(pos: Vector3) -> void:
 			main.sound.boom(pos)
 		_puff(pos + Vector3(0, 1.5, 0), Color(0.55, 0.45, 0.32), 8.0)
 		_puff(pos + Vector3(0, 3.0, 0), Color(0.3, 0.28, 0.25), 12.0)
+		if main.get("fx") != null:
+			main.fx.explosion(pos, false)
 	if main.get("telemetry") != null:
 		main.telemetry.event("impact", {"x": pos.x, "z": pos.z, "hit": any})
 
@@ -467,6 +472,10 @@ func _kill(t: Dictionary, pos: Vector3) -> void:
 		c.queue_free()
 	_puff(pos + Vector3(0, 2, 0), Color(1.0, 0.55, 0.15), 9.0)
 	_puff(pos + Vector3(0, 4, 0), Color(0.25, 0.23, 0.2), 14.0)
+	if main.get("fx") != null:
+		main.fx.explosion(pos, t.kind != "soldier")
+		if t.kind != "soldier":
+			main.fx.wreck_fire(t.node)     # после чистки детей — пламя/дым остаются
 
 
 ## Ближайшая живая цель к точке и дистанция до неё (для HUD-указателя).
