@@ -135,7 +135,7 @@ func _process(dt: float) -> void:
 		var wx := p.x + side.x * 0.0; var wz := p.y + side.y * 0.0
 		var rgt := Vector2(dv.y, -dv.x).normalized() * 1.3
 		wx = p.x + rgt.x; wz = p.y + rgt.y
-		var y: float = main.height_at(wx, wz) + 0.55
+		var y: float = maxf(main.height_at(wx, wz), main.deck_h(wx, wz)) + 0.55
 		var b := Basis(Vector3.UP, c.yaw)
 		var sc := 1.35 if c.truck else 1.0
 		_mm_body.set_instance_transform(i, Transform3D(b.scaled(Vector3(sc, sc, sc)), Vector3(wx, y, wz)))

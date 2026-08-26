@@ -19,6 +19,7 @@ func setup(main: Node3D) -> void:
 		return
 	var roads: Array = JSON.parse_string(f)["roads"]
 	var t0 := Time.get_ticks_msec()
+	_build_water_index(main)
 
 	# арены вершин для двух материалов
 	var av := {"asph": _arena(), "grav": _arena()}
@@ -33,8 +34,8 @@ func setup(main: Node3D) -> void:
 
 	_emit(main, av["asph"], _asph_mat(main), "Asphalt")
 	_emit(main, av["grav"], _grav_mat(main), "Gravel")
-	print("Roads built in %d ms (asph v=%d, grav v=%d)" % [
-		Time.get_ticks_msec() - t0, av["asph"].V.size(), av["grav"].V.size()])
+	print("Roads built in %d ms (asph v=%d, grav v=%d, мостовых ячеек %d)" % [
+		Time.get_ticks_msec() - t0, av["asph"].V.size(), av["grav"].V.size(), main.deck_index.size()])
 
 
 ## Пространственный индекс сегментов дорог (ячейки 32 м) — для исключения травы/клаттера с полотна.
@@ -62,6 +63,49 @@ func _arena() -> Dictionary:
 		"U": PackedVector2Array(), "I": PackedInt32Array()}
 
 
+# ---------------- мосты: индекс водных линий (ячейки 32 м) ----------------
+const WHALF := {"river": 5.5, "stream": 1.6}
+var _wcells := {}                 # Vector2i -> Array сегментов [ax,ay,bx,by,hw]
+
+
+func _build_water_index(main: Node3D) -> void:
+	var f := FileAccess.get_file_as_string(main.asset_path("water.json"))
+	if f.is_empty():
+		return
+	for w: Dictionary in JSON.parse_string(f)["w"]:
+		var hw: float = WHALF.get(w["c"], 1.6)
+		var pts: Array = w["p"]
+		for i in range(1, pts.size()):
+			var a := Vector2(pts[i - 1][0], pts[i - 1][1]); var b := Vector2(pts[i][0], pts[i][1])
+			var seg := [a.x, a.y, b.x, b.y, hw]
+			var steps := int(a.distance_to(b) / IDX_CELL) + 1
+			var seen := {}
+			for k in steps + 1:
+				var q := a.lerp(b, float(k) / steps)
+				for dx in [-1, 0, 1]:
+					for dz in [-1, 0, 1]:
+						var c := Vector2i(int(floor(q.x / IDX_CELL)) + dx, int(floor(q.y / IDX_CELL)) + dz)
+						if seen.has(c): continue
+						seen[c] = true
+						if not _wcells.has(c): _wcells[c] = []
+						_wcells[c].append(seg)
+
+
+## Точка ближе (полуширина воды + margin) к водной линии?
+func _near_water(x: float, z: float, margin: float) -> bool:
+	var c := Vector2i(int(floor(x / IDX_CELL)), int(floor(z / IDX_CELL)))
+	if not _wcells.has(c):
+		return false
+	var p := Vector2(x, z)
+	for s: Array in _wcells[c]:
+		var a := Vector2(s[0], s[1]); var b := Vector2(s[2], s[3])
+		var ab := b - a
+		var t := clampf((p - a).dot(ab) / maxf(ab.length_squared(), 1e-6), 0.0, 1.0)
+		if p.distance_to(a + ab * t) <= float(s[4]) + margin:
+			return true
+	return false
+
+
 func _resample(pts: Array) -> Array:
 	var out: Array[Vector2] = []
 	var prev := Vector2(pts[0][0], pts[0][1])
@@ -85,7 +129,13 @@ func _ribbon(main: Node3D, pts: Array, hw: float, off: float, a: Dictionary) -> 
 	var U: PackedVector2Array = a.U
 	var I: PackedInt32Array = a.I
 	var start := V.size()
-	var cum := 0.0
+	# первый проход: края, высоты, признак «над водой»
+	var pl: Array[Vector2] = []; var pr: Array[Vector2] = []
+	var hl := PackedFloat32Array(); var hr := PackedFloat32Array()
+	var wet := PackedByteArray()
+	pl.resize(s.size()); pr.resize(s.size())
+	hl.resize(s.size()); hr.resize(s.size()); wet.resize(s.size())
+	var any_wet := false
 	for j in s.size():
 		var dir: Vector2
 		if j == 0: dir = s[1] - s[0]
@@ -93,19 +143,77 @@ func _ribbon(main: Node3D, pts: Array, hw: float, off: float, a: Dictionary) -> 
 		else: dir = s[j + 1] - s[j - 1]
 		if dir.length_squared() < 1e-6: dir = Vector2(1, 0)
 		dir = dir.normalized()
-		if j > 0: cum += s[j].distance_to(s[j - 1])
 		var perp := Vector2(-dir.y, dir.x)
 		var sj: Vector2 = s[j]
-		var l: Vector2 = sj + perp * hw
-		var rr: Vector2 = sj - perp * hw
-		V.append(Vector3(l.x, main.height_at(l.x, l.y) + off, l.y))
+		pl[j] = sj + perp * hw
+		pr[j] = sj - perp * hw
+		hl[j] = main.height_at(pl[j].x, pl[j].y)
+		hr[j] = main.height_at(pr[j].x, pr[j].y)
+		if _near_water(sj.x, sj.y, hw + 2.0):
+			wet[j] = 1; any_wet = true
+	# мосты: непрерывный «мокрый» отрезок → плоская палуба между берегами (не ныряет в русло)
+	var deck := PackedByteArray(); deck.resize(s.size())
+	if any_wet:
+		var j := 0
+		while j < s.size():
+			if wet[j] == 0:
+				j += 1; continue
+			var j0 := j
+			while j < s.size() and wet[j] == 1:
+				j += 1
+			var j1 := j - 1                                  # [j0..j1] над водой
+			var ib := maxi(j0 - 1, 0); var ie := mini(j1 + 1, s.size() - 1)
+			var hb := maxf(hl[ib], hr[ib]); var he := maxf(hl[ie], hr[ie])
+			for k in range(j0, j1 + 1):
+				var t := float(k - j0 + 1) / float(j1 - j0 + 2)
+				var d := lerpf(hb, he, t) + 0.55
+				if d > maxf(hl[k], hr[k]):                   # палуба только выше рельефа
+					hl[k] = d; hr[k] = d; deck[k] = 1
+	var cum := 0.0
+	for j in s.size():
+		if j > 0: cum += s[j].distance_to(s[j - 1])
+		V.append(Vector3(pl[j].x, hl[j] + off, pl[j].y))
 		N.append(Vector3.UP); U.append(Vector2(cum / TILE, 0.0))
-		V.append(Vector3(rr.x, main.height_at(rr.x, rr.y) + off, rr.y))
+		V.append(Vector3(pr[j].x, hr[j] + off, pr[j].y))
 		N.append(Vector3.UP); U.append(Vector2(cum / TILE, hw * 2.0 / TILE))
 	for j in s.size() - 1:
 		var b := start + j * 2
 		I.append(b); I.append(b + 2); I.append(b + 1)
 		I.append(b + 1); I.append(b + 2); I.append(b + 3)
+	# индекс палуб для трафика/машин (main.deck_h)
+	if any_wet:
+		for j in s.size() - 1:
+			if deck[j] == 1 and deck[j + 1] == 1:
+				var seg := [s[j].x, s[j].y, s[j + 1].x, s[j + 1].y, hw, hl[j] + off, hl[j + 1] + off]
+				var cellset := {}
+				for q2: Vector2 in [s[j], s[j + 1]]:
+					for dx in [-1, 0, 1]:
+						for dz in [-1, 0, 1]:
+							var c2 := Vector2i(int(floor(q2.x / IDX_CELL)) + dx, int(floor(q2.y / IDX_CELL)) + dz)
+							if cellset.has(c2): continue
+							cellset[c2] = true
+							if not main.deck_index.has(c2): main.deck_index[c2] = []
+							main.deck_index[c2].append(seg)
+	# перила и юбка палубы (мосты длиной ≥ 2 сэмплов, не полевые track)
+	if any_wet and hw >= 1.8:
+		var j := 0
+		while j < s.size() - 1:
+			if deck[j] == 0 or deck[j + 1] == 0:
+				j += 1; continue
+			for side in 2:
+				var e0: Vector2 = pl[j] if side == 0 else pr[j]
+				var e1: Vector2 = pl[j + 1] if side == 0 else pr[j + 1]
+				var y0 := hl[j] + off; var y1 := hl[j + 1] + off
+				var b2 := V.size()
+				# юбка вниз 0.7 м + перило вверх 0.9 м одной полосой
+				V.append_array([Vector3(e0.x, y0 - 0.7, e0.y), Vector3(e1.x, y1 - 0.7, e1.y),
+					Vector3(e1.x, y1 + 0.9, e1.y), Vector3(e0.x, y0 + 0.9, e0.y)])
+				var nrm := Vector3(e1.y - e0.y, 0, -(e1.x - e0.x)).normalized()
+				for k2 in 4: N.append(nrm)
+				U.append_array([Vector2(0, 0.9), Vector2(0.8, 0.9), Vector2(0.8, 1.0), Vector2(0, 1.0)])
+				I.append_array([b2, b2 + 1, b2 + 2, b2, b2 + 2, b2 + 3])
+				I.append_array([b2, b2 + 2, b2 + 1, b2, b2 + 3, b2 + 2])
+			j += 1
 
 
 func _emit(main: Node3D, a: Dictionary, mat: Material, nm: String) -> void:

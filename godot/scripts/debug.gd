@@ -45,6 +45,19 @@ func _schedule_screenshot() -> void:
 		_apply_preset(preset)
 		await RenderingServer.frame_post_draw
 		await get_tree().process_frame
+	# --shotat=x,z,alt[,tx,tz] — камера в мировых координатах, взгляд на цель (или вниз-вперёд)
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--shotat="):
+			var q := a.substr(9).split(",")
+			var sx := float(q[0]); var sz := float(q[1])
+			var alt := float(q[2]) if q.size() > 2 else 40.0
+			main.cam.global_position = Vector3(sx, main.height_at(sx, sz) + alt, sz)
+			var tx := float(q[3]) if q.size() > 4 else sx + 60.0
+			var tz := float(q[4]) if q.size() > 4 else sz
+			main.cam.look_at(Vector3(tx, main.height_at(tx, tz), tz))
+			for _i in 60:
+				await get_tree().process_frame
+			await RenderingServer.frame_post_draw
 	if "--watershot" in OS.get_cmdline_user_args():
 		var wt: Vector2 = main._world_from_latlon(48.23928, 24.33539)
 		var gy: float = main.height_at(wt.x, wt.y)

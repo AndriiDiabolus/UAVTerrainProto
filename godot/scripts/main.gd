@@ -434,6 +434,23 @@ func _build_smoke() -> void:
 var _lamp_mat: StandardMaterial3D
 
 var road_index := {}       # Vector2i(32 м) -> Array[[ax,az,bx,bz,hw]] — заполняет roads.gd
+var deck_index := {}       # Vector2i(32 м) -> Array[[ax,az,bx,bz,hw,ya,yb]] — палубы мостов (roads.gd)
+
+
+## Высота палубы моста в точке (для трафика), либо -1e9, если моста нет.
+func deck_h(x: float, z: float) -> float:
+	var c := Vector2i(int(floor(x / 32.0)), int(floor(z / 32.0)))
+	if not deck_index.has(c):
+		return -1e9
+	var p := Vector2(x, z)
+	var best := -1e9
+	for sg: Array in deck_index[c]:
+		var a := Vector2(sg[0], sg[1]); var b := Vector2(sg[2], sg[3])
+		var ab := b - a
+		var t := clampf((p - a).dot(ab) / maxf(ab.length_squared(), 1e-6), 0.0, 1.0)
+		if p.distance_to(a + ab * t) < float(sg[4]) + 0.5:
+			best = maxf(best, lerpf(float(sg[5]), float(sg[6]), t))
+	return best
 
 ## Точка ближе margin к полотну дороги (с учётом её полуширины)?
 func near_road(x: float, z: float, margin: float) -> bool:

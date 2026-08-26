@@ -245,7 +245,8 @@ func _tree(parts: Array, crown: Dictionary) -> ArrayMesh:
 		_tree_mats.append(mat)
 	if not crown.is_empty():
 		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,
-			_cards(float(crown.w), float(crown.h), float(crown.y0), 3, bool(crown.get("top", true))))
+			_cards(float(crown.w), float(crown.h), float(crown.y0), 3, bool(crown.get("top", true)),
+				int(crown.get("cl", 0)), bool(crown.get("cone", false))))
 		var fm := ShaderMaterial.new()
 		fm.shader = load("res://scripts/foliage.gdshader")
 		fm.set_shader_parameter("tex", crown.tex)
@@ -257,8 +258,9 @@ func _tree(parts: Array, crown: Dictionary) -> ArrayMesh:
 
 
 ## Кросс-карты: n вертикальных квадов через центр (повёрнуты на 180°/n) + горизонтальная карта
-## (вид сверху с дрона — крона не выглядит звездой).
-func _cards(w: float, h: float, y0: float, n: int, top: bool) -> Array:
+## (вид сверху с дрона — крона не выглядит звездой) + cl кластерных крестов, смещённых внутри
+## эллипсоида кроны — вблизи крона объёмная, а не плоская звезда. cone: кластеры сужаются к вершине.
+func _cards(w: float, h: float, y0: float, n: int, top: bool, cl: int = 0, cone: bool = false) -> Array:
 	var V := PackedVector3Array(); var N := PackedVector3Array()
 	var UVs := PackedVector2Array(); var I := PackedInt32Array()
 	var add_quad := func(a: Vector3, b: Vector3, c: Vector3, d: Vector3, nrm: Vector3) -> void:
@@ -276,6 +278,24 @@ func _cards(w: float, h: float, y0: float, n: int, top: bool) -> Array:
 		var yy := y0 + h * 0.55
 		var hw := w * 0.5
 		add_quad.call(Vector3(-hw, yy, -hw), Vector3(hw, yy, -hw), Vector3(hw, yy, hw), Vector3(-hw, yy, hw), Vector3.UP)
+	if cl > 0:
+		var rng := RandomNumberGenerator.new()
+		rng.seed = int(w * 100.0 + h * 7.0)
+		var cs := w * 0.46                                     # размер кластерной карты
+		var ch := h * 0.42
+		for c in cl:
+			var yr := 0.18 + 0.55 * rng.randf()                # доля высоты кроны
+			var rad := w * (0.16 + 0.22 * rng.randf())
+			if cone:
+				rad *= (1.0 - yr * 0.8)                        # у хвойных сужение кверху
+			var aa := rng.randf() * TAU
+			var off := Vector3(cos(aa) * rad, y0 + h * yr - ch * 0.5, sin(aa) * rad)
+			var rot := rng.randf() * PI
+			for q in 2:
+				var a2 := rot + PI * 0.5 * q
+				var dx2 := Vector3(cos(a2), 0, sin(a2)) * (cs * 0.5)
+				var nrm2 := Vector3(-sin(a2), 0, cos(a2))
+				add_quad.call(off - dx2, off + dx2, off + dx2 + Vector3(0, ch, 0), off - dx2 + Vector3(0, ch, 0), nrm2)
 	var arr := []
 	arr.resize(Mesh.ARRAY_MAX)
 	arr[Mesh.ARRAY_VERTEX] = V; arr[Mesh.ARRAY_NORMAL] = N
@@ -372,18 +392,18 @@ func _make_trees() -> Array[ArrayMesh]:
 	var out: Array[ArrayMesh] = []
 	# ель — узкий высокий треугольник, хвоя тёмная
 	out.append(_tree([[_cyl(0.30, 0.48, 3.0), 1.5, brown]],
-		{"tex": conif, "w": 5.6, "h": 13.0, "y0": 1.2, "color": Color(0.16, 0.30, 0.14), "flutter": 0.4}))
+		{"tex": conif, "w": 5.6, "h": 13.0, "y0": 1.2, "color": Color(0.16, 0.30, 0.14), "flutter": 0.4, "cl": 3, "cone": true}))
 	# сосна — крона выше на голом стволе
 	out.append(_tree([[_cyl(0.26, 0.40, 8.0), 4.0, brown]],
-		{"tex": conif, "w": 6.4, "h": 8.5, "y0": 7.5, "color": Color(0.20, 0.34, 0.16), "flutter": 0.5}))
+		{"tex": conif, "w": 6.4, "h": 8.5, "y0": 7.5, "color": Color(0.20, 0.34, 0.16), "flutter": 0.5, "cl": 3}))
 	# лиственное — широкая круглая крона
 	out.append(_tree([[_cyl(0.48, 0.72, 4.5), 2.2, brown]],
-		{"tex": leaf, "w": 9.5, "h": 9.0, "y0": 3.2, "color": Color(0.30, 0.46, 0.18), "flutter": 1.0}))
+		{"tex": leaf, "w": 9.5, "h": 9.0, "y0": 3.2, "color": Color(0.30, 0.46, 0.18), "flutter": 1.0, "cl": 5}))
 	# берёза — тонкий светлый ствол, лёгкая крона
 	out.append(_tree([[_cyl(0.18, 0.28, 8.0), 4.0, birch_bark]],
-		{"tex": birch, "w": 6.0, "h": 7.5, "y0": 5.0, "color": Color(0.46, 0.58, 0.24), "flutter": 1.4}))
+		{"tex": birch, "w": 6.0, "h": 7.5, "y0": 5.0, "color": Color(0.46, 0.58, 0.24), "flutter": 1.4, "cl": 4}))
 	# куст
-	out.append(_tree([], {"tex": bush, "w": 3.2, "h": 2.6, "y0": 0.0, "color": Color(0.30, 0.44, 0.18), "flutter": 1.0}))
+	out.append(_tree([], {"tex": bush, "w": 3.2, "h": 2.6, "y0": 0.0, "color": Color(0.30, 0.44, 0.18), "flutter": 1.0, "cl": 2}))
 	# стог сена (цилиндр + купол), соломенный
 	var straw := Color(0.62, 0.52, 0.30)
 	var dome := SphereMesh.new(); dome.radius = 1.7; dome.height = 2.2; dome.radial_segments = 10; dome.rings = 5
