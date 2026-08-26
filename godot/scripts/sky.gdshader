@@ -82,15 +82,24 @@ void sky() {
 	if (up > 0.01) {
 		vec2 cuv = dir.xz / (up + 0.12) * 0.6;
 		cuv += wind_dir * TIME * 0.006;
-		float n = fbm(cuv);
+		// domain warp — рваные кучевые кромки вместо «ваты»
+		vec2 warp = vec2(fbm(cuv * 1.7 + 13.1), fbm(cuv * 1.7 - 7.3)) - 0.5;
+		vec2 wuv = cuv + warp * 0.55;
+		float n = fbm(wuv);
+		// крупная маска групп: поля облаков и чистые просветы (аддитивно — среднее покрытие сохраняется)
+		float mass = fbm(cuv * 0.32 + 3.7);
+		n += (mass - 0.5) * 0.35;
 		float edge = 1.0 - coverage;
-		float cl = smoothstep(edge, edge + 0.25, n);
+		float cl = smoothstep(edge, edge + 0.22, n);
 		cl *= smoothstep(0.02, 0.22, up);                     // тают у горизонта
-		// объём: тёмный низ / светлый верх по второй частоте
-		float shade = fbm(cuv * 2.3 + 5.0);
-		vec3 ccol = mix(cloud_dark, cloud_color, clamp(shade + 0.3, 0.0, 1.0));
-		ccol += sun_color * pow(sd, 6.0) * 0.4 * (1.0 - night); // подсветка солнцем
-		col = mix(col, ccol, cl * 0.9);
+		// псевдо-объём: плотное ядро темнее снизу, тонкая светлая кромка (powder)
+		float dens = smoothstep(edge, edge + 0.5, n);
+		float shade = fbm(wuv * 2.3 + 5.0);
+		vec3 ccol = mix(cloud_color, cloud_dark, dens * (0.65 - 0.35 * shade));
+		float rim = smoothstep(0.0, 0.18, cl) * (1.0 - smoothstep(0.18, 0.6, cl));
+		ccol += cloud_color * rim * 0.18;
+		ccol += sun_color * pow(sd, 6.0) * (0.25 + 0.5 * rim) * (1.0 - night); // серебро со стороны солнца
+		col = mix(col, ccol, cl * 0.92);
 	}
 
 	if (thermal_params.x > 0.5) {

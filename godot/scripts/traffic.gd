@@ -17,6 +17,7 @@ const COLORS := [Color(0.85, 0.85, 0.85), Color(0.15, 0.15, 0.17), Color(0.55, 0
 	Color(0.2, 0.3, 0.5), Color(0.7, 0.6, 0.3), Color(0.25, 0.4, 0.3)]
 var _rng := RandomNumberGenerator.new()
 var _acc := 0.0
+var _spots: Array[SpotLight3D] = []       # конусы фар ночью (пул на ближайшие машины)
 
 
 func setup(m: Node3D) -> void:
@@ -53,6 +54,16 @@ func setup(m: Node3D) -> void:
 	_lamp_mat.emission_enabled = true; _lamp_mat.emission = Color(1.0, 0.95, 0.8); _lamp_mat.emission_energy_multiplier = 0.0
 	lamp.material = _lamp_mat
 	_mm_lamp = _mm(lamp, false)
+	for i in 6:
+		var sp := SpotLight3D.new()
+		sp.light_color = Color(1.0, 0.93, 0.75)
+		sp.light_energy = 0.0
+		sp.spot_range = 42.0
+		sp.spot_angle = 19.0
+		sp.spot_attenuation = 0.6
+		sp.shadow_enabled = false
+		add_child(sp)
+		_spots.append(sp)
 	print("Traffic: дорог для машин %d" % roads.size())
 
 
@@ -144,3 +155,11 @@ func _process(dt: float) -> void:
 		_mm_cab.set_instance_transform(i, Transform3D(b.scaled(Vector3(sc * (0.6 if c.truck else 1.0), sc, sc)), Vector3(wx, y, wz) + cab_off))
 		var lamp_off: Vector3 = b * Vector3(2.15 * sc, 0.05, 0.0)
 		_mm_lamp.set_instance_transform(i, Transform3D(b, Vector3(wx, y, wz) + lamp_off))
+		# конус фар: первые 6 машин освещают дорогу перед собой
+		if i < _spots.size():
+			var sp := _spots[i]
+			sp.light_energy = 6.0 * night
+			if night > 0.0:
+				var fwd3: Vector3 = b * Vector3(1, 0, 0)
+				sp.global_position = Vector3(wx, y + 0.4, wz) + fwd3 * 2.3
+				sp.global_transform.basis = Basis.looking_at((fwd3 - Vector3(0, 0.28, 0)).normalized(), Vector3.UP)

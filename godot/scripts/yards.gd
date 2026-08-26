@@ -20,6 +20,13 @@ var _cur_i := 0
 var _cur_holder: Node3D = null
 var _cur_fences: Array[Transform3D] = []
 var _cur_trees: Array[Transform3D] = []
+var _cur_wells: Array[Transform3D] = []
+var _cur_lines: Array[Transform3D] = []
+var _cur_folk: Array[Transform3D] = []
+var _cur_folk_cols: Array[Color] = []
+var _well_mesh: ArrayMesh
+var _line_mesh: ArrayMesh
+var _folk_mesh: ArrayMesh
 var _cur_tree_cols: Array[Color] = []
 var _cur_rng: RandomNumberGenerator = null
 const HOUSES_PER_FRAME := 6
@@ -51,10 +58,58 @@ func setup(m: Node3D, house_list: Array) -> void:
 	var forest := main.get_node_or_null("Forest")
 	if forest != null and forest.tree_meshes.size() > 2:
 		_tree_mesh = forest.tree_meshes[2]
+	_make_props()
 	print("Yards: домов с участками %d в %d чанках" % [house_list.size(), houses.size()])
 
 
 ## Штакетник: вертикальные доски с просветами + две перекладины; серо-бурое выветренное дерево.
+## Составной меш из примитивов: [mesh, Vector3 offset, Color, использовать instance color?]
+func _combo(parts: Array) -> ArrayMesh:
+	var out := ArrayMesh.new()
+	for part: Array in parts:
+		var arr: Array = part[0].get_mesh_arrays()
+		var verts: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+		for i in verts.size():
+			verts[i] += part[1]
+		arr[Mesh.ARRAY_VERTEX] = verts
+		out.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+		var m := StandardMaterial3D.new()
+		m.albedo_color = part[2]
+		m.roughness = 0.9
+		if part.size() > 3 and part[3]:
+			m.vertex_color_use_as_albedo = true
+		out.surface_set_material(out.get_surface_count() - 1, m)
+	return out
+
+
+## Микро-жизнь села: колодец, бельевая верёвка, житель.
+func _make_props() -> void:
+	var wood := Color(0.4, 0.3, 0.2)
+	var b1 := BoxMesh.new(); b1.size = Vector3(1.3, 1.0, 1.3)                 # сруб колодца
+	var p1 := BoxMesh.new(); p1.size = Vector3(0.12, 1.9, 0.12)
+	var p2 := BoxMesh.new(); p2.size = Vector3(0.12, 1.9, 0.12)
+	var rf := PrismMesh.new(); rf.size = Vector3(1.7, 0.6, 1.5)               # двускатная крыша
+	_well_mesh = _combo([[b1, Vector3(0, 0.5, 0), Color(0.45, 0.42, 0.38)],
+		[p1, Vector3(-0.6, 1.3, 0), wood], [p2, Vector3(0.6, 1.3, 0), wood],
+		[rf, Vector3(0, 2.35, 0), Color(0.3, 0.24, 0.18)]])
+	var post1 := BoxMesh.new(); post1.size = Vector3(0.09, 2.1, 0.09)
+	var post2 := BoxMesh.new(); post2.size = Vector3(0.09, 2.1, 0.09)
+	var wire := BoxMesh.new(); wire.size = Vector3(5.6, 0.02, 0.02)
+	var parts := [[post1, Vector3(-2.8, 1.05, 0), wood], [post2, Vector3(2.8, 1.05, 0), wood],
+		[wire, Vector3(0, 1.95, 0), Color(0.6, 0.6, 0.6)]]
+	var cloth_cols := [Color(0.85, 0.85, 0.9), Color(0.7, 0.5, 0.5), Color(0.5, 0.6, 0.75), Color(0.9, 0.88, 0.7)]
+	for i in 4:
+		var c := BoxMesh.new(); c.size = Vector3(0.7, 0.9, 0.03)
+		parts.append([c, Vector3(-2.0 + i * 1.3, 1.5, 0), cloth_cols[i]])
+	_line_mesh = _combo(parts)
+	var legs := BoxMesh.new(); legs.size = Vector3(0.34, 0.85, 0.24)
+	var torso := BoxMesh.new(); torso.size = Vector3(0.44, 0.62, 0.28)
+	var head := SphereMesh.new(); head.radius = 0.13; head.height = 0.26; head.radial_segments = 8; head.rings = 4
+	_folk_mesh = _combo([[legs, Vector3(0, 0.42, 0), Color(0.25, 0.24, 0.28)],
+		[torso, Vector3(0, 1.16, 0), Color(1, 1, 1), true],
+		[head, Vector3(0, 1.62, 0), Color(0.85, 0.68, 0.55)]])
+
+
 func _fence_tex() -> ImageTexture:
 	var img := Image.create(128, 64, false, Image.FORMAT_RGBA8)
 	img.fill(Color(0.45, 0.40, 0.33, 0.0))
@@ -153,6 +208,7 @@ func _job_step() -> void:
 		_cur_i = 0
 		_cur_holder = Node3D.new()
 		_cur_fences = []; _cur_trees = []; _cur_tree_cols = []
+		_cur_wells = []; _cur_lines = []; _cur_folk = []; _cur_folk_cols = []
 		_cur_rng = RandomNumberGenerator.new()
 		_cur_rng.seed = (int(_cur.x) * 92821) ^ (int(_cur.y) * 68917)
 	var rng := _cur_rng
@@ -182,6 +238,21 @@ func _job_step() -> void:
 			tm.set_instance_transform(i, _cur_trees[i]); tm.set_instance_color(i, _cur_tree_cols[i])
 		var tmi := MultiMeshInstance3D.new(); tmi.multimesh = tm
 		_cur_holder.add_child(tmi)
+	for spec: Array in [[_well_mesh, _cur_wells, []], [_line_mesh, _cur_lines, []], [_folk_mesh, _cur_folk, _cur_folk_cols]]:
+		var xs: Array = spec[1]
+		if xs.is_empty(): continue
+		var pm := MultiMesh.new()
+		pm.transform_format = MultiMesh.TRANSFORM_3D
+		var cols: Array = spec[2]
+		pm.use_colors = not cols.is_empty()
+		pm.mesh = spec[0]
+		pm.instance_count = xs.size()
+		for i in xs.size():
+			pm.set_instance_transform(i, xs[i])
+			if pm.use_colors: pm.set_instance_color(i, cols[i])
+		var pmi := MultiMeshInstance3D.new(); pmi.multimesh = pm
+		pmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_cur_holder.add_child(pmi)
 	add_child(_cur_holder)
 	chunks[_cur] = _cur_holder
 	if OS.is_debug_build() and "--yardsdebug" in OS.get_cmdline_user_args():
@@ -260,6 +331,18 @@ func _gen_house(h: Array, rng: RandomNumberGenerator) -> void:
 		var sc := rng.randf_range(0.35, 0.55)
 		_cur_trees.append(Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(sc, sc, sc)), Vector3(wp.x, main.height_at(wp.x, wp.z) - 0.2, wp.z)))
 		_cur_tree_cols.append(Color(rng.randf_range(0.85, 1.0), rng.randf_range(0.9, 1.1), rng.randf_range(0.8, 0.95)))
+	# микро-жизнь: колодец / бельевая верёвка / житель во дворе
+	if rng.randf() < 0.12:
+		var wpp: Vector3 = pc + yaw * Vector3(pw * 0.35, 0, -pd * 0.25)
+		_cur_wells.append(Transform3D(Basis(Vector3.UP, rng.randf() * TAU), Vector3(wpp.x, main.height_at(wpp.x, wpp.z), wpp.z)))
+	if rng.randf() < 0.3:
+		var lpp: Vector3 = pc + yaw * Vector3(rng.randf_range(-pw * 0.25, pw * 0.25), 0, pd * 0.18)
+		_cur_lines.append(Transform3D(Basis(Vector3.UP, -ang + rng.randf_range(-0.4, 0.4)), Vector3(lpp.x, main.height_at(lpp.x, lpp.z), lpp.z)))
+	if rng.randf() < 0.12:
+		var fpp: Vector3 = pc + yaw * Vector3(rng.randf_range(-pw * 0.3, pw * 0.3), 0, -pd * 0.1)
+		_cur_folk.append(Transform3D(Basis(Vector3.UP, rng.randf() * TAU), Vector3(fpp.x, main.height_at(fpp.x, fpp.z), fpp.z)))
+		var shirts := [Color(0.75, 0.72, 0.65), Color(0.5, 0.55, 0.7), Color(0.65, 0.45, 0.4), Color(0.4, 0.5, 0.4), Color(0.8, 0.8, 0.85)]
+		_cur_folk_cols.append(shirts[rng.randi_range(0, shirts.size() - 1)])
 
 
 ## Точка на грядках какого-нибудь огорода (локальные координаты участка)?
