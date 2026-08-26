@@ -158,21 +158,33 @@ func wreck_fire(node: Node3D) -> void:
 
 
 ## Пыль за движущейся техникой; вызывающий включает/выключает .emitting.
+## Частицы в мировых координатах: клубы остаются на дороге и растут шлейфом,
+## а не «кружками возле машины». Появление через fade-in, размер растёт по кривой.
 func dust(node: Node3D) -> GPUParticles3D:
 	var p := GPUParticles3D.new()
-	p.amount = 20; p.lifetime = 2.6; p.emitting = false
+	p.amount = 34; p.lifetime = 3.2; p.emitting = false
+	p.local_coords = false                 # ключевое: шлейф отстаёт от машины
+	p.visibility_aabb = AABB(Vector3(-40, -10, -40), Vector3(80, 30, 80))
 	var m := ParticleProcessMaterial.new()
-	m.direction = Vector3(0, 1, 0); m.spread = 55.0
-	m.initial_velocity_min = 0.8; m.initial_velocity_max = 2.0
-	m.gravity = Vector3(0, 0.35, 0)
-	m.scale_min = 1.0; m.scale_max = 2.0
-	var g := Gradient.new()
-	g.set_color(0, Color(0.52, 0.45, 0.34, 0.34)); g.set_color(1, Color(0.55, 0.5, 0.4, 0.0))
+	m.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
+	m.emission_sphere_radius = 0.9
+	m.direction = Vector3(0, 1, 0); m.spread = 70.0
+	m.initial_velocity_min = 0.3; m.initial_velocity_max = 1.1
+	m.gravity = Vector3(0, 0.55, 0)
+	m.scale_min = 0.5; m.scale_max = 0.9
+	var sc := Curve.new()                  # клуб растёт всю жизнь: 0.3 → 1.0 → 2.6
+	sc.add_point(Vector2(0.0, 0.3)); sc.add_point(Vector2(0.35, 1.0)); sc.add_point(Vector2(1.0, 2.6))
+	var sct := CurveTexture.new(); sct.curve = sc
+	m.scale_curve = sct
+	var g := Gradient.new()                # fade-in → пик → растворение
+	g.set_color(0, Color(0.5, 0.44, 0.33, 0.0))
+	g.add_point(0.18, Color(0.52, 0.45, 0.34, 0.3))
+	g.set_color(1, Color(0.56, 0.51, 0.42, 0.0))
 	var gt := GradientTexture1D.new(); gt.gradient = g
 	m.color_ramp = gt
 	p.process_material = m
-	p.draw_pass_1 = _pquad(2.2, _billboard_mat(_soft))
-	p.position = Vector3(-2.6, 0.5, 0)     # за кормой
+	p.draw_pass_1 = _pquad(2.0, _billboard_mat(_soft))
+	p.position = Vector3(-2.4, 0.4, 0)     # за кормой (эмиттер едет с машиной, клубы — нет)
 	node.add_child(p)
 	return p
 

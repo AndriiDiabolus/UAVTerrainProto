@@ -21,19 +21,20 @@ func setup(main: Node3D) -> void:
 	var t0 := Time.get_ticks_msec()
 	_build_water_index(main)
 
-	# арены вершин для двух материалов
-	var av := {"asph": _arena(), "grav": _arena()}
+	# арены вершин: два дорожных материала + бетон мостов
+	var av := {"asph": _arena(), "grav": _arena(), "bridge": _arena()}
 	for r: Dictionary in roads:
 		var cls: String = r["c"]
 		if not CLASS.has(cls):
 			continue
 		var hw: float = CLASS[cls][0]
 		var asph: bool = CLASS[cls][1]
-		_ribbon(main, r["p"], hw, 0.22 if asph else 0.15, av["asph" if asph else "grav"])
+		_ribbon(main, r["p"], hw, 0.22 if asph else 0.15, av["asph" if asph else "grav"], av["bridge"])
 		_index(main, r["p"], hw)
 
 	_emit(main, av["asph"], _asph_mat(main), "Asphalt")
 	_emit(main, av["grav"], _grav_mat(main), "Gravel")
+	_emit(main, av["bridge"], _bridge_mat(), "Bridges")
 	print("Roads built in %d ms (asph v=%d, grav v=%d, мостовых ячеек %d)" % [
 		Time.get_ticks_msec() - t0, av["asph"].V.size(), av["grav"].V.size(), main.deck_index.size()])
 
@@ -120,7 +121,7 @@ func _resample(pts: Array) -> Array:
 	return out
 
 
-func _ribbon(main: Node3D, pts: Array, hw: float, off: float, a: Dictionary) -> void:
+func _ribbon(main: Node3D, pts: Array, hw: float, off: float, a: Dictionary, br: Dictionary) -> void:
 	var s := _resample(pts)
 	if s.size() < 2:
 		return
@@ -194,7 +195,7 @@ func _ribbon(main: Node3D, pts: Array, hw: float, off: float, a: Dictionary) -> 
 							cellset[c2] = true
 							if not main.deck_index.has(c2): main.deck_index[c2] = []
 							main.deck_index[c2].append(seg)
-	# перила и юбка палубы (мосты длиной ≥ 2 сэмплов, не полевые track)
+	# мостовые конструкции (бетонная арена): юбка палубы, поручень-брус, стойки (кроме полевых track)
 	if any_wet and hw >= 1.8:
 		var j := 0
 		while j < s.size() - 1:
@@ -204,16 +205,52 @@ func _ribbon(main: Node3D, pts: Array, hw: float, off: float, a: Dictionary) -> 
 				var e0: Vector2 = pl[j] if side == 0 else pr[j]
 				var e1: Vector2 = pl[j + 1] if side == 0 else pr[j + 1]
 				var y0 := hl[j] + off; var y1 := hl[j + 1] + off
-				var b2 := V.size()
-				# юбка вниз 0.7 м + перило вверх 0.9 м одной полосой
-				V.append_array([Vector3(e0.x, y0 - 0.7, e0.y), Vector3(e1.x, y1 - 0.7, e1.y),
-					Vector3(e1.x, y1 + 0.9, e1.y), Vector3(e0.x, y0 + 0.9, e0.y)])
-				var nrm := Vector3(e1.y - e0.y, 0, -(e1.x - e0.x)).normalized()
-				for k2 in 4: N.append(nrm)
-				U.append_array([Vector2(0, 0.9), Vector2(0.8, 0.9), Vector2(0.8, 1.0), Vector2(0, 1.0)])
-				I.append_array([b2, b2 + 1, b2 + 2, b2, b2 + 2, b2 + 3])
-				I.append_array([b2, b2 + 2, b2 + 1, b2, b2 + 3, b2 + 2])
+				var out2 := Vector2(e0.x - s[j].x, e0.y - s[j].y).normalized() * 0.12
+				# юбка: сплошная лента от +0.25 (бордюр) до −0.9 под палубой
+				_bquad(br, Vector3(e0.x, y0 + 0.25, e0.y), Vector3(e1.x, y1 + 0.25, e1.y),
+					Vector3(e1.x, y1 - 0.9, e1.y), Vector3(e0.x, y0 - 0.9, e0.y))
+				# поручень: горизонтальный брус 0.14 м на высоте 1.05 м (внешняя грань + верх)
+				_bquad(br, Vector3(e0.x, y0 + 1.05, e0.y), Vector3(e1.x, y1 + 1.05, e1.y),
+					Vector3(e1.x, y1 + 0.91, e1.y), Vector3(e0.x, y0 + 0.91, e0.y))
+				_bquad(br, Vector3(e0.x - out2.x, y0 + 1.05, e0.y - out2.y), Vector3(e1.x - out2.x, y1 + 1.05, e1.y - out2.y),
+					Vector3(e1.x + out2.x, y1 + 1.05, e1.y + out2.y), Vector3(e0.x + out2.x, y0 + 1.05, e0.y + out2.y))
+				# стойки перил: каждые ~3 м, крест из двух узких квадов от бордюра до поручня
+				var seg_len := e0.distance_to(e1)
+				var nposts := maxi(1, int(seg_len / 3.0))
+				for pi2 in nposts:
+					var tpi := (pi2 + 0.5) / float(nposts)
+					var px := lerpf(e0.x, e1.x, tpi); var pz := lerpf(e0.y, e1.y, tpi)
+					var py := lerpf(y0, y1, tpi)
+					for ax in 2:
+						var d2 := Vector3(0.07, 0, 0) if ax == 0 else Vector3(0, 0, 0.07)
+						var base2 := Vector3(px, py + 0.25, pz)
+						_bquad(br, base2 - d2, base2 + d2,
+							base2 + d2 + Vector3(0, 0.66, 0), base2 - d2 + Vector3(0, 0.66, 0))
 			j += 1
+
+
+## Двусторонний квад в арену (мостовые конструкции).
+func _bquad(a: Dictionary, p0: Vector3, p1: Vector3, p2: Vector3, p3: Vector3) -> void:
+	var V: PackedVector3Array = a.V
+	var N: PackedVector3Array = a.N
+	var U: PackedVector2Array = a.U
+	var I: PackedInt32Array = a.I
+	var b := V.size()
+	V.append_array([p0, p1, p2, p3])
+	var nrm := (p1 - p0).cross(p3 - p0)
+	nrm = nrm.normalized() if nrm.length_squared() > 1e-9 else Vector3.UP
+	for k in 4: N.append(nrm)
+	U.append_array([Vector2(0, 0), Vector2(1, 0), Vector2(1, 1), Vector2(0, 1)])
+	I.append_array([b, b + 1, b + 2, b, b + 2, b + 3])
+	I.append_array([b, b + 2, b + 1, b, b + 3, b + 2])
+
+
+func _bridge_mat() -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.albedo_color = Color(0.58, 0.58, 0.57)      # старый бетон
+	m.roughness = 0.95
+	m.cull_mode = BaseMaterial3D.CULL_DISABLED
+	return m
 
 
 func _emit(main: Node3D, a: Dictionary, mat: Material, nm: String) -> void:
@@ -231,7 +268,8 @@ func _emit(main: Node3D, a: Dictionary, mat: Material, nm: String) -> void:
 	var mi := MeshInstance3D.new()
 	mi.name = nm
 	mi.mesh = mesh
-	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF   # плоское на земле — тень не видна
+	# плоское на земле — тень не видна; мостовые конструкции наоборот дают читаемый объём
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if nm == "Bridges" else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(mi)
 
 

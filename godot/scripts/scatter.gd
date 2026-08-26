@@ -41,7 +41,7 @@ func _process(dt: float) -> void:
 	if main.get("weather") != null:
 		var w: Vector3 = main.weather.wind_vec()
 		var wl := w.length()
-		var tgt_str := clampf(wl / 6.0, 0.12, 2.6)
+		var tgt_str := clampf(wl / 8.0, 0.1, 1.2)   # cap ниже: в шторм тени под деревьями не дёргаются
 		var tgt_dir := Vector2(w.x, w.z).normalized() if wl > 0.01 else _cur_dir
 		_cur_str = lerpf(_cur_str, tgt_str, clampf(dt * 1.8, 0.0, 1.0))
 		_cur_dir = _cur_dir.lerp(tgt_dir, clampf(dt * 1.2, 0.0, 1.0))
@@ -278,6 +278,9 @@ func _cards(w: float, h: float, y0: float, n: int, top: bool, cl: int = 0, cone:
 		var yy := y0 + h * 0.55
 		var hw := w * 0.5
 		add_quad.call(Vector3(-hw, yy, -hw), Vector3(hw, yy, -hw), Vector3(hw, yy, hw), Vector3(-hw, yy, hw), Vector3.UP)
+		var yy2 := y0 + h * 0.8
+		var hw2 := w * 0.32
+		add_quad.call(Vector3(-hw2, yy2, -hw2), Vector3(hw2, yy2, -hw2), Vector3(hw2, yy2, hw2), Vector3(-hw2, yy2, hw2), Vector3.UP)
 	if cl > 0:
 		var rng := RandomNumberGenerator.new()
 		rng.seed = int(w * 100.0 + h * 7.0)
@@ -291,11 +294,18 @@ func _cards(w: float, h: float, y0: float, n: int, top: bool, cl: int = 0, cone:
 			var aa := rng.randf() * TAU
 			var off := Vector3(cos(aa) * rad, y0 + h * yr - ch * 0.5, sin(aa) * rad)
 			var rot := rng.randf() * PI
+			# наклонные крестовины (видны и сбоку, и сверху) + горизонтальная шапка кластера
+			var tilt := rng.randf_range(0.35, 0.85)
 			for q in 2:
 				var a2 := rot + PI * 0.5 * q
-				var dx2 := Vector3(cos(a2), 0, sin(a2)) * (cs * 0.5)
+				var right := Vector3(cos(a2), 0, sin(a2)) * (cs * 0.5)
 				var nrm2 := Vector3(-sin(a2), 0, cos(a2))
-				add_quad.call(off - dx2, off + dx2, off + dx2 + Vector3(0, ch, 0), off - dx2 + Vector3(0, ch, 0), nrm2)
+				var upv := Vector3.UP * cos(tilt) + nrm2 * sin(tilt * (1.0 if q == 0 else -1.0))
+				add_quad.call(off - right, off + right, off + right + upv * ch, off - right + upv * ch, nrm2)
+			var hw3 := cs * 0.42
+			var capy := off + Vector3(0, ch * 0.72, 0)
+			add_quad.call(capy + Vector3(-hw3, 0, -hw3), capy + Vector3(hw3, 0, -hw3),
+				capy + Vector3(hw3, 0, hw3), capy + Vector3(-hw3, 0, hw3), Vector3.UP)
 	var arr := []
 	arr.resize(Mesh.ARRAY_MAX)
 	arr[Mesh.ARRAY_VERTEX] = V; arr[Mesh.ARRAY_NORMAL] = N
