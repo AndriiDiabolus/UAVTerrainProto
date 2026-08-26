@@ -45,6 +45,36 @@ func _schedule_screenshot() -> void:
 		_apply_preset(preset)
 		await RenderingServer.frame_post_draw
 		await get_tree().process_frame
+	# --unitshot=<tank1..4|apc1..3|sold1..3|civ1..3> — галерея юнитов: ставим у точки старта, камера в 3/4
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--unitshot="):
+			main.replaying = true            # отключить управление дроном — камера строго по look_at
+			var key := a.substr(11)
+			var U = load("res://scripts/units.gd").new()
+			var items: Array = U.build_set(key)
+			var base: Vector3 = main._home_pos + Vector3(14, 0, 0)
+			var vehicle := key.begins_with("tank") or key.begins_with("apc")
+			var yaw := -0.2 if vehicle else -0.6     # техника — лоб+борт 3/4, люди — лицом к камере
+			for it: Array in items:
+				var mi := MeshInstance3D.new()
+				mi.mesh = it[0]
+				var pz := float(it[1])
+				mi.transform = Transform3D(Basis(Vector3.UP, yaw),
+					Vector3(base.x, main.height_at(base.x + 0.0, base.z + pz), base.z + pz))
+				main.add_child(mi)
+			var gy2: float = main.height_at(base.x, base.z)
+			for _i in 40:
+				await get_tree().process_frame
+			if main.hud != null and main.hud.get("fpv_on") != null and main.hud.fpv_on:
+				main.hud._toggle_fpv()               # галерея всегда обычной камерой
+			if vehicle:
+				main.cam.global_position = Vector3(base.x + 6.2, gy2 + 3.0, base.z + 7.0)
+				main.cam.look_at(Vector3(base.x, gy2 + 1.3, base.z))
+			else:
+				main.cam.global_position = Vector3(base.x + 2.4, gy2 + 1.45, base.z + 2.6)
+				main.cam.look_at(Vector3(base.x, gy2 + 1.0, base.z))
+			await get_tree().process_frame
+			await RenderingServer.frame_post_draw
 	# --shotat=x,z,alt[,tx,tz] — камера в мировых координатах, взгляд на цель (или вниз-вперёд)
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--shotat="):
