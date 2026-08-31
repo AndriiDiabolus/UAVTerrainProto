@@ -700,11 +700,6 @@ func _tank_turret_mesh(hull_tex: Texture2D, era_on: bool, hatches_open: bool, ma
 	if era_on:
 		for tz in [-0.85, -0.45, 0.45, 0.85]:
 			_append(m, _box(0.5, 0.28, 0.4), Transform3D(_rz(-0.35), Vector3(1.45, 0.0, tz)), Color(0.32, 0.34, 0.21))
-	_append(m, _box(0.9, 0.75, 1.3), Transform3D(Basis(), Vector3(1.65, 0.0, 0)), Color(0.26, 0.28, 0.18))
-	_append(m, _cyl(0.2, 2.0, 0.22), Transform3D(_rz(PI / 2), Vector3(3.1, 0.0, 0)), T_STEEL)
-	_append(m, _cyl(0.12, 3.0, 0.14), Transform3D(_rz(PI / 2), Vector3(5.4, 0.0, 0)), Color(0.1, 0.11, 0.09))
-	_append(m, _cyl(0.24, 0.7), Transform3D(_rz(PI / 2), Vector3(4.8, 0.0, 0)), T_STEEL)
-	_append(m, _cyl(0.17, 0.35), Transform3D(_rz(PI / 2), Vector3(6.8, 0.0, 0)), T_STEEL)
 	_append(m, _cyl(0.42, 0.42, 0.46), Transform3D(Basis(), Vector3(-0.5, 0.7, 0.6)), Color(0.26, 0.28, 0.18))
 	if hatches_open:
 		_append(m, _cyl(0.4, 0.06), Transform3D(_rx(1.2), Vector3(-0.5, 1.0, 0.95)), Color(0.24, 0.26, 0.17))
@@ -728,6 +723,17 @@ func _tank_turret_mesh(hull_tex: Texture2D, era_on: bool, hatches_open: bool, ma
 	return m
 
 
+## Орудие танка: маска + казённик + ствол с эжектором (пивот — цапфы у маски).
+func _tank_gun_mesh() -> ArrayMesh:
+	var m := ArrayMesh.new()
+	_append(m, _box(0.9, 0.75, 1.3), Transform3D(), Color(0.26, 0.28, 0.18))
+	_append(m, _cyl(0.2, 2.0, 0.22), Transform3D(_rz(PI / 2), Vector3(1.45, 0.0, 0)), T_STEEL)
+	_append(m, _cyl(0.12, 3.0, 0.14), Transform3D(_rz(PI / 2), Vector3(3.75, 0.0, 0)), Color(0.1, 0.11, 0.09))
+	_append(m, _cyl(0.24, 0.7), Transform3D(_rz(PI / 2), Vector3(3.15, 0.0, 0)), T_STEEL)
+	_append(m, _cyl(0.17, 0.35), Transform3D(_rz(PI / 2), Vector3(5.15, 0.0, 0)), T_STEEL)
+	return m
+
+
 func tank_node(variant: int) -> Dictionary:
 	var tex: ImageTexture
 	match variant:
@@ -741,11 +747,14 @@ func tank_node(variant: int) -> Dictionary:
 	var turret := _mi(_tank_turret_mesh(tex, variant != 4, variant == 4, variant == 2), "Turret")
 	turret.position = Vector3(-0.5, 2.35, 0)
 	root.add_child(turret)
+	var gun := _mi(_tank_gun_mesh(), "Gun")
+	gun.position = Vector3(1.65, 0, 0)
+	turret.add_child(gun)
 	if variant == 3:
 		var mm := ArrayMesh.new()
 		_tank_masking(mm)
 		root.add_child(_mi(mm, "Masking"))
-	return {"root": root, "turret": turret, "tracks": cleats, "wheels": [], "wheel_r": 0.5, "cleat_step": 0.9}
+	return {"root": root, "turret": turret, "gun": gun, "tracks": cleats, "wheels": [], "wheel_r": 0.5, "cleat_step": 0.9}
 
 
 ## Корпус БТР-80 без колёс (корыто, палуба, волноотбойник, люки, фары, ЗИП).
@@ -772,9 +781,15 @@ func _apc_wheel_mesh() -> ArrayMesh:
 func _apc_turret_mesh(tex: Texture2D) -> ArrayMesh:
 	var m := ArrayMesh.new()
 	_append_tex(m, _cyl(0.55, 0.55, 0.75), Transform3D(), tex)
-	_append(m, _cyl(0.06, 1.9, 0.08), Transform3D(_rz(PI / 2 - 0.06), Vector3(1.2, 0.1, 0)), Color(0.09, 0.1, 0.08))
-	_append(m, _cyl(0.035, 1.0), Transform3D(_rz(PI / 2), Vector3(0.8, -0.05, 0.22)), Color(0.09, 0.1, 0.08))
 	_append(m, _box(0.18, 0.1, 0.14), Transform3D(Basis(), Vector3(0.15, 0.4, 0.2)), Color(0.1, 0.1, 0.1))
+	return m
+
+
+## Спарка КПВТ+ПКТ (пивот — цапфы на башенке, координаты от (0.4, 0.1, 0)).
+func _apc_gun_mesh() -> ArrayMesh:
+	var m := ArrayMesh.new()
+	_append(m, _cyl(0.06, 1.9, 0.08), Transform3D(_rz(PI / 2 - 0.06), Vector3(0.8, 0.0, 0)), Color(0.09, 0.1, 0.08))
+	_append(m, _cyl(0.035, 1.0), Transform3D(_rz(PI / 2), Vector3(0.4, -0.15, 0.22)), Color(0.09, 0.1, 0.08))
 	return m
 
 
@@ -785,6 +800,9 @@ func apc_node(variant: int) -> Dictionary:
 	var turret := _mi(_apc_turret_mesh(tex), "Turret")
 	turret.position = Vector3(0.7, 2.45, 0)
 	root.add_child(turret)
+	var gun := _mi(_apc_gun_mesh(), "Gun")
+	gun.position = Vector3(0.4, 0.1, 0)
+	turret.add_child(gun)
 	var wheels: Array = []
 	var wmesh := _apc_wheel_mesh()
 	for wx in [2.45, 1.45, -1.05, -2.05]:
@@ -793,7 +811,7 @@ func apc_node(variant: int) -> Dictionary:
 			wn.position = Vector3(wx, 0.58, wz)
 			root.add_child(wn)
 			wheels.append(wn)
-	return {"root": root, "turret": turret, "tracks": null, "wheels": wheels, "wheel_r": 0.58}
+	return {"root": root, "turret": turret, "gun": gun, "tracks": null, "wheels": wheels, "wheel_r": 0.58}
 
 
 ## Скорлупа БТР-80 без колёс (для рига).

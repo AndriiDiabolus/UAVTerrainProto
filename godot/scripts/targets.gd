@@ -174,8 +174,22 @@ func _spawn_vehicle(kind: String, road: Dictionary, d: float) -> void:
 	var mi: Node3D = rig.root
 	_add_marker(mi, Color(1.0, 0.15, 0.1) if kind == "tank" else Color(1.0, 0.55, 0.05), 70.0)
 	add_child(mi)
+	# ~45 % техники идёт не по дороге, а полем — вейпоинты в стороне от дорог
+	var offroad := randf() < 0.45
+	var op := _road_pos(road, d)
+	if offroad:
+		var found := false
+		for k in 8:
+			var ang := randf() * TAU
+			var cand := op + Vector2(cos(ang), sin(ang)) * randf_range(40.0, 160.0)
+			if _offroad_ok(cand):
+				op = cand; found = true
+				break
+		offroad = found
 	targets.append({"kind": kind, "node": mi, "road": road, "d": d,
+		"offroad": offroad, "ox": op.x, "oz": op.y, "hdg": randf() * TAU, "tgt": op,
 		"turret": rig.turret, "tracks": rig.tracks, "wheels": rig.wheels, "wheel_r": float(rig.wheel_r),
+		"gun": rig.get("gun"),
 		"dir": 1.0 if randf() < 0.5 else -1.0,
 		"speed": randf_range(3.0, 5.0) if kind == "tank" else randf_range(6.0, 9.0),
 		"radius": 5.0, "alive": true, "leader": true, "wreck_t": 0.0, "offset": 0.0,
@@ -269,21 +283,41 @@ func _process(dt: float) -> void:
 				var origin: Vector3 = t.node.position + Vector3(0, 2.2, 0)
 				if _terrain_hit(origin, (cam_pos - origin).normalized(), dist_d) >= dist_d - 1.0:
 					_aa_burst(t, origin, cam_pos, dist_d, rng_max, agl, drone_spd)
-		# движение по дороге туда-обратно
-		t.d += t.dir * t.speed * dt
-		var road: Dictionary = t.road
-		if t.d <= 0.0 or t.d >= road["total"]:
-			t.dir = -t.dir
-			t.d = clampf(t.d, 0.0, road["total"])
-		var p := _road_pos(road, t.d)
-		var p2 := _road_pos(road, t.d + t.dir * 5.0)
-		var dir3 := Vector2(p2.x - p.x, p2.y - p.y)
-		if dir3.length_squared() < 0.01:
-			dir3 = Vector2(1, 0)
-		dir3 = dir3.normalized()
-		var side: Vector2 = Vector2(-dir3.y, dir3.x) * t.offset
-		var wx: float = p.x + side.x
-		var wz: float = p.y + side.y
+		# движение: по дороге туда-обратно либо по полям между вейпоинтами
+		var dir3: Vector2
+		var wx: float
+		var wz: float
+		if t.get("offroad", false):
+			t.d += t.speed * dt                       # одометр — для траков/колёс
+			var pos2 := Vector2(t.ox, t.oz)
+			if pos2.distance_to(t.tgt) < 8.0:
+				_pick_offroad_target(t)
+			var want: Vector2 = t.tgt - pos2
+			var des_yaw := atan2(-want.y, want.x)
+			t.hdg = lerp_angle(t.hdg, des_yaw, clampf(dt * 0.55, 0.0, 1.0))   # разворот плавный
+			dir3 = Vector2(cos(t.hdg), -sin(t.hdg))
+			var nx: float = t.ox + dir3.x * t.speed * dt
+			var nz: float = t.oz + dir3.y * t.speed * dt
+			if main.collision != null and main.collision.in_building(nx, nz, 2.0):
+				_pick_offroad_target(t)               # упёрлись в здание — новая точка
+			else:
+				t.ox = nx; t.oz = nz
+			wx = t.ox; wz = t.oz
+		else:
+			t.d += t.dir * t.speed * dt
+			var road: Dictionary = t.road
+			if t.d <= 0.0 or t.d >= road["total"]:
+				t.dir = -t.dir
+				t.d = clampf(t.d, 0.0, road["total"])
+			var p := _road_pos(road, t.d)
+			var p2 := _road_pos(road, t.d + t.dir * 5.0)
+			dir3 = Vector2(p2.x - p.x, p2.y - p.y)
+			if dir3.length_squared() < 0.01:
+				dir3 = Vector2(1, 0)
+			dir3 = dir3.normalized()
+			var side: Vector2 = Vector2(-dir3.y, dir3.x) * t.offset
+			wx = p.x + side.x
+			wz = p.y + side.y
 		var y: float = main.height_at(wx, wz)
 		if t.kind == "soldier":
 			# лёгкое покачивание при ходьбе + мелкая рысканье
@@ -308,6 +342,15 @@ func _process(dt: float) -> void:
 					des = atan2(-lp.z, lp.x)
 				var tur: Node3D = t.turret
 				tur.rotation.y = lerp_angle(tur.rotation.y, des, clampf(dt * 1.2, 0.0, 1.0))
+				# орудие: вертикальная наводка на дрон (при тревоге), иначе горизонт
+				if t.get("gun") != null:
+					var gdes := 0.0
+					if t.alert:
+						var lp2: Vector3 = t.node.to_local(cam_pos)
+						var hh := Vector2(lp2.x, lp2.z).length()
+						gdes = clampf(atan2(lp2.y - 2.4, maxf(hh, 1.0)), -0.12, 1.15)
+					var gn: Node3D = t.gun
+					gn.rotation.z = lerpf(gn.rotation.z, gdes, clampf(dt * 1.5, 0.0, 1.0))
 				if t.get("tracks") != null:
 					var tr: Node3D = t.tracks
 					tr.position.x = fposmod(t.d, 0.9) - 0.45
@@ -494,6 +537,30 @@ func _kill(t: Dictionary, pos: Vector3) -> void:
 		main.fx.explosion(pos, t.kind != "soldier")
 		if t.kind != "soldier":
 			main.fx.wreck_fire(t.node)     # после чистки детей — пламя/дым остаются
+
+
+## Пригодна ли точка для хода техники полем: не здание, не круча, не русло.
+func _offroad_ok(pt: Vector2) -> bool:
+	if main.collision != null and main.collision.in_building(pt.x, pt.y, 5.0):
+		return false
+	if _terrain_normal(pt.x, pt.y).y < 0.82:
+		return false
+	var rn := main.get_node_or_null("Roads")
+	if rn != null and rn.has_method("_near_water") and rn._near_water(pt.x, pt.y, 4.0):
+		return false
+	return true
+
+
+## Новый вейпоинт для техники в поле (80–350 м, с проверкой проходимости).
+func _pick_offroad_target(t: Dictionary) -> void:
+	var pos2 := Vector2(t.ox, t.oz)
+	for k in 10:
+		var ang := randf() * TAU
+		var cand := pos2 + Vector2(cos(ang), sin(ang)) * randf_range(80.0, 350.0)
+		if _offroad_ok(cand):
+			t.tgt = cand
+			return
+	t.tgt = pos2 + Vector2(randf_range(-40.0, 40.0), randf_range(-40.0, 40.0))
 
 
 ## Все MeshInstance3D узла (рекурсивно), частицы и маркеры не включаются.
