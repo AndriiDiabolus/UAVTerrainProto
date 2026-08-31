@@ -28,9 +28,12 @@ func setup(m: Node3D) -> void:
 	main = m
 	wreck_mat.albedo_color = Color(0.09, 0.08, 0.07)
 	wreck_mat.roughness = 1.0
-	tank_mesh = _make_tank()
-	apc_mesh = _make_apc()
-	soldier_mesh = _make_soldier()
+	# утверждённые варианты из units.gd: танк с «мангалом», БТР-80, солдат в оливе
+	# (старые _make_* ниже оставлены как история, не вызываются)
+	var U = load("res://scripts/units.gd").new()
+	tank_mesh = U.tank(2)
+	apc_mesh = U.apc(1)
+	soldier_mesh = U.soldier(2)
 	_load_roads()
 	_spawn_near_override = 200.0    # стартовая партия близко и на виду
 	for i in 14:

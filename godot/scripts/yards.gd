@@ -338,11 +338,7 @@ func _gen_house(h: Array, rng: RandomNumberGenerator) -> void:
 	if rng.randf() < 0.3:
 		var lpp: Vector3 = pc + yaw * Vector3(rng.randf_range(-pw * 0.25, pw * 0.25), 0, pd * 0.18)
 		_cur_lines.append(Transform3D(Basis(Vector3.UP, -ang + rng.randf_range(-0.4, 0.4)), Vector3(lpp.x, main.height_at(lpp.x, lpp.z), lpp.z)))
-	if rng.randf() < 0.12:
-		var fpp: Vector3 = pc + yaw * Vector3(rng.randf_range(-pw * 0.3, pw * 0.3), 0, -pd * 0.1)
-		_cur_folk.append(Transform3D(Basis(Vector3.UP, rng.randf() * TAU), Vector3(fpp.x, main.height_at(fpp.x, fpp.z), fpp.z)))
-		var shirts := [Color(0.75, 0.72, 0.65), Color(0.5, 0.55, 0.7), Color(0.65, 0.45, 0.4), Color(0.4, 0.5, 0.4), Color(0.8, 0.8, 0.85)]
-		_cur_folk_cols.append(shirts[rng.randi_range(0, shirts.size() - 1)])
+	# (жителей во дворах теперь спавнит villagers.gd — детальные фигуры вместо болванчиков)
 
 
 ## Точка на грядках какого-нибудь огорода (локальные координаты участка)?

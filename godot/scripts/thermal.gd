@@ -96,7 +96,8 @@ func _set_override(g: GeometryInstance3D, mt: Material) -> void:
 func _apply_overrides() -> void:
 	var nk := _night_k()
 	for nm_t: Array in [["Roads", T_ROAD], ["Roofs", T_ROOF], ["BlockRoofs", T_ROOF], ["Chimneys", T_ROOF + 0.1],
-			["Props", T_PROP], ["Traffic", T_CAR], ["Yards", T_PROP]]:   # EW не трогаем: купола — учебная визуализация
+			["Props", T_PROP], ["Traffic", T_CAR], ["Yards", T_PROP],
+			["Villagers", T_SOLDIER - 0.06]]:   # житель чуть холоднее пехотинца — оператор учится различать. EW не трогаем
 		var n := main.get_node_or_null(str(nm_t[0]))
 		if n != null:
 			_override(n, float(nm_t[1]))

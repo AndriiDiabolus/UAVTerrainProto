@@ -51,6 +51,7 @@ func _ready() -> void:
 	_build_water()
 	_build_roads()
 	_build_fx()
+	_build_villagers()
 	_build_props()
 	_build_buildings()
 	_spawn_camera()
@@ -410,6 +411,18 @@ func _build_water() -> void:
 	w.set_script(load("res://scripts/water.gd"))
 	add_child(w)
 	w.setup(self)
+
+
+var villagers: Node3D
+
+func _build_villagers() -> void:
+	if "--novillagers" in OS.get_cmdline_user_args():
+		return
+	villagers = Node3D.new()
+	villagers.name = "Villagers"
+	villagers.set_script(load("res://scripts/villagers.gd"))
+	add_child(villagers)
+	villagers.setup(self)
 
 
 var fx: Node3D
