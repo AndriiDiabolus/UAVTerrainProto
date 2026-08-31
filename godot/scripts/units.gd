@@ -4,14 +4,18 @@ extends RefCounted
 ## Юниты смотрят в +X. Ключи: tank1..4, apc1..3, sold1..3, civ1..3 (наборы жителей).
 
 var _tex_cache := {}
+var _mat_cache := {}
 
 
 # ============================ общие помощники ============================
 
 func _mat(color: Color) -> StandardMaterial3D:
+	if _mat_cache.has(color):
+		return _mat_cache[color]
 	var mt := StandardMaterial3D.new()
 	mt.albedo_color = color
 	mt.roughness = 0.92
+	_mat_cache[color] = mt
 	return mt
 
 
@@ -20,12 +24,7 @@ func _append(mesh: ArrayMesh, prim: PrimitiveMesh, xform: Transform3D, color: Co
 
 
 func _append_tex(mesh: ArrayMesh, prim: PrimitiveMesh, xform: Transform3D, tex: Texture2D, scale := 0.45) -> void:
-	var mt := StandardMaterial3D.new()
-	mt.albedo_texture = tex
-	mt.roughness = 0.92
-	mt.uv1_triplanar = true
-	mt.uv1_scale = Vector3(scale, scale, scale)
-	_append_arrays(mesh, prim.get_mesh_arrays(), xform, mt)
+	_append_arrays(mesh, prim.get_mesh_arrays(), xform, _mat_tex(tex, scale))
 
 
 func _append_mesh(dst: ArrayMesh, src: ArrayMesh, xform: Transform3D, color: Color) -> void:
@@ -193,9 +192,13 @@ func _tank_chassis(m: ArrayMesh, hull_tex: Texture2D, dirty: bool) -> void:
 
 
 func _mat_tex(tex: Texture2D, scale := 0.45) -> StandardMaterial3D:
+	var key := [tex, scale]
+	if _mat_cache.has(key):
+		return _mat_cache[key]
 	var mt := StandardMaterial3D.new()
 	mt.albedo_texture = tex; mt.roughness = 0.92
 	mt.uv1_triplanar = true; mt.uv1_scale = Vector3(scale, scale, scale)
+	_mat_cache[key] = mt
 	return mt
 
 
