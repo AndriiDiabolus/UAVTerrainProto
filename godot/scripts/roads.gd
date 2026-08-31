@@ -22,19 +22,21 @@ func setup(main: Node3D) -> void:
 	_build_water_index(main)
 
 	# арены вершин: два дорожных материала + бетон мостов
-	var av := {"asph": _arena(), "grav": _arena(), "bridge": _arena()}
+	var av := {"asph": _arena(), "grav": _arena(), "bridge": _arena(), "mark": _arena()}
 	for r: Dictionary in roads:
 		var cls: String = r["c"]
 		if not CLASS.has(cls):
 			continue
 		var hw: float = CLASS[cls][0]
 		var asph: bool = CLASS[cls][1]
-		_ribbon(main, r["p"], hw, 0.22 if asph else 0.15, av["asph" if asph else "grav"], av["bridge"])
+		_ribbon(main, r["p"], hw, 0.22 if asph else 0.15, av["asph" if asph else "grav"], av["bridge"],
+			av["mark"] if asph and hw >= 2.7 else {})
 		_index(main, r["p"], hw)
 
 	_emit(main, av["asph"], _asph_mat(main), "Asphalt")
 	_emit(main, av["grav"], _grav_mat(main), "Gravel")
 	_emit(main, av["bridge"], _bridge_mat(), "Bridges")
+	_emit(main, av["mark"], _mark_mat(), "Marks")
 	print("Roads built in %d ms (asph v=%d, grav v=%d, мостовых ячеек %d)" % [
 		Time.get_ticks_msec() - t0, av["asph"].V.size(), av["grav"].V.size(), main.deck_index.size()])
 
@@ -65,7 +67,7 @@ func _arena() -> Dictionary:
 
 
 # ---------------- мосты: индекс водных линий (ячейки 32 м) ----------------
-const WHALF := {"river": 5.5, "stream": 1.6}
+const WHALF := {"river": 6.5, "stream": 2.4}     # чуть шире фактических русел (запечённые галечники широкие)
 var _wcells := {}                 # Vector2i -> Array сегментов [ax,ay,bx,by,hw]
 
 
@@ -121,7 +123,7 @@ func _resample(pts: Array) -> Array:
 	return out
 
 
-func _ribbon(main: Node3D, pts: Array, hw: float, off: float, a: Dictionary, br: Dictionary) -> void:
+func _ribbon(main: Node3D, pts: Array, hw: float, off: float, a: Dictionary, br: Dictionary, mk: Dictionary = {}) -> void:
 	var s := _resample(pts)
 	if s.size() < 2:
 		return
@@ -150,7 +152,7 @@ func _ribbon(main: Node3D, pts: Array, hw: float, off: float, a: Dictionary, br:
 		pr[j] = sj - perp * hw
 		hl[j] = main.height_at(pl[j].x, pl[j].y)
 		hr[j] = main.height_at(pr[j].x, pr[j].y)
-		if _near_water(sj.x, sj.y, hw + 2.0):
+		if _near_water(sj.x, sj.y, hw + 5.0):
 			wet[j] = 1; any_wet = true
 	# мосты: непрерывный «мокрый» отрезок → плоская палуба между берегами (не ныряет в русло)
 	var deck := PackedByteArray(); deck.resize(s.size())
@@ -181,6 +183,22 @@ func _ribbon(main: Node3D, pts: Array, hw: float, off: float, a: Dictionary, br:
 		var b := start + j * 2
 		I.append(b); I.append(b + 2); I.append(b + 1)
 		I.append(b + 1); I.append(b + 2); I.append(b + 3)
+	# осевая прерывистая разметка (штрих 3 м / разрыв 6 м) на дорогах шире просёлка
+	if not mk.is_empty():
+		var mcum := 0.0
+		for j in s.size() - 1:
+			var sa: Vector2 = s[j]
+			var sb: Vector2 = s[j + 1]
+			var seg_l := sa.distance_to(sb)
+			if fposmod(mcum, 9.0) < 3.0 and seg_l > 0.5:
+				var dirm := (sb - sa).normalized()
+				var perpm := Vector2(-dirm.y, dirm.x) * 0.07
+				var e0 := sa + dirm * 0.6; var e1 := sb - dirm * 0.6
+				var y0m := (hl[j] + hr[j]) * 0.5 + off + 0.02
+				var y1m := (hl[j + 1] + hr[j + 1]) * 0.5 + off + 0.02
+				_bquad(mk, Vector3(e0.x + perpm.x, y0m, e0.y + perpm.y), Vector3(e1.x + perpm.x, y1m, e1.y + perpm.y),
+					Vector3(e1.x - perpm.x, y1m, e1.y - perpm.y), Vector3(e0.x - perpm.x, y0m, e0.y - perpm.y))
+			mcum += seg_l
 	# индекс палуб для трафика/машин (main.deck_h)
 	if any_wet:
 		for j in s.size() - 1:
@@ -243,6 +261,13 @@ func _bquad(a: Dictionary, p0: Vector3, p1: Vector3, p2: Vector3, p3: Vector3) -
 	U.append_array([Vector2(0, 0), Vector2(1, 0), Vector2(1, 1), Vector2(0, 1)])
 	I.append_array([b, b + 1, b + 2, b, b + 2, b + 3])
 	I.append_array([b, b + 2, b + 1, b, b + 3, b + 2])
+
+
+func _mark_mat() -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.albedo_color = Color(0.8, 0.8, 0.75)       # потёртая белая осевая
+	m.roughness = 0.85
+	return m
 
 
 func _bridge_mat() -> StandardMaterial3D:

@@ -21,6 +21,8 @@ var _cur_holder: Node3D = null
 var _cur_fences: Array[Transform3D] = []
 var _cur_trees: Array[Transform3D] = []
 var _cur_wells: Array[Transform3D] = []
+var _panel_cells := {}            # Vector2i(1.2 м) -> true: занято панелью забора (дедуп смежных участков)
+var _cur_cells: Array[Vector2i] = []
 var _cur_lines: Array[Transform3D] = []
 var _cur_folk: Array[Transform3D] = []
 var _cur_folk_cols: Array[Color] = []
@@ -183,7 +185,10 @@ func _process(dt: float) -> void:
 	for c: Vector2i in chunks.keys():
 		var center := Vector2((c.x + 0.5) * CHUNK, (c.y + 0.5) * CHUNK)
 		if center.distance_to(Vector2(p.x, p.z)) > RADIUS + CHUNK * 1.5:
-			if chunks[c] != null: chunks[c].queue_free()
+			if chunks[c] != null:
+				for cell in chunks[c].get_meta("cells", []):
+					_panel_cells.erase(cell)
+				chunks[c].queue_free()
 			chunks.erase(c)
 			gardens.erase(c)
 
@@ -209,6 +214,7 @@ func _job_step() -> void:
 		_cur_holder = Node3D.new()
 		_cur_fences = []; _cur_trees = []; _cur_tree_cols = []
 		_cur_wells = []; _cur_lines = []; _cur_folk = []; _cur_folk_cols = []
+		_cur_cells = []
 		_cur_rng = RandomNumberGenerator.new()
 		_cur_rng.seed = (int(_cur.x) * 92821) ^ (int(_cur.y) * 68917)
 	var rng := _cur_rng
@@ -253,6 +259,7 @@ func _job_step() -> void:
 		var pmi := MultiMeshInstance3D.new(); pmi.multimesh = pm
 		pmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		_cur_holder.add_child(pmi)
+	_cur_holder.set_meta("cells", _cur_cells.duplicate())
 	add_child(_cur_holder)
 	chunks[_cur] = _cur_holder
 	if OS.is_debug_build() and "--yardsdebug" in OS.get_cmdline_user_args():
@@ -294,6 +301,14 @@ func _gen_house(h: Array, rng: RandomNumberGenerator) -> void:
 			var t0 := (i + 0.5) / n
 			var wp: Vector3 = wa.lerp(wb, t0)
 			var gy := lerpf(ha, hm, t0 * 2.0) if t0 < 0.5 else lerpf(hm, hb, (t0 - 0.5) * 2.0)
+			# дедуп: два соседних участка не рисуют забор в одном месте, панель не внутри дома
+			var cell := Vector2i(int(floor(wp.x / 1.2)), int(floor(wp.z / 1.2)))
+			if _panel_cells.has(cell):
+				continue
+			if main.collision != null and main.collision.in_building(wp.x, wp.z, 0.0):
+				continue
+			_panel_cells[cell] = true
+			_cur_cells.append(cell)
 			_cur_fences.append(Transform3D(bs, Vector3(wp.x, gy - 0.05, wp.z)))
 		side_i += 1
 	# огород — decal сзади участка

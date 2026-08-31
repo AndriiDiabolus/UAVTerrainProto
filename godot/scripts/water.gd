@@ -98,9 +98,9 @@ func _ribbon(main: Node3D, pts: Array, hw: float, V: PackedVector3Array,
 		if d.length_squared() < 1e-6: d = Vector2(1, 0)
 		d = d.normalized()
 		var perp := Vector2(-d.y, d.x)
-		var y := hs[j] + 0.12
-		var l: Vector2 = s[j] + perp * hw
-		var r: Vector2 = s[j] - perp * hw
+		var y := hs[j] + 0.3
+		var l: Vector2 = s[j] + perp * hw * 1.2
+		var r: Vector2 = s[j] - perp * hw * 1.2
 		V.append(Vector3(l.x, y, l.y)); N.append(Vector3.UP)
 		V.append(Vector3(r.x, y, r.y)); N.append(Vector3.UP)
 	for j in s.size() - 1:
