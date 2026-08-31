@@ -74,7 +74,7 @@ func _ribbon(main: Node3D, pts: Array, hw: float, V: PackedVector3Array,
 		return
 
 	# высоты уреза + сглаживание вдоль потока (вода не скачет по грубой сетке)
-	var hs := PackedFloat32Array(); hs.resize(s.size())
+	var bed := PackedFloat32Array(); bed.resize(s.size())
 	for j in s.size():
 		var d: Vector2
 		if j == 0: d = s[1] - s[0]
@@ -82,12 +82,16 @@ func _ribbon(main: Node3D, pts: Array, hw: float, V: PackedVector3Array,
 		else: d = s[j + 1] - s[j - 1]
 		if d.length_squared() < 1e-6: d = Vector2(1, 0)
 		d = d.normalized()
-		hs[j] = _bed_h(main, s[j], Vector2(-d.y, d.x), hw)
+		bed[j] = _bed_h(main, s[j], Vector2(-d.y, d.x), hw)
+	var hs := bed.duplicate()
 	for _pass in 3:
 		var sm := hs.duplicate()
 		for j in range(1, hs.size() - 1):
 			sm[j] = (hs[j - 1] + hs[j] * 2.0 + hs[j + 1]) * 0.25
 		hs = sm
+	# кламп к руслу: сглаживание не должно ни утопить воду под дно, ни поднять её над берегами
+	for j in hs.size():
+		hs[j] = clampf(hs[j], bed[j] - 0.05, bed[j] + 0.45)
 
 	var start := V.size()
 	for j in s.size():
@@ -98,9 +102,9 @@ func _ribbon(main: Node3D, pts: Array, hw: float, V: PackedVector3Array,
 		if d.length_squared() < 1e-6: d = Vector2(1, 0)
 		d = d.normalized()
 		var perp := Vector2(-d.y, d.x)
-		var y := hs[j] + 0.3
-		var l: Vector2 = s[j] + perp * hw * 1.2
-		var r: Vector2 = s[j] - perp * hw * 1.2
+		var y := hs[j] + 0.15
+		var l: Vector2 = s[j] + perp * hw * 1.05
+		var r: Vector2 = s[j] - perp * hw * 1.05
 		V.append(Vector3(l.x, y, l.y)); N.append(Vector3.UP)
 		V.append(Vector3(r.x, y, r.y)); N.append(Vector3.UP)
 	for j in s.size() - 1:

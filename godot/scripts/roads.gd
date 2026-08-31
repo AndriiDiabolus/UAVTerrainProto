@@ -152,7 +152,7 @@ func _ribbon(main: Node3D, pts: Array, hw: float, off: float, a: Dictionary, br:
 		pr[j] = sj - perp * hw
 		hl[j] = main.height_at(pl[j].x, pl[j].y)
 		hr[j] = main.height_at(pr[j].x, pr[j].y)
-		if _near_water(sj.x, sj.y, hw + 5.0):
+		if _near_water(sj.x, sj.y, hw + 3.0):
 			wet[j] = 1; any_wet = true
 	# мосты: непрерывный «мокрый» отрезок → плоская палуба между берегами (не ныряет в русло)
 	var deck := PackedByteArray(); deck.resize(s.size())
@@ -165,6 +165,8 @@ func _ribbon(main: Node3D, pts: Array, hw: float, off: float, a: Dictionary, br:
 			while j < s.size() and wet[j] == 1:
 				j += 1
 			var j1 := j - 1                                  # [j0..j1] над водой
+			if (j1 - j0 + 1) * STEP > 48.0:
+				continue                                     # дорога идёт ВДОЛЬ реки — это не мост
 			var ib := maxi(j0 - 1, 0); var ie := mini(j1 + 1, s.size() - 1)
 			var hb := maxf(hl[ib], hr[ib]); var he := maxf(hl[ie], hr[ie])
 			for k in range(j0, j1 + 1):
