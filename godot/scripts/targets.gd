@@ -390,20 +390,27 @@ const BOMB_DRAG := 0.004            # c/m: F/m = -c·v_air·|v_air|
 const BLAST_R := 7.0                # радиус поражения техники, м (пехота ×1.3)
 var ammo := AMMO_MAX
 
-# --- вооружение дрона: 0 = сброс, 1 = БЧ-камикадзе ---
-const WEAPONS := ["СБРОС", "БЧ (камикадзе)"]
+# --- вооружение дрона: 0 = сброс осколочный, 1 = сброс кумулятивный, 2 = БЧ-камикадзе ---
+const WEAPONS := ["сброс ОСКОЛОЧНЫЙ", "сброс КУМУЛЯТИВНЫЙ", "БЧ (камикадзе)"]
+const WEAPON_HINTS := ["по пехоте, R≈10 м; технике нужен прямой", "по технике, класть точно (R≈4.5 м)", "взвод ЛКМ, подрыв при столкновении"]
 var weapon := 0
 var armed := false                  # БЧ взведена (клавиша применения при выбранной БЧ)
 const KAMI_R := 11.0                # радиус поражения БЧ, м (тяжелее сбросного боеприпаса)
+var ammo_frag := 6                  # осколочные (лёгкие — больше на борту)
+var ammo_heat := 4                  # кумулятивные
 
 
-func cycle_weapon() -> void:
-	weapon = (weapon + 1) % WEAPONS.size()
+func cycle_weapon(dir: int = 1) -> void:
+	weapon = posmod(weapon + dir, WEAPONS.size())
 	armed = false
 	if main.hud != null:
-		main.hud.toast("оружие: %s" % WEAPONS[weapon])
+		main.hud.toast("оружие: %s" % WEAPONS[weapon], WEAPON_HINTS[weapon], Color(0.95, 0.9, 0.8))
 	if main.get("telemetry") != null:
 		main.telemetry.event("weapon", {"w": WEAPONS[weapon]})
+
+
+func weapon_ammo() -> int:
+	return ammo_frag if weapon == 0 else (ammo_heat if weapon == 1 else 1)
 
 
 ## Подрыв БЧ камикадзе в точке столкновения: поражение целей в радиусе, большой эффект.
@@ -428,13 +435,15 @@ var _projs: Array = []              # {node, pos, vel, t}
 
 func reset_ammo() -> void:
 	ammo = AMMO_MAX
+	ammo_frag = 6
+	ammo_heat = 4
 
 
 ## ЛКМ — сброс боеприпаса. Летит по баллистике: начальная скорость = скорость дрона, гравитация,
 ## сопротивление относительно воздуха (ветер сносит), взрыв при касании земли или прямом попадании.
 ## Ударный FPV — таран корпусом (RAM_DIST) работает всегда.
 func fire(cam: Camera3D) -> void:
-	if weapon == 1:
+	if weapon == 2:
 		# камикадзе: клавиша применения взводит/снимает БЧ
 		armed = not armed
 		if main.hud != null:
@@ -442,10 +451,11 @@ func fire(cam: Camera3D) -> void:
 		if main.get("sound") != null and armed:
 			main.sound.shot()
 		return
-	if _cool > 0.0 or ammo <= 0:
+	if _cool > 0.0 or weapon_ammo() <= 0:
 		return
 	_cool = DROP_COOLDOWN
-	ammo -= 1
+	if weapon == 0: ammo_frag -= 1
+	else: ammo_heat -= 1
 	if main.get("sound") != null:
 		main.sound.shot()
 	var v0: Vector3 = cam.velocity if cam.get("velocity") != null else Vector3.ZERO
@@ -458,9 +468,9 @@ func fire(cam: Camera3D) -> void:
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF   # мелкий снаряд тень не отбрасывает
 	mi.position = cam.global_position - Vector3(0, 1.0, 0)
 	add_child(mi)
-	_projs.append({"node": mi, "pos": mi.position, "vel": v0 + Vector3(0, -1.5, 0), "t": 0.0})
+	_projs.append({"node": mi, "pos": mi.position, "vel": v0 + Vector3(0, -1.5, 0), "t": 0.0, "wt": weapon})
 	if main.get("telemetry") != null:
-		main.telemetry.event("drop", {"ammo": ammo})
+		main.telemetry.event("drop", {"ammo": weapon_ammo(), "wt": weapon})
 
 
 func _step_projs(dt: float) -> void:
@@ -487,17 +497,22 @@ func _step_projs(dt: float) -> void:
 					hit = true
 					break
 		if hit:
-			_explode(Vector3(p.x, maxf(p.y, g), p.z))
+			_explode(Vector3(p.x, maxf(p.y, g), p.z), int(pr.get("wt", 1)))
 			pr.node.queue_free()
 			_projs.erase(pr)
 
 
-func _explode(pos: Vector3) -> void:
+## wt: 0 — осколочный (пехота R 10, технике нужен почти прямой), 1 — кумулятивный (техника R 4.5).
+func _explode(pos: Vector3, wt: int = 1) -> void:
 	var any := false
 	for t: Dictionary in targets:
 		if not t.alive:
 			continue
-		var r := BLAST_R * (1.3 if t.kind == "soldier" else 1.0)
+		var r: float
+		if wt == 0:
+			r = 10.0 if t.kind == "soldier" else 2.5
+		else:
+			r = 4.0 if t.kind == "soldier" else 4.5
 		if pos.distance_to(t.node.position) < r + t.radius * 0.5:
 			_kill(t, t.node.position)
 			any = true

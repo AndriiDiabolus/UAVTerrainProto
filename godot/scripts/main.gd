@@ -629,7 +629,7 @@ func crash(what: String) -> void:
 		return
 	crashed = true
 	# взведённая БЧ камикадзе подрывается при любом столкновении
-	if targets != null and targets.weapon == 1 and targets.armed:
+	if targets != null and targets.weapon == 2 and targets.armed:
 		targets.detonate(cam.global_position)
 	if mission != null:
 		mission.on_crash()

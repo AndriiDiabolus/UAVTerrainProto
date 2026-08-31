@@ -46,7 +46,7 @@ func _test_kamikaze() -> bool:
 	var t: Dictionary = spawned[0]
 	t.speed = 0.0
 	tg._process(0.01)
-	tg.weapon = 1
+	tg.weapon = 2
 	tg.armed = true
 	tg.detonate(t.node.position + Vector3(3, 1, 0))     # «столкновение» в 3 м от цели
 	var ok: bool = not bool(t.alive) and not bool(tg.armed)

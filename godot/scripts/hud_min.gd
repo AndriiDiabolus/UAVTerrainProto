@@ -65,10 +65,12 @@ func _draw() -> void:
 		["%d м/с" % int(spd), TXT], ["·", DIM], ["канал %d %%" % int(lq * 100.0), TXT if lq > 0.7 else Color(1.0, 0.75, 0.45)]]
 	if main.targets != null:
 		segs.append(["·", DIM])
-		if main.targets.weapon == 1:
+		if main.targets.weapon == 2:
 			segs.append(["БЧ ⚠ ВЗВЕДЕНА" if main.targets.armed else "БЧ снята", Color(1.0, 0.45, 0.35) if main.targets.armed else DIM])
+		elif main.targets.weapon == 0:
+			segs.append(["оск ×%d" % int(main.targets.ammo_frag), TXT])
 		else:
-			segs.append(["сброс ×%d" % int(main.targets.ammo), TXT])
+			segs.append(["кум ×%d" % int(main.targets.ammo_heat), TXT])
 	if cam.get("landed") == true:
 		segs.append(["·", DIM]); segs.append(["на земле", DIM])
 	var widths: Array = []

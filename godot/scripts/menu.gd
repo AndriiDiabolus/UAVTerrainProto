@@ -12,7 +12,7 @@ var replay_pick := 0
 var replay_files: PackedStringArray = []
 var _orbit_t := 0.0
 var _panel: Control
-const ITEMS := ["полёт", "миссия", "реплей", "регион", "дрон", "камера", "погода", "качество", "выход"]
+const ITEMS := ["полёт", "миссия", "реплей", "регион", "дрон", "оружие", "камера", "погода", "качество", "выход"]
 const ACC := Color(1.0, 0.78, 0.35)
 const TXT := Color(0.92, 0.92, 0.9)
 const DIM := Color(0.78, 0.78, 0.76, 0.8)
@@ -103,6 +103,9 @@ func _adjust(dir: int) -> void:
 		"регион":
 			_switch_region()
 		"дрон": main.cam.cycle_drone()
+		"оружие":
+			if main.targets != null:
+				main.targets.cycle_weapon(dir)
 		"камера":
 			if main.hud.fpv_link != null:
 				main.hud.fpv_link.set_camera(main.hud.fpv_link.camera + dir)
@@ -124,6 +127,9 @@ func _activate() -> void:
 				main.telemetry.start_replay("user://flights/" + replay_files[replay_pick])
 		"регион": _switch_region()
 		"дрон": main.cam.cycle_drone()
+		"оружие":
+			if main.targets != null:
+				main.targets.cycle_weapon(1)
 		"камера":
 			if main.hud.fpv_link != null:
 				main.hud.fpv_link.set_camera(main.hud.fpv_link.camera + 1)
@@ -167,13 +173,14 @@ func _draw_panel() -> void:
 		"миссия": "%d · %s" % [mission_pick, str(main.mission.MISSIONS[mission_pick]["name"]).split("· ")[1] if main.mission != null else ""],
 		"реплей": (replay_files[replay_pick].trim_prefix("flight_").trim_suffix(".csv") if not replay_files.is_empty() else "нет записей"),
 		"регион": ("степь" if main.region == "steppe" else "Карпаты"),
-		"дрон": str(main.cam.drone_name()),
+		"дрон": "%s · T/W %.1f" % [str(main.cam.drone_name()), float(main.cam.P["tw"])],
+		"оружие": ("%s ×%d" % [main.targets.WEAPONS[main.targets.weapon], main.targets.weapon_ammo()]) if main.targets != null else "—",
 		"камера": (main.hud.fpv_link.camera_name() if main.hud != null and main.hud.fpv_link != null else "—"),
 		"погода": str(main.weather.label) if main.weather != null else "—",
 		"качество": main.QUALITY_NAMES[main.quality],
 		"выход": "",
 	}
-	var icons := {"полёт": "▶", "миссия": "◎", "реплей": "↺", "регион": "🗺", "дрон": "🛠", "камера": "📷", "погода": "☀", "качество": "⚙", "выход": "⏻"}
+	var icons := {"полёт": "▶", "миссия": "◎", "реплей": "↺", "регион": "🗺", "дрон": "🛠", "оружие": "✚", "камера": "📷", "погода": "☀", "качество": "⚙", "выход": "⏻"}
 	var y := 170.0
 	for i in ITEMS.size():
 		var it: String = ITEMS[i]
