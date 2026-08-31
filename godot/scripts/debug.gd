@@ -53,7 +53,7 @@ func _schedule_screenshot() -> void:
 			var U = load("res://scripts/units.gd").new()
 			var items: Array = U.build_set(key)
 			var base: Vector3 = main._home_pos + Vector3(14, 0, 0)
-			var vehicle := key.begins_with("tank") or key.begins_with("apc")
+			var vehicle := key.begins_with("tank") or key.begins_with("apc") or key.begins_with("car")
 			var yaw := -0.2 if vehicle else -0.6     # техника — лоб+борт 3/4, люди — лицом к камере
 			for it: Array in items:
 				var obj = it[0]
@@ -72,7 +72,10 @@ func _schedule_screenshot() -> void:
 				await get_tree().process_frame
 			if main.hud != null and main.hud.get("fpv_on") != null and main.hud.fpv_on:
 				main.hud._toggle_fpv()               # галерея всегда обычной камерой
-			if vehicle:
+			if key.begins_with("car"):
+				main.cam.global_position = Vector3(base.x + 11.0, gy2 + 5.0, base.z + 12.0)
+				main.cam.look_at(Vector3(base.x, gy2 + 1.0, base.z + 0.5))
+			elif vehicle:
 				main.cam.global_position = Vector3(base.x + 6.2, gy2 + 3.0, base.z + 7.0)
 				main.cam.look_at(Vector3(base.x, gy2 + 1.3, base.z))
 			else:

@@ -619,6 +619,8 @@ func build_set(key: String) -> Array:
 		return [[apc_node(variant).root, 0.0]]
 	if key.begins_with("sold"):
 		return [[soldier(variant), 0.0]]
+	if key.begins_with("car"):
+		return [[car_sedan(), -6.0], [car_wagon(), -3.0], [car_van(), 0.0], [car_truck(), 3.5], [car_bus(), 7.5]]
 	return civ_set(variant)
 
 
@@ -865,3 +867,122 @@ func _btr80_hull_shell(m: ArrayMesh, tex: Texture2D) -> void:
 	# фары
 	for fz in [0.55, -0.55]:
 		_append(m, _cyl(0.09, 0.08), Transform3D(_rz(PI / 2), Vector3(3.6, 1.9, fz)), Color(0.75, 0.75, 0.7))
+
+
+# ============================ ГРАЖДАНСКИЕ МАШИНЫ ============================
+# Детальные машины для трафика (вперёд = +X). Кузовные панели — материал с
+# vertex_color_use_as_albedo: MultiMesh красит каждую машину instance-цветом.
+
+var _body_mat_cache := {}
+
+func _mat_body() -> StandardMaterial3D:
+	if _body_mat_cache.has("body"):
+		return _body_mat_cache["body"]
+	var mt := StandardMaterial3D.new()
+	mt.albedo_color = Color(1, 1, 1)
+	mt.vertex_color_use_as_albedo = true
+	mt.roughness = 0.35
+	mt.metallic = 0.25
+	_body_mat_cache["body"] = mt
+	return mt
+
+
+func _append_body(m: ArrayMesh, prim: PrimitiveMesh, xform: Transform3D) -> void:
+	_append_arrays(m, prim.get_mesh_arrays(), xform, _mat_body())
+
+
+const GLASS := Color(0.10, 0.13, 0.16)
+const TIRE := Color(0.07, 0.07, 0.07)
+const HUB := Color(0.45, 0.45, 0.45)
+const BUMPER := Color(0.2, 0.2, 0.21)
+
+
+func _car_wheels(m: ArrayMesh, xs: Array, r: float, w: float, z: float) -> void:
+	for wx: float in xs:
+		for wz: float in [z, -z]:
+			_append(m, _cyl(r, w), Transform3D(_rx(PI / 2), Vector3(wx, r, wz)), TIRE)
+			_append(m, _cyl(r * 0.4, w + 0.02), Transform3D(_rx(PI / 2), Vector3(wx, r, wz)), HUB)
+
+
+func _car_lights(m: ArrayMesh, front_x: float, y: float, z: float) -> void:
+	for lz: float in [z, -z]:
+		_append(m, _box(0.06, 0.14, 0.3), Transform3D(Basis(), Vector3(front_x, y, lz)), Color(0.9, 0.9, 0.82))
+		_append(m, _box(0.06, 0.12, 0.26), Transform3D(Basis(), Vector3(-front_x, y, lz)), Color(0.55, 0.1, 0.08))
+
+
+## Стекло-скат (лобовое/заднее): тонкая пластина под углом.
+func _car_glass(m: ArrayMesh, x: float, y: float, wz: float, h: float, tilt: float) -> void:
+	_append(m, _box(0.05, h, wz), Transform3D(_rz(tilt), Vector3(x, y, 0)), GLASS)
+
+
+## Седан (жигули-подобный, 4.3 м).
+func car_sedan() -> ArrayMesh:
+	var m := ArrayMesh.new()
+	_append_body(m, _box(4.3, 0.52, 1.7), Transform3D(Basis(), Vector3(0, 0.62, 0)))
+	_append_body(m, _box(1.15, 0.14, 1.64), Transform3D(_rz(-0.06), Vector3(1.5, 0.93, 0)))     # капот
+	_append_body(m, _box(0.95, 0.16, 1.64), Transform3D(Basis(), Vector3(-1.6, 0.94, 0)))       # багажник
+	_append(m, _box(1.75, 0.44, 1.56), Transform3D(Basis(), Vector3(-0.1, 1.12, 0)), GLASS)     # остекление салона
+	_append_body(m, _box(1.85, 0.07, 1.5), Transform3D(Basis(), Vector3(-0.1, 1.37, 0)))        # крыша
+	_car_glass(m, 0.93, 1.12, 1.5, 0.55, -0.6)
+	_car_glass(m, -1.13, 1.12, 1.5, 0.52, 0.65)
+	for mz: float in [0.92, -0.92]:
+		_append(m, _box(0.1, 0.1, 0.14), Transform3D(Basis(), Vector3(0.8, 1.06, mz)), BUMPER)  # зеркала
+	for bx: float in [2.2, -2.2]:
+		_append(m, _box(0.16, 0.16, 1.74), Transform3D(Basis(), Vector3(bx, 0.42, 0)), BUMPER)
+	_car_lights(m, 2.17, 0.72, 0.55)
+	_car_wheels(m, [1.35, -1.35], 0.33, 0.2, 0.78)
+	return m
+
+
+## Универсал/хэтч: крыша до кормы, вертикальная задняя дверь.
+func car_wagon() -> ArrayMesh:
+	var m := ArrayMesh.new()
+	_append_body(m, _box(4.2, 0.54, 1.7), Transform3D(Basis(), Vector3(0, 0.63, 0)))
+	_append_body(m, _box(1.1, 0.14, 1.64), Transform3D(_rz(-0.06), Vector3(1.45, 0.94, 0)))
+	_append(m, _box(2.6, 0.46, 1.56), Transform3D(Basis(), Vector3(-0.5, 1.13, 0)), GLASS)
+	_append_body(m, _box(2.7, 0.07, 1.5), Transform3D(Basis(), Vector3(-0.5, 1.39, 0)))
+	_car_glass(m, 0.88, 1.13, 1.5, 0.55, -0.6)
+	_car_glass(m, -1.86, 1.1, 1.5, 0.56, 0.15)
+	for bx: float in [2.14, -2.14]:
+		_append(m, _box(0.16, 0.16, 1.74), Transform3D(Basis(), Vector3(bx, 0.42, 0)), BUMPER)
+	_car_lights(m, 2.12, 0.72, 0.55)
+	_car_wheels(m, [1.32, -1.32], 0.33, 0.2, 0.78)
+	return m
+
+
+## «Газель»: кабина + будка (будка красится instance-цветом).
+func car_van() -> ArrayMesh:
+	var m := ArrayMesh.new()
+	_append_body(m, _box(1.5, 0.95, 1.9), Transform3D(Basis(), Vector3(1.55, 1.02, 0)))         # кабина
+	_car_glass(m, 2.2, 1.15, 1.7, 0.5, -0.35)
+	_append(m, _box(0.5, 0.38, 1.7), Transform3D(Basis(), Vector3(1.35, 1.35, 0)), GLASS)       # боковые окна кабины
+	_append_body(m, _box(2.7, 1.55, 1.95), Transform3D(Basis(), Vector3(-0.75, 1.35, 0)))       # будка
+	_append(m, _box(0.16, 0.16, 1.9), Transform3D(Basis(), Vector3(2.35, 0.42, 0)), BUMPER)
+	_car_lights(m, 2.36, 0.72, 0.6)
+	_car_wheels(m, [1.55, -1.35], 0.36, 0.24, 0.8)
+	return m
+
+
+## Грузовик с тентом (КамАЗ-подобный).
+func car_truck() -> ArrayMesh:
+	var m := ArrayMesh.new()
+	_append_body(m, _box(1.7, 1.35, 2.2), Transform3D(Basis(), Vector3(2.0, 1.45, 0)))          # кабина
+	_car_glass(m, 2.75, 1.7, 2.0, 0.6, -0.2)
+	_append(m, _box(3.6, 0.5, 2.25), Transform3D(Basis(), Vector3(-1.0, 0.95, 0)), Color(0.25, 0.26, 0.24))  # рама/борта
+	_append(m, _box(3.5, 1.3, 2.2), Transform3D(Basis(), Vector3(-1.0, 1.85, 0)), Color(0.3, 0.34, 0.26))    # тент
+	_append(m, _box(0.2, 0.2, 2.24), Transform3D(Basis(), Vector3(2.9, 0.5, 0)), BUMPER)
+	_car_lights(m, 2.9, 0.85, 0.8)
+	_car_wheels(m, [1.9, -0.5, -1.6], 0.45, 0.32, 0.85)
+	return m
+
+
+## Автобус (ПАЗ-подобный): один объём с лентой окон.
+func car_bus() -> ArrayMesh:
+	var m := ArrayMesh.new()
+	_append_body(m, _box(6.2, 1.7, 2.2), Transform3D(Basis(), Vector3(0, 1.45, 0)))
+	_append(m, _box(5.4, 0.6, 2.24), Transform3D(Basis(), Vector3(-0.2, 1.95, 0)), GLASS)       # лента окон
+	_car_glass(m, 3.08, 1.75, 2.0, 0.85, -0.08)
+	_append(m, _box(0.2, 0.2, 2.24), Transform3D(Basis(), Vector3(3.15, 0.5, 0)), BUMPER)
+	_car_lights(m, 3.16, 0.8, 0.75)
+	_car_wheels(m, [2.0, -1.9], 0.42, 0.3, 0.85)
+	return m

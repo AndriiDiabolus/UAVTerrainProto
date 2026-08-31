@@ -6,8 +6,18 @@ extends Node3D
 var main: Node3D
 var roads: Array = []
 var cars: Array = []                 # {road, d, dir, speed, kind, color}
-var _mm_body: MultiMesh
-var _mm_cab: MultiMesh
+var _mm_types: Array[MultiMesh] = []      # седан/универсал/газель/грузовик/автобус
+var _type_meshes: Array = []
+const TYPE_W := [0.38, 0.2, 0.2, 0.13, 0.09]        # веса типов при спавне
+const TYPE_FRONT := [2.2, 2.14, 2.38, 2.95, 3.2]    # X фар (полоса света ночью)
+# палитры кузова по типам (седаны пёстрые, газели белые, автобусы жёлтые/синие)
+const TYPE_COLORS := [
+	[Color(0.85, 0.85, 0.85), Color(0.15, 0.15, 0.17), Color(0.55, 0.58, 0.62), Color(0.45, 0.12, 0.1), Color(0.2, 0.3, 0.5), Color(0.7, 0.6, 0.3)],
+	[Color(0.8, 0.8, 0.78), Color(0.35, 0.4, 0.45), Color(0.5, 0.3, 0.15), Color(0.25, 0.35, 0.3)],
+	[Color(0.88, 0.88, 0.86), Color(0.88, 0.88, 0.86), Color(0.75, 0.78, 0.8), Color(0.35, 0.45, 0.6)],
+	[Color(0.75, 0.45, 0.15), Color(0.35, 0.42, 0.5), Color(0.4, 0.45, 0.35)],
+	[Color(0.85, 0.75, 0.3), Color(0.4, 0.55, 0.7), Color(0.8, 0.8, 0.78)],
+]
 var _mm_lamp: MultiMesh
 var _lamp_mat: StandardMaterial3D
 const N_CARS := 40
@@ -38,15 +48,11 @@ func setup(m: Node3D) -> void:
 			lens.append(total)
 		if total > 200.0:
 			roads.append({"p": pts, "len": lens, "total": total, "cls": cls})
-	# меши: кузов, кабина/крыша, фары
-	var body := BoxMesh.new(); body.size = Vector3(4.3, 0.75, 1.8)
-	var bmat := StandardMaterial3D.new(); bmat.vertex_color_use_as_albedo = true; bmat.roughness = 0.35; bmat.metallic = 0.3
-	body.material = bmat
-	_mm_body = _mm(body, true)
-	var cab := BoxMesh.new(); cab.size = Vector3(2.2, 0.7, 1.6)
-	var cmat := StandardMaterial3D.new(); cmat.albedo_color = Color(0.12, 0.13, 0.15); cmat.roughness = 0.2; cmat.metallic = 0.4
-	cab.material = cmat
-	_mm_cab = _mm(cab, false)
+	# детальные машины из units.gd: тип -> MultiMesh (у каждой машины слот в ММ своего типа)
+	var U = load("res://scripts/units.gd").new()
+	_type_meshes = [U.car_sedan(), U.car_wagon(), U.car_van(), U.car_truck(), U.car_bus()]
+	for tmesh: ArrayMesh in _type_meshes:
+		_mm_types.append(_mm(tmesh, true))
 	var lamp := BoxMesh.new(); lamp.size = Vector3(0.1, 0.25, 1.5)
 	_lamp_mat = StandardMaterial3D.new()
 	_lamp_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -102,8 +108,15 @@ func _try_spawn(cam_xz: Vector2) -> void:
 			continue
 		var cls: String = road["cls"]
 		var spd := _rng.randf_range(9.0, 16.0) if cls in ["residential", "unclassified"] else _rng.randf_range(14.0, 24.0)
+		var roll := _rng.randf(); var typ := 0; var acc := 0.0
+		for ti in TYPE_W.size():
+			acc += TYPE_W[ti]
+			if roll <= acc:
+				typ = ti; break
+		if typ >= 3: spd *= 0.75                            # грузовик/автобус медленнее
+		var pal: Array = TYPE_COLORS[typ]
 		cars.append({"road": road, "d": d, "dir": 1.0 if _rng.randf() < 0.5 else -1.0, "speed": spd,
-			"color": COLORS[_rng.randi_range(0, COLORS.size() - 1)], "truck": _rng.randf() < 0.2, "yaw": 0.0})
+			"color": pal[_rng.randi_range(0, pal.size() - 1)], "type": typ, "yaw": 0.0})
 		return
 
 
@@ -124,11 +137,12 @@ func _process(dt: float) -> void:
 	var night := 0.0
 	if main.weather != null and int(main.weather.idx) == 4: night = 1.0
 	_lamp_mat.emission_energy_multiplier = 4.0 * night
+	var zero := Transform3D(Basis().scaled(Vector3.ZERO), Vector3(0, -1000, 0))
 	for i in N_CARS:
 		if i >= cars.size():
-			_mm_body.set_instance_transform(i, Transform3D(Basis().scaled(Vector3.ZERO), Vector3(0, -1000, 0)))
-			_mm_cab.set_instance_transform(i, Transform3D(Basis().scaled(Vector3.ZERO), Vector3(0, -1000, 0)))
-			_mm_lamp.set_instance_transform(i, Transform3D(Basis().scaled(Vector3.ZERO), Vector3(0, -1000, 0)))
+			for mm2: MultiMesh in _mm_types:
+				mm2.set_instance_transform(i, zero)
+			_mm_lamp.set_instance_transform(i, zero)
 			continue
 		var c: Dictionary = cars[i]
 		c.d += c.dir * c.speed * dt
@@ -146,14 +160,17 @@ func _process(dt: float) -> void:
 		var wx := p.x + side.x * 0.0; var wz := p.y + side.y * 0.0
 		var rgt := Vector2(dv.y, -dv.x).normalized() * 1.3
 		wx = p.x + rgt.x; wz = p.y + rgt.y
-		var y: float = maxf(main.height_at(wx, wz), main.deck_h(wx, wz)) + 0.55
+		var y: float = maxf(main.height_at(wx, wz), main.deck_h(wx, wz))
 		var b := Basis(Vector3.UP, c.yaw)
-		var sc := 1.35 if c.truck else 1.0
-		_mm_body.set_instance_transform(i, Transform3D(b.scaled(Vector3(sc, sc, sc)), Vector3(wx, y, wz)))
-		_mm_body.set_instance_color(i, c.color)
-		var cab_off: Vector3 = b * Vector3(-0.3 if not c.truck else 1.3, 0.72 * sc, 0.0)
-		_mm_cab.set_instance_transform(i, Transform3D(b.scaled(Vector3(sc * (0.6 if c.truck else 1.0), sc, sc)), Vector3(wx, y, wz) + cab_off))
-		var lamp_off: Vector3 = b * Vector3(2.15 * sc, 0.05, 0.0)
+		var typ: int = c.type
+		for ti in _mm_types.size():
+			if ti == typ:
+				_mm_types[ti].set_instance_transform(i, Transform3D(b, Vector3(wx, y, wz)))
+				_mm_types[ti].set_instance_color(i, c.color)
+			else:
+				_mm_types[ti].set_instance_transform(i, zero)
+		var front: float = TYPE_FRONT[typ]
+		var lamp_off: Vector3 = b * Vector3(front, 0.62, 0.0)
 		_mm_lamp.set_instance_transform(i, Transform3D(b, Vector3(wx, y, wz) + lamp_off))
 		# конус фар: первые 6 машин освещают дорогу перед собой
 		if i < _spots.size():
