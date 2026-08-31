@@ -56,8 +56,13 @@ func _schedule_screenshot() -> void:
 			var vehicle := key.begins_with("tank") or key.begins_with("apc")
 			var yaw := -0.2 if vehicle else -0.6     # техника — лоб+борт 3/4, люди — лицом к камере
 			for it: Array in items:
-				var mi := MeshInstance3D.new()
-				mi.mesh = it[0]
+				var obj = it[0]
+				var mi: Node3D
+				if obj is Node3D:
+					mi = obj
+				else:
+					mi = MeshInstance3D.new()
+					mi.mesh = obj
 				var pz := float(it[1])
 				mi.transform = Transform3D(Basis(Vector3.UP, yaw),
 					Vector3(base.x, main.height_at(base.x + 0.0, base.z + pz), base.z + pz))

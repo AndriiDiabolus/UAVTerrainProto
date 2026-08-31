@@ -18,8 +18,7 @@ var score := 0
 var _cool := 0.0
 var _spawn_accum := 0.0
 
-var tank_mesh: ArrayMesh
-var apc_mesh: ArrayMesh
+var _units: RefCounted            # units.gd: риги техники и меши пехоты
 var soldier_mesh: ArrayMesh
 var wreck_mat := StandardMaterial3D.new()
 
@@ -30,10 +29,8 @@ func setup(m: Node3D) -> void:
 	wreck_mat.roughness = 1.0
 	# утверждённые варианты из units.gd: танк с «мангалом», БТР-80, солдат в оливе
 	# (старые _make_* ниже оставлены как история, не вызываются)
-	var U = load("res://scripts/units.gd").new()
-	tank_mesh = U.tank(2)
-	apc_mesh = U.apc(1)
-	soldier_mesh = U.soldier(2)
+	_units = load("res://scripts/units.gd").new()
+	soldier_mesh = _units.soldier(2)
 	_load_roads()
 	_spawn_near_override = 200.0    # стартовая партия близко и на виду
 	for i in 14:
@@ -173,11 +170,12 @@ func _try_spawn() -> void:
 
 
 func _spawn_vehicle(kind: String, road: Dictionary, d: float) -> void:
-	var mi := MeshInstance3D.new()
-	mi.mesh = tank_mesh if kind == "tank" else apc_mesh
+	var rig: Dictionary = _units.tank_node(2) if kind == "tank" else _units.apc_node(1)
+	var mi: Node3D = rig.root
 	_add_marker(mi, Color(1.0, 0.15, 0.1) if kind == "tank" else Color(1.0, 0.55, 0.05), 70.0)
 	add_child(mi)
 	targets.append({"kind": kind, "node": mi, "road": road, "d": d,
+		"turret": rig.turret, "tracks": rig.tracks, "wheels": rig.wheels, "wheel_r": float(rig.wheel_r),
 		"dir": 1.0 if randf() < 0.5 else -1.0,
 		"speed": randf_range(3.0, 5.0) if kind == "tank" else randf_range(6.0, 9.0),
 		"radius": 5.0, "alive": true, "leader": true, "wreck_t": 0.0, "offset": 0.0,
@@ -201,7 +199,7 @@ func _spawn_squad(road: Dictionary, d: float) -> void:
 
 
 ## Яркий столб-маркер над целью + billboard-ромб на вершине (видно с воздуха).
-func _add_marker(node: MeshInstance3D, color: Color, h: float) -> void:
+func _add_marker(node: Node3D, color: Color, h: float) -> void:
 	if "--nomarkers" in OS.get_cmdline_user_args():
 		return
 	var beam := MeshInstance3D.new()
@@ -220,6 +218,7 @@ func _add_marker(node: MeshInstance3D, color: Color, h: float) -> void:
 	beam.set("no_depth_test", true)
 	node.add_child(beam)
 	var cap := MeshInstance3D.new()
+	cap.name = "MarkerCap"
 	var sph := SphereMesh.new(); sph.radius = 2.2; sph.height = 4.4
 	cap.mesh = sph
 	cap.position = Vector3(0, h + 5.0, 0)
@@ -301,6 +300,19 @@ func _process(dt: float) -> void:
 			t.node.transform = Transform3D(Basis(fwd, up, rgt), Vector3(wx, y + 0.25, wz))
 			if t.get("dust") != null:
 				t.dust.emitting = t.speed > 2.5 and dist_d < 900.0
+			# башня: при тревоге ведёт дрон, иначе медленно «сканирует»; траки бегут, колёса крутятся
+			if t.get("turret") != null:
+				var des: float = sin(t.d * 0.02) * 0.5
+				if t.alert:
+					var lp: Vector3 = t.node.to_local(cam_pos)
+					des = atan2(-lp.z, lp.x)
+				var tur: Node3D = t.turret
+				tur.rotation.y = lerp_angle(tur.rotation.y, des, clampf(dt * 1.2, 0.0, 1.0))
+				if t.get("tracks") != null:
+					var tr: Node3D = t.tracks
+					tr.position.x = fposmod(t.d, 0.9) - 0.45
+				for wn: Node3D in t.wheels:
+					wn.rotation.z = -t.d / t.wheel_r
 		# таран дроном
 		if cam_pos.distance_to(t.node.position) < RAM_DIST + t.radius:
 			_kill(t, t.node.position)
@@ -469,16 +481,29 @@ func _kill(t: Dictionary, pos: Vector3) -> void:
 	target_killed.emit(t.kind, pos)
 	if main.get("sound") != null:
 		main.sound.boom(pos)
-	for s in t.node.mesh.get_surface_count():
-		t.node.set_surface_override_material(s, wreck_mat)
-	for c in t.node.get_children():   # погасить маркер над подбитой целью
-		c.queue_free()
+	for g: MeshInstance3D in _geo_list(t.node):
+		g.material_override = wreck_mat
+	for c in t.node.get_children():   # погасить маркер над подбитой целью (риг-узлы не трогаем)
+		if str(c.name).begins_with("Marker"):
+			c.queue_free()
 	_puff(pos + Vector3(0, 2, 0), Color(1.0, 0.55, 0.15), 9.0)
 	_puff(pos + Vector3(0, 4, 0), Color(0.25, 0.23, 0.2), 14.0)
 	if main.get("fx") != null:
 		main.fx.explosion(pos, t.kind != "soldier")
 		if t.kind != "soldier":
 			main.fx.wreck_fire(t.node)     # после чистки детей — пламя/дым остаются
+
+
+## Все MeshInstance3D узла (рекурсивно), частицы и маркеры не включаются.
+func _geo_list(n: Node) -> Array:
+	var out := []
+	if n is GPUParticles3D or str(n.name).begins_with("Marker"):
+		return out
+	if n is MeshInstance3D:
+		out.append(n)
+	for c in n.get_children():
+		out.append_array(_geo_list(c))
+	return out
 
 
 ## Ближайшая живая цель к точке и дистанция до неё (для HUD-указателя).

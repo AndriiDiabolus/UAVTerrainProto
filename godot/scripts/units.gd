@@ -610,12 +610,240 @@ func civ_set(variant: int) -> Array:
 
 
 ## Единая точка входа для галереи: ключ вида tank2 / apc1 / sold3 / civ2.
+## Техника возвращается ригом (Node3D), люди — мешами.
 func build_set(key: String) -> Array:
 	var variant := int(key.substr(key.length() - 1))
 	if key.begins_with("tank"):
-		return [[tank(variant), 0.0]]
+		return [[tank_node(variant).root, 0.0]]
 	if key.begins_with("apc"):
-		return [[apc(variant), 0.0]]
+		return [[apc_node(variant).root, 0.0]]
 	if key.begins_with("sold"):
 		return [[soldier(variant), 0.0]]
 	return civ_set(variant)
+
+
+# ============================ РИГИ ТЕХНИКИ ============================
+# Подвижная техника: корпус + отдельная башня (вращается), бегущие траки (узел
+# с гребнями смещается циклично), колёса с болтами (вращение видно). Пивот башни —
+# её ось; ствол крутится вместе с ней. Возврат: {root, turret, tracks, wheels, wheel_r}.
+
+func _mi(mesh: Mesh, nm: String = "") -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	mi.mesh = mesh
+	if nm != "": mi.name = nm
+	return mi
+
+
+## Корпус танка без гребней траков: ванна, лоб, полки, юбки, ленты, катки, ДЗ лба, бочки, бревно.
+func _tank_hull_mesh(hull_tex: Texture2D, dirty: bool, era_on: bool) -> ArrayMesh:
+	var m := ArrayMesh.new()
+	_append_tex(m, _box(6.4, 0.9, 2.7), Transform3D(Basis(), Vector3(0, 0.95, 0)), hull_tex)
+	_append_mesh(m, _sloped_box(Vector3(6.2, 0.75, 2.7), 1.9), Transform3D(Basis(), Vector3(0, 1.55, 0)), Color(1, 1, 1))
+	m.surface_set_material(m.get_surface_count() - 1, _mat_tex(hull_tex))
+	for fz in [1.5, -1.5]:
+		_append(m, _box(6.6, 0.12, 0.55), Transform3D(Basis(), Vector3(0, 1.35, fz)), Color(0.24, 0.26, 0.17))
+	for fz in [1.62, -1.62]:
+		_append(m, _box(6.4, 0.5, 0.06), Transform3D(Basis(), Vector3(0, 1.05, fz)),
+			Color(0.16, 0.15, 0.11) if not dirty else Color(0.22, 0.19, 0.13))
+	for fz in [1.42, -1.42]:
+		_append(m, _box(6.8, 0.7, 0.7), Transform3D(Basis(), Vector3(0, 0.55, fz)), T_TRACK)
+		for rx in [-2.55, -1.53, -0.51, 0.51, 1.53, 2.55]:
+			_append(m, _cyl(0.5, 0.28), Transform3D(_rx(PI / 2), Vector3(rx, 0.55, fz)), T_RUBBER)
+		for rx in [-3.15, 3.15]:
+			_append(m, _cyl(0.42, 0.3), Transform3D(_rx(PI / 2), Vector3(rx, 0.75, fz)), T_STEEL)
+	if era_on:
+		for ez in [-1.0, -0.5, 0.0, 0.5, 1.0]:
+			_append(m, _box(0.5, 0.28, 0.4), Transform3D(_rz(-0.5), Vector3(2.9, 1.7, ez)), Color(0.32, 0.34, 0.21))
+	for dz in [0.7, -0.7]:
+		_append(m, _cyl(0.28, 0.9), Transform3D(_rz(PI / 2), Vector3(-3.4, 1.6, dz)), Color(0.28, 0.3, 0.19))
+	_append(m, _cyl(0.14, 2.4), Transform3D(_rx(PI / 2), Vector3(-3.15, 1.15, 0)), Color(0.32, 0.24, 0.15))
+	return m
+
+
+## Гребни траков обоих бортов — отдельный меш, циклическое смещение по X = «бегущая» гусеница.
+func _tank_cleats_mesh() -> ArrayMesh:
+	var m := ArrayMesh.new()
+	for fz in [1.42, -1.42]:
+		for lx in range(-3, 4):
+			_append(m, _box(0.16, 0.78, 0.78), Transform3D(Basis(), Vector3(lx * 0.9, 0.55, fz)), T_STEEL)
+	return m
+
+
+## Башня танка (координаты от пивота (-0.5, 2.35, 0)): восьмигранник, ДЗ, маска, ствол,
+## башенка, ЗПУ, корзина, антенны; опционально «мангал» (он крепится к башне).
+func _tank_turret_mesh(hull_tex: Texture2D, era_on: bool, hatches_open: bool, mangal: bool) -> ArrayMesh:
+	var m := ArrayMesh.new()
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var n := 8
+	var top: Array[Vector3] = []; var bot: Array[Vector3] = []
+	for i in n:
+		var a := TAU * i / n + PI / n
+		top.append(Vector3(cos(a) * 1.85 * 0.82, 0.475, sin(a) * 1.35 * 0.82))
+		bot.append(Vector3(cos(a) * 1.85, -0.475, sin(a) * 1.35))
+	for i in n:
+		var j := (i + 1) % n
+		_quad(st, bot[i], bot[j], top[j], top[i])
+	var ct := Vector3(0, 0.475, 0); var cb := Vector3(0, -0.475, 0)
+	for i in n:
+		var j := (i + 1) % n
+		st.set_normal(Vector3.UP); st.add_vertex(top[i])
+		st.set_normal(Vector3.UP); st.add_vertex(top[j])
+		st.set_normal(Vector3.UP); st.add_vertex(ct)
+		st.set_normal(Vector3.DOWN); st.add_vertex(bot[j])
+		st.set_normal(Vector3.DOWN); st.add_vertex(bot[i])
+		st.set_normal(Vector3.DOWN); st.add_vertex(cb)
+	st.index()
+	var oct := st.commit()
+	for si in oct.get_surface_count():
+		_append_arrays(m, oct.surface_get_arrays(si), Transform3D(), _mat_tex(hull_tex))
+	if era_on:
+		for tz in [-0.85, -0.45, 0.45, 0.85]:
+			_append(m, _box(0.5, 0.28, 0.4), Transform3D(_rz(-0.35), Vector3(1.45, 0.0, tz)), Color(0.32, 0.34, 0.21))
+	_append(m, _box(0.9, 0.75, 1.3), Transform3D(Basis(), Vector3(1.65, 0.0, 0)), Color(0.26, 0.28, 0.18))
+	_append(m, _cyl(0.2, 2.0, 0.22), Transform3D(_rz(PI / 2), Vector3(3.1, 0.0, 0)), T_STEEL)
+	_append(m, _cyl(0.12, 3.0, 0.14), Transform3D(_rz(PI / 2), Vector3(5.4, 0.0, 0)), Color(0.1, 0.11, 0.09))
+	_append(m, _cyl(0.24, 0.7), Transform3D(_rz(PI / 2), Vector3(4.8, 0.0, 0)), T_STEEL)
+	_append(m, _cyl(0.17, 0.35), Transform3D(_rz(PI / 2), Vector3(6.8, 0.0, 0)), T_STEEL)
+	_append(m, _cyl(0.42, 0.42, 0.46), Transform3D(Basis(), Vector3(-0.5, 0.7, 0.6)), Color(0.26, 0.28, 0.18))
+	if hatches_open:
+		_append(m, _cyl(0.4, 0.06), Transform3D(_rx(1.2), Vector3(-0.5, 1.0, 0.95)), Color(0.24, 0.26, 0.17))
+	_append(m, _cyl(0.05, 1.1, 0.06), Transform3D(_rz(PI / 2.2), Vector3(0.1, 1.0, 0.6)), T_RUBBER)
+	_append(m, _box(1.2, 0.5, 1.9), Transform3D(Basis(), Vector3(-1.4, -0.05, 0)), Color(0.12, 0.13, 0.1))
+	for av in [Vector3(-1.3, 1.05, -0.7), Vector3(-1.4, 0.95, 0.7)]:
+		_append(m, _cyl(0.015, 1.9, 0.03), Transform3D(Basis(), av), T_RUBBER)
+	if mangal:
+		var c := Color(0.17, 0.18, 0.14)
+		var y := 1.4
+		_append(m, _box(4.6, 0.07, 0.07), Transform3D(Basis(), Vector3(0, y, 1.55)), c)
+		_append(m, _box(4.6, 0.07, 0.07), Transform3D(Basis(), Vector3(0, y, -1.55)), c)
+		_append(m, _box(0.07, 0.07, 3.1), Transform3D(Basis(), Vector3(2.3, y, 0)), c)
+		_append(m, _box(0.07, 0.07, 3.1), Transform3D(Basis(), Vector3(-2.3, y, 0)), c)
+		for k in 7:
+			_append(m, _box(4.6, 0.03, 0.05), Transform3D(Basis(), Vector3(0, y, -1.16 + k * 0.387)), c)
+		for k in 5:
+			_append(m, _box(0.05, 0.03, 3.1), Transform3D(Basis(), Vector3(-1.6 + k * 0.78, y + 0.02, 0)), c)
+		for lp in [Vector3(1.7, 0, 1.1), Vector3(1.7, 0, -1.1), Vector3(-1.7, 0, 1.1), Vector3(-1.7, 0, -1.1)]:
+			_append(m, _cyl(0.045, 1.0), Transform3D(Basis(), Vector3(lp.x, 0.9, lp.z)), c)
+	return m
+
+
+func tank_node(variant: int) -> Dictionary:
+	var tex: ImageTexture
+	match variant:
+		3: tex = camo_multicam()
+		4: tex = camo_faded()
+		_: tex = camo_green()
+	var root := Node3D.new()
+	root.add_child(_mi(_tank_hull_mesh(tex, variant == 3, variant != 4), "Hull"))
+	var cleats := _mi(_tank_cleats_mesh(), "Cleats")
+	root.add_child(cleats)
+	var turret := _mi(_tank_turret_mesh(tex, variant != 4, variant == 4, variant == 2), "Turret")
+	turret.position = Vector3(-0.5, 2.35, 0)
+	root.add_child(turret)
+	if variant == 3:
+		var mm := ArrayMesh.new()
+		_tank_masking(mm)
+		root.add_child(_mi(mm, "Masking"))
+	return {"root": root, "turret": turret, "tracks": cleats, "wheels": [], "wheel_r": 0.5, "cleat_step": 0.9}
+
+
+## Корпус БТР-80 без колёс (корыто, палуба, волноотбойник, люки, фары, ЗИП).
+func _apc_hull_mesh(tex: Texture2D) -> ArrayMesh:
+	var m := ArrayMesh.new()
+	_btr80_hull_shell(m, tex)
+	_btr_deck_stuff(m)
+	return m
+
+
+## Колесо БТР с болтами на ступице (вращение читается). Ось колеса — Z узла.
+func _apc_wheel_mesh() -> ArrayMesh:
+	var m := ArrayMesh.new()
+	_append(m, _cyl(0.58, 0.4), Transform3D(_rx(PI / 2), Vector3.ZERO), T_RUBBER)
+	_append(m, _cyl(0.2, 0.42), Transform3D(_rx(PI / 2), Vector3.ZERO), Color(0.17, 0.17, 0.15))
+	for k in 3:
+		var a := TAU * k / 3.0
+		for zz in [0.215, -0.215]:
+			_append(m, _box(0.1, 0.1, 0.03), Transform3D(Basis(), Vector3(cos(a) * 0.36, sin(a) * 0.36, zz)), Color(0.1, 0.1, 0.09))
+	return m
+
+
+## Башенка БТР-80 (координаты от пивота (0.7, 2.45, 0)).
+func _apc_turret_mesh(tex: Texture2D) -> ArrayMesh:
+	var m := ArrayMesh.new()
+	_append_tex(m, _cyl(0.55, 0.55, 0.75), Transform3D(), tex)
+	_append(m, _cyl(0.06, 1.9, 0.08), Transform3D(_rz(PI / 2 - 0.06), Vector3(1.2, 0.1, 0)), Color(0.09, 0.1, 0.08))
+	_append(m, _cyl(0.035, 1.0), Transform3D(_rz(PI / 2), Vector3(0.8, -0.05, 0.22)), Color(0.09, 0.1, 0.08))
+	_append(m, _box(0.18, 0.1, 0.14), Transform3D(Basis(), Vector3(0.15, 0.4, 0.2)), Color(0.1, 0.1, 0.1))
+	return m
+
+
+func apc_node(variant: int) -> Dictionary:
+	var tex: ImageTexture = camo_pixel() if variant == 3 else camo_green()
+	var root := Node3D.new()
+	root.add_child(_mi(_apc_hull_mesh(tex), "Hull"))
+	var turret := _mi(_apc_turret_mesh(tex), "Turret")
+	turret.position = Vector3(0.7, 2.45, 0)
+	root.add_child(turret)
+	var wheels: Array = []
+	var wmesh := _apc_wheel_mesh()
+	for wx in [2.45, 1.45, -1.05, -2.05]:
+		for wz in [1.3, -1.3]:
+			var wn := _mi(wmesh, "Wheel")
+			wn.position = Vector3(wx, 0.58, wz)
+			root.add_child(wn)
+			wheels.append(wn)
+	return {"root": root, "turret": turret, "tracks": null, "wheels": wheels, "wheel_r": 0.58}
+
+
+## Скорлупа БТР-80 без колёс (для рига).
+func _btr80_hull_shell(m: ArrayMesh, tex: Texture2D) -> void:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	# профиль корыта: низ уже, середина шире, верх уже (характерные скосы)
+	var L := 7.4
+	var x0 := -L * 0.5
+	var x1 := L * 0.5
+	var zb := 1.05      # низ
+	var zm := 1.45      # середина (максимум)
+	var zt := 1.0       # верх
+	var yb := 0.75; var ym := 1.45; var yt := 2.15
+	# нос заострён (стыкуем к точке-клину)
+	var nose := 1.35
+	# строим три «кольца» профиля по длине: корма, середина-перед, нос
+	var xs := [x0, x1 - nose]
+	var rings := []
+	for x in xs:
+		rings.append([Vector3(x, yb, -zb), Vector3(x, yb, zb), Vector3(x, ym, zm), Vector3(x, yt, zt),
+			Vector3(x, yt, -zt), Vector3(x, ym, -zm)])
+	# носовое кольцо — сжатое (клин)
+	var xn := x1
+	rings.append([Vector3(xn, yb + 0.25, -zb * 0.35), Vector3(xn, yb + 0.25, zb * 0.35), Vector3(xn, ym, zm * 0.4),
+		Vector3(xn, yt - 0.15, zt * 0.35), Vector3(xn, yt - 0.15, -zt * 0.35), Vector3(xn, ym, -zm * 0.4)])
+	for ri in range(rings.size() - 1):
+		var a: Array = rings[ri]; var b: Array = rings[ri + 1]
+		for i in 6:
+			var j := (i + 1) % 6
+			_quad(st, a[i], a[j], b[j], b[i])
+	# крышки: корма и палуба
+	var r0: Array = rings[0]
+	_quad(st, r0[0], r0[5], r0[4], r0[3]); _quad(st, r0[0], r0[3], r0[2], r0[1])
+	for ri in [rings.size() - 1]:
+		var rl: Array = rings[ri]
+		_quad(st, rl[1], rl[2], rl[3], rl[4]); _quad(st, rl[1], rl[4], rl[5], rl[0])
+	# палуба (верхняя грань между кольцами)
+	st.index()
+	var hull := st.commit()
+	for s in hull.get_surface_count():
+		_append_arrays(m, hull.surface_get_arrays(s), Transform3D(), _mat_tex(tex))
+	# палубный настил (закрывает верх)
+	_append_tex(m, _box(L - nose, 0.06, 2.0), Transform3D(Basis(), Vector3(-nose * 0.5, 2.14, 0)), tex)
+	# волноотбойник на носу
+	_append(m, _box(0.12, 0.35, 1.6), Transform3D(_rz(0.5), Vector3(3.35, 1.95, 0)), Color(0.2, 0.22, 0.15))
+	# боковые люки десанта
+	for hx in [-0.2]:
+		_append(m, _box(0.9, 0.8, 0.06), Transform3D(Basis(), Vector3(hx, 1.55, 1.44)), Color(0.24, 0.26, 0.17))
+		_append(m, _box(0.9, 0.8, 0.06), Transform3D(Basis(), Vector3(hx, 1.55, -1.44)), Color(0.24, 0.26, 0.17))
+	# фары
+	for fz in [0.55, -0.55]:
+		_append(m, _cyl(0.09, 0.08), Transform3D(_rz(PI / 2), Vector3(3.6, 1.9, fz)), Color(0.75, 0.75, 0.7))

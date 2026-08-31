@@ -106,16 +106,25 @@ func _apply_overrides() -> void:
 		for t: Dictionary in main.targets.targets:
 			var temp: float = T_SOLDIER if t.kind == "soldier" else T_VEHICLE
 			if not t.alive: temp = T_WRECK * clampf(1.0 - float(t.wreck_t) / 60.0, 0.4, 1.0)
-			if t.node is GeometryInstance3D:
-				_set_override(t.node, _mat(temp))
+			_therm_target(t.node, temp)
 			for ch in t.node.get_children():
-				if ch is GeometryInstance3D:
+				if str(ch.name).begins_with("Marker"):
 					ch.visible = not active       # маркеры-столбы в тепле не видны
 	# снаряды/взрывы — обломки горячие (через targets._projs: мелкие сферы)
 	if main.targets != null:
 		for pr: Dictionary in main.targets._projs:
 			if pr.node is GeometryInstance3D:
 				_set_override(pr.node, _mat(0.7))
+
+
+## Тепловой override на риг цели (корпус/башня/колёса), маркеры и частицы не трогаем.
+func _therm_target(n: Node, temp: float) -> void:
+	if n is GPUParticles3D or str(n.name).begins_with("Marker"):
+		return
+	if n is GeometryInstance3D:
+		_set_override(n, _mat(temp))
+	for c in n.get_children():
+		_therm_target(c, temp)
 
 
 func _process(dt: float) -> void:
