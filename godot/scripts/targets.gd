@@ -370,6 +370,7 @@ func fire(cam: Camera3D) -> void:
 	mi.mesh = sph
 	var mat := StandardMaterial3D.new(); mat.albedo_color = Color(0.12, 0.12, 0.11)
 	mi.material_override = mat
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF   # мелкий снаряд тень не отбрасывает
 	mi.position = cam.global_position - Vector3(0, 1.0, 0)
 	add_child(mi)
 	_projs.append({"node": mi, "pos": mi.position, "vel": v0 + Vector3(0, -1.5, 0), "t": 0.0})
@@ -458,6 +459,7 @@ func _tracer(a: Vector3, b: Vector3) -> void:
 	mat.albedo_color = Color(1.0, 0.75, 0.3)
 	mat.emission_enabled = true; mat.emission = Color(1.0, 0.7, 0.3); mat.emission_energy_multiplier = 2.0
 	mi.material_override = mat
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF   # трассер — свет, не предмет
 	add_child(mi)
 	var tw := create_tween()
 	tw.tween_property(mat, "albedo_color:a", 0.0, 0.35)
@@ -533,6 +535,7 @@ func _puff(pos: Vector3, color: Color, max_r: float) -> void:
 	mat.albedo_color = color
 	sph.material = mat
 	mi.mesh = sph
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF   # эффект без тени
 	mi.position = pos
 	add_child(mi)
 	var tw := create_tween().set_parallel(true)

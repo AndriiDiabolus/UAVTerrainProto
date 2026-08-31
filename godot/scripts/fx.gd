@@ -78,6 +78,7 @@ func explosion(pos: Vector3, big: bool) -> void:
 	var bmat := StandardMaterial3D.new(); bmat.albedo_color = Color(0.16, 0.14, 0.12); bmat.roughness = 1.0
 	bb.material = bmat
 	deb.draw_pass_1 = bb
+	deb.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	deb.position = pos + Vector3(0, 1.0, 0)
 	add_child(deb)
 	_free_later(deb, 2.5)
