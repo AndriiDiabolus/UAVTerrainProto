@@ -55,6 +55,8 @@ func _schedule_screenshot() -> void:
 			var base: Vector3 = main._home_pos + Vector3(14, 0, 0)
 			var vehicle := key.begins_with("tank") or key.begins_with("apc") or key.begins_with("car")
 			var yaw := -0.2 if vehicle else -0.6     # техника — лоб+борт 3/4, люди — лицом к камере
+			if key.begins_with("car"):
+				yaw = -0.55                          # автопарк — передом 3/4
 			for it: Array in items:
 				var obj = it[0]
 				var mi: Node3D
