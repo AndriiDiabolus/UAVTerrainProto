@@ -389,6 +389,40 @@ const DROP_COOLDOWN := 1.2
 const BOMB_DRAG := 0.004            # c/m: F/m = -c·v_air·|v_air|
 const BLAST_R := 7.0                # радиус поражения техники, м (пехота ×1.3)
 var ammo := AMMO_MAX
+
+# --- вооружение дрона: 0 = сброс, 1 = БЧ-камикадзе ---
+const WEAPONS := ["СБРОС", "БЧ (камикадзе)"]
+var weapon := 0
+var armed := false                  # БЧ взведена (клавиша применения при выбранной БЧ)
+const KAMI_R := 11.0                # радиус поражения БЧ, м (тяжелее сбросного боеприпаса)
+
+
+func cycle_weapon() -> void:
+	weapon = (weapon + 1) % WEAPONS.size()
+	armed = false
+	if main.hud != null:
+		main.hud.toast("оружие: %s" % WEAPONS[weapon])
+	if main.get("telemetry") != null:
+		main.telemetry.event("weapon", {"w": WEAPONS[weapon]})
+
+
+## Подрыв БЧ камикадзе в точке столкновения: поражение целей в радиусе, большой эффект.
+func detonate(pos: Vector3) -> void:
+	armed = false
+	var any := false
+	for t: Dictionary in targets:
+		if not t.alive:
+			continue
+		var r := KAMI_R * (1.3 if t.kind == "soldier" else 1.0)
+		if pos.distance_to(t.node.position) < r + t.radius * 0.5:
+			_kill(t, t.node.position)
+			any = true
+	if main.get("sound") != null:
+		main.sound.boom(pos)
+	if main.get("fx") != null:
+		main.fx.explosion(pos, true)
+	if main.get("telemetry") != null:
+		main.telemetry.event("kamikaze", {"x": pos.x, "z": pos.z, "hit": any})
 var _projs: Array = []              # {node, pos, vel, t}
 
 
@@ -400,6 +434,14 @@ func reset_ammo() -> void:
 ## сопротивление относительно воздуха (ветер сносит), взрыв при касании земли или прямом попадании.
 ## Ударный FPV — таран корпусом (RAM_DIST) работает всегда.
 func fire(cam: Camera3D) -> void:
+	if weapon == 1:
+		# камикадзе: клавиша применения взводит/снимает БЧ
+		armed = not armed
+		if main.hud != null:
+			main.hud.toast("БЧ ВЗВЕДЕНА — столкновение = подрыв" if armed else "БЧ снята с боевого взвода")
+		if main.get("sound") != null and armed:
+			main.sound.shot()
+		return
 	if _cool > 0.0 or ammo <= 0:
 		return
 	_cool = DROP_COOLDOWN

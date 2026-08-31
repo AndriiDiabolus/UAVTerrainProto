@@ -63,6 +63,12 @@ func _draw() -> void:
 	var fs := 15
 	var segs: Array = [[mode_s, TXT], ["·", DIM], ["CAM", CAM_COL[cam_i]], ["·", DIM], ["%d м" % int(agl), TXT], ["·", DIM],
 		["%d м/с" % int(spd), TXT], ["·", DIM], ["канал %d %%" % int(lq * 100.0), TXT if lq > 0.7 else Color(1.0, 0.75, 0.45)]]
+	if main.targets != null:
+		segs.append(["·", DIM])
+		if main.targets.weapon == 1:
+			segs.append(["БЧ ⚠ ВЗВЕДЕНА" if main.targets.armed else "БЧ снята", Color(1.0, 0.45, 0.35) if main.targets.armed else DIM])
+		else:
+			segs.append(["сброс ×%d" % int(main.targets.ammo), TXT])
 	if cam.get("landed") == true:
 		segs.append(["·", DIM]); segs.append(["на земле", DIM])
 	var widths: Array = []

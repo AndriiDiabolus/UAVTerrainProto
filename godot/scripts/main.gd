@@ -628,6 +628,9 @@ func crash(what: String) -> void:
 	if crashed:
 		return
 	crashed = true
+	# взведённая БЧ камикадзе подрывается при любом столкновении
+	if targets != null and targets.weapon == 1 and targets.armed:
+		targets.detonate(cam.global_position)
 	if mission != null:
 		mission.on_crash()
 	if telemetry != null:
@@ -643,6 +646,7 @@ func _respawn() -> void:
 	crashed = false
 	if targets != null:
 		targets.reset_ammo()
+		targets.armed = false
 	if _crash_label != null:
 		_crash_label.visible = false
 	cam.global_position = _home_pos + Vector3(0, 5, 0)
@@ -963,6 +967,8 @@ func _unhandled_input(event: InputEvent) -> void:
 					hud.fpv_link.set_camera(3 if hud.fpv_link.camera != 3 else 0)
 		elif event.keycode == KEY_Y and thermal != null:
 			thermal.cycle_palette()
+		elif event.keycode == KEY_V and targets != null:
+			targets.cycle_weapon()
 
 
 func _latlon_at(x: float, z: float) -> Vector2:

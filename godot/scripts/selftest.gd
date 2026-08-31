@@ -17,6 +17,7 @@ func setup(m: Node3D) -> void:
 		_check("коллизии + LOS", _test_collision())
 		_check("РЭБ: jam_factor", _test_ew())
 		_check("баллистика сброса + поражение", _test_ballistics())
+		_check("БЧ-камикадзе: подрыв при столкновении", _test_kamikaze())
 	if "--selftest" in args or "--flytest" in args:
 		any = true
 		_check("лётная модель", main.cam.self_test())
@@ -32,6 +33,26 @@ func _check(name: String, ok: bool) -> void:
 	print("SELFTEST [%s] %s" % ["OK" if ok else "FAIL", name])
 	if not ok:
 		fails += 1
+
+
+## Взведённая БЧ камикадзе поражает цель в радиусе точки столкновения.
+func _test_kamikaze() -> bool:
+	var tg: Node3D = main.targets
+	if tg == null:
+		return false
+	var spawned: Array = tg.spawn_near(main._home_pos, ["tank"])
+	if spawned.is_empty():
+		print("  нет дорог для спавна — пропуск"); return true
+	var t: Dictionary = spawned[0]
+	t.speed = 0.0
+	tg._process(0.01)
+	tg.weapon = 1
+	tg.armed = true
+	tg.detonate(t.node.position + Vector3(3, 1, 0))     # «столкновение» в 3 м от цели
+	var ok: bool = not bool(t.alive) and not bool(tg.armed)
+	print("  цель жива=%s (ждём false), БЧ взведена=%s (ждём false)" % [t.alive, tg.armed])
+	tg.weapon = 0
+	return ok
 
 
 ## height_at в узле сетки меша должен совпадать с _node_h (иначе объекты «тонут» — грабля №4 README).
