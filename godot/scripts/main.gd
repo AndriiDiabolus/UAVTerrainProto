@@ -713,6 +713,79 @@ func _relay_add(m: ArrayMesh, prim: PrimitiveMesh, off: Vector3, c: Color) -> vo
 	m.surface_set_material(m.get_surface_count() - 1, mt)
 
 
+## «Матка»-носитель (клавиша J): тяжёлый дрон доносит FPV на дальний рубеж.
+## Камера переносится ~1.6 км вперёд по курсу, батарея заправляется, матка остаётся
+## висеть в точке отделения и ретранслирует канал (занимает слот ретранслятора).
+func launch_from_mothership() -> void:
+	if crashed:
+		return
+	var fwd := -cam.global_transform.basis.z
+	fwd.y = 0.0
+	if fwd.length() < 0.01:
+		fwd = Vector3(1, 0, 0)
+	fwd = fwd.normalized()
+	var drop: Vector3 = cam.global_position                       # точка отделения — тут остаётся матка
+	# ретранслятор в точке отделения (переиспользуем слот)
+	if relay_node != null:
+		relay_node.queue_free()
+	relay_pos = drop
+	relay_node = Node3D.new()
+	add_child(relay_node)
+	var mi := MeshInstance3D.new()
+	mi.mesh = _mothership_mesh()
+	relay_node.add_child(mi)
+	var beam := MeshInstance3D.new()
+	var bm := BoxMesh.new(); bm.size = Vector3(0.6, 80.0, 0.6)
+	beam.mesh = bm; beam.position = Vector3(0, 40.0, 0)
+	var bmat := StandardMaterial3D.new()
+	bmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	bmat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	bmat.albedo_color = Color(0.5, 0.85, 1.0, 0.3)
+	bmat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	beam.mesh.surface_set_material(0, bmat)
+	relay_node.add_child(beam)
+	relay_node.position = drop
+	# перенос FPV на рубеж + заправка
+	var tgt := drop + fwd * 1600.0
+	tgt.y = maxf(height_at(tgt.x, tgt.z) + 120.0, drop.y)
+	cam.global_position = tgt
+	if cam.has_method("zero_velocity"):
+		cam.zero_velocity()
+	if _fpv_osd != null:
+		_fpv_osd.battery = 1.0
+		_fpv_osd.signal_q = 1.0
+	if hud != null:
+		hud.toast("ОТДЕЛЕНИЕ ОТ МАТКИ", "FPV на рубеже · батарея 100 % · матка ретранслирует", Color(0.6, 0.9, 1.0))
+	if telemetry != null:
+		telemetry.event("mothership_release", {"x": tgt.x, "z": tgt.z})
+
+
+## Тяжёлый носитель: широкая рама, 6 лучей с моторами, подвес FPV снизу.
+func _mothership_mesh() -> ArrayMesh:
+	var m := ArrayMesh.new()
+	var dark := Color(0.14, 0.15, 0.16)
+	var body := BoxMesh.new(); body.size = Vector3(1.1, 0.32, 0.8)
+	_relay_add(m, body, Vector3.ZERO, dark)
+	for a in 6:
+		var ang := TAU * a / 6.0
+		var b := Basis(Vector3.UP, ang)
+		var arm := BoxMesh.new(); arm.size = Vector3(1.6, 0.06, 0.08)
+		var arr: Array = arm.get_mesh_arrays()
+		var v: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+		for i in v.size(): v[i] = b * v[i]
+		arr[Mesh.ARRAY_VERTEX] = v
+		m.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+		var mt := StandardMaterial3D.new(); mt.albedo_color = dark
+		m.surface_set_material(m.get_surface_count() - 1, mt)
+		var mp := b * Vector3(0.8, 0.05, 0)
+		var prop := CylinderMesh.new(); prop.top_radius = 0.5; prop.bottom_radius = 0.5; prop.height = 0.02; prop.radial_segments = 12
+		_relay_add(m, prop, mp + Vector3(0, 0.1, 0), Color(0.25, 0.25, 0.28))
+	# подвес FPV снизу
+	var pod := BoxMesh.new(); pod.size = Vector3(0.4, 0.3, 0.3)
+	_relay_add(m, pod, Vector3(0, -0.3, 0), Color(0.2, 0.22, 0.24))
+	return m
+
+
 ## LOS канала с учётом ретранслятора: прямой ИЛИ через ретранслятор (второй хоп).
 ## Возвращает {los, via_relay}.
 func link_los(home: Vector3, drone: Vector3) -> Dictionary:
@@ -1076,6 +1149,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			targets.cycle_weapon()
 		elif event.keycode == KEY_H:
 			toggle_relay()
+		elif event.keycode == KEY_J:
+			launch_from_mothership()
 
 
 func _latlon_at(x: float, z: float) -> Vector2:

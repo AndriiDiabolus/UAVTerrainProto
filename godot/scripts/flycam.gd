@@ -311,6 +311,13 @@ func reset() -> void:
 	_pitch = 0.0
 
 
+## Погасить скорость/вращение без сброса ориентации (для переноса маткой).
+func zero_velocity() -> void:
+	velocity = Vector3.ZERO
+	_omega = Vector3.ZERO
+	landed = false
+
+
 func _process(dt: float) -> void:
 	if main == null or main.get("replaying") == true or main.get("menu_open") == true:
 		return
