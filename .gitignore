@@ -15,6 +15,7 @@ godot/assets/albedo_clean.jpg
 godot/assets/albedo_clean.jpg.import
 # скриншоты отладки в корне (docs/*.png — оставляем)
 /shot*.png
+/trans_*.png
 /debug_loaded.png
 # macOS
 .DS_Store

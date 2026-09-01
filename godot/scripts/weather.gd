@@ -116,6 +116,9 @@ func _cont_of(p: Dictionary, i: int) -> Dictionary:
 		"wind": float(p.wind), "wdir": float(p.wdir),
 		"lit": float(p.get("lit", 0.03)),
 		"cldstr": {0: 0.45, 1: 0.22, 2: 0.0, 3: 0.40, 4: 0.12, 5: 0.0}.get(i, 0.3),
+		# тени: плотность (0 = нет прямого солнца) и угловой размер источника (диффузный свет → мягче края)
+		"shop": {0: 0.92, 1: 0.45, 2: 0.0, 3: 0.88, 4: 0.5, 5: 0.12}.get(i, 0.6),
+		"sang": {0: 0.53, 1: 2.2, 2: 3.5, 3: 0.9, 4: 1.5, 5: 4.0}.get(i, 1.0),
 	}
 
 
@@ -134,8 +137,6 @@ func _mix_cont(a: Dictionary, b: Dictionary, t: float) -> Dictionary:
 ## Применить непрерывный набор к сцене.
 func _apply_cont(c: Dictionary) -> void:
 	_cur_cont = c
-	sun.rotation_degrees = c.srot
-	sun.light_energy = c.se
 	sun.light_color = c.sc
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	env.ambient_light_color = c.amb
@@ -148,9 +149,6 @@ func _apply_cont(c: Dictionary) -> void:
 	sky.set_shader_parameter("cloud_color", c.ccol)
 	sky.set_shader_parameter("cloud_dark", c.cdark)
 	sky.set_shader_parameter("night", c.night)
-	if _sun_by_time:
-		_apply_ephemeris()
-	sky.set_shader_parameter("sun_dir", -sun.global_transform.basis.z)
 	var wa: float = deg_to_rad(float(c.wdir))
 	sky.set_shader_parameter("wind_dir", Vector2(cos(wa), sin(wa)))
 	env.fog_density = c.fogd
@@ -175,9 +173,8 @@ func apply(i: int, instant: bool = false) -> void:
 	idx = (i + PRESETS.size()) % PRESETS.size()
 	var p: Dictionary = PRESETS[idx]
 	label = p.name
-	# дискретное — сразу (целевые флаги)
-	sun.shadow_enabled = float(p.se) > 0.25
-	sun.shadow_opacity = 0.35 if idx == 5 else 0.92      # пасмурно: мягкие слабые тени
+	_ephem_announce = _sun_by_time
+	# дискретное — сразу (целевые флаги); тени — непрерывно в _update_sun (shop/sang в _cont_of)
 	env.fog_aerial_perspective = 0.85
 	env.fog_sky_affect = 0.18
 	env.fog_height = p.get("fh", 0.0)
@@ -236,6 +233,8 @@ func _parse_time_flags() -> void:
 			var p := a.substr(7).split(":")
 			if p.size() >= 1:
 				_time_h = float(p[0]) + (float(p[1]) / 60.0 if p.size() > 1 else 0.0); _sun_by_time = true
+		elif a.begins_with("--timescale="):
+			_timescale = maxf(0.0, float(a.substr(12)))
 
 
 ## Положение солнца (упрощённый NOAA-алгоритм: склонение + уравнение времени + часовой угол),
@@ -262,7 +261,7 @@ func sun_position(lat: float, lon: float, y: int, m: int, d: int, local_h: float
 	return Vector2(rad_to_deg(alt), fmod(rad_to_deg(az) + 360.0, 360.0))
 
 
-func _apply_ephemeris() -> void:
+func _apply_ephemeris(base_e: float, announce: bool = false) -> void:
 	var lat := float(main.meta.get("center_lat", 48.16))
 	var lon := float(main.meta.get("center_lon", 24.5))
 	var sp := sun_position(lat, lon, _date[0], _date[1], _date[2], _time_h, 3.0)
@@ -274,11 +273,55 @@ func _apply_ephemeris() -> void:
 	if alt < 0.0:
 		sun.light_energy = 0.05
 	else:
-		sun.light_energy *= clampf(0.25 + 0.75 * sin(deg_to_rad(minf(alt, 90.0))) * 1.2, 0.2, 1.3)
-	sky.set_shader_parameter("sun_dir", -sun.global_transform.basis.z)
+		sun.light_energy = base_e * clampf(0.25 + 0.75 * sin(deg_to_rad(minf(alt, 90.0))) * 1.2, 0.2, 1.3)
 	sky.set_shader_parameter("sun_color", sun.light_color)
-	label += "  %02d:%02d солнце %d°" % [int(_time_h), int(fmod(_time_h, 1.0) * 60.0), int(alt)]
-	print("Солнце по эфемеридам: %s %.1f ч → высота %.1f°, азимут %.0f°" % [_date, _time_h, alt, az])
+	if announce:
+		label += "  %02d:%02d солнце %d°" % [int(_time_h), int(fmod(_time_h, 1.0) * 60.0), int(alt)]
+		print("Солнце по эфемеридам: %s %.1f ч → высота %.1f°, азимут %.0f°" % [_date, _time_h, alt, az])
+
+
+# --- пер-кадровое солнце: дрейф по небу, облако над камерой, непрерывные тени ---
+var _occ := 0.0              # 0..1 — насколько кучевое облако сейчас закрывает солнце
+var _sun_drift := 0.0        # накопленный ход солнца по азимуту, °
+var _timescale := 1.0        # --timescale=N: ускорение хода солнца (1 = реальное время)
+var _ephem_announce := false
+
+
+## Насколько облако закрывает солнце над камерой (0..1) — по той же карте и смещению,
+## что пятна cloud_shadow на земле: пятно наехало на камеру → прямое солнце гаснет.
+func _cloud_occlusion() -> float:
+	if main == null or main.cam == null:
+		return 0.0
+	var img: Image = main.get("cloud_shadow_img")
+	if img == null:
+		return 0.0
+	var p: Vector3 = main.cam.global_position
+	var uv := Vector2(p.x, p.z) * 0.0004 + _cloud_off
+	var n := img.get_pixel(posmod(int(uv.x * 512.0), 512), posmod(int(uv.y * 512.0), 512)).r
+	return smoothstep(0.50, 0.72, n) * clampf(_cloud_strength / 0.45, 0.0, 1.0)
+
+
+## Каждый кадр: положение солнца (эфемериды или пресет + реальный дрейф ~0.25°/мин),
+## затенение облаком (тени плавно тают и возвращаются, ~4 с), плотность и мягкость теней.
+func _update_sun(dt: float) -> void:
+	var c := _cur_cont
+	if c.is_empty():
+		return
+	_occ = move_toward(_occ, _cloud_occlusion(), dt / 4.0)
+	var base_e: float = float(c.se) * (1.0 - 0.45 * _occ)
+	if _sun_by_time:
+		_time_h += dt * _timescale / 3600.0
+		_apply_ephemeris(base_e, _ephem_announce)
+		_ephem_announce = false
+	else:
+		_sun_drift += dt * _timescale * 0.25 / 60.0
+		sun.rotation_degrees = (c.srot as Vector3) + Vector3(0, -_sun_drift, 0)
+		sun.light_energy = base_e
+	var shop: float = float(c.get("shop", 0.9)) * (1.0 - 0.85 * _occ)
+	sun.shadow_opacity = shop
+	sun.light_angular_distance = float(c.get("sang", 0.53))
+	sun.shadow_enabled = int(main.get("quality")) != 0 and shop > 0.02
+	sky.set_shader_parameter("sun_dir", -sun.global_transform.basis.z)
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
@@ -309,6 +352,7 @@ func _process(dt: float) -> void:
 		_trans = minf(1.0, _trans + dt / TRANS_SEC)
 		var tt := smoothstep(0.0, 1.0, _trans)
 		_apply_cont(_mix_cont(_trans_from, _trans_to, tt))
+	_update_sun(dt)
 	if main != null and main.cam != null:
 		_rain_holder.global_position = main.cam.global_position
 	# порывы ветра гуляют по направлению и силе

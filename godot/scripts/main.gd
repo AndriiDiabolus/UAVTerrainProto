@@ -986,6 +986,7 @@ func _world_from_latlon(lat: float, lon: float) -> Vector2:
 
 
 var sun: DirectionalLight3D
+var cloud_shadow_img: Image
 var sky_material: ShaderMaterial
 var environment: Environment
 
@@ -1055,6 +1056,7 @@ func _build_environment() -> void:
 	cn.seed = 7
 	var cimg := cn.get_seamless_image(512, 512)
 	cimg.generate_mipmaps()
+	cloud_shadow_img = cimg          # CPU-копия: weather сэмплит облако над камерой (затенение солнца)
 	RenderingServer.global_shader_parameter_set("cloud_shadow_tex", ImageTexture.create_from_image(cimg))
 	RenderingServer.global_shader_parameter_set("cloud_shadow_params", Vector4(0, 0, 0.4, 0.0004))
 

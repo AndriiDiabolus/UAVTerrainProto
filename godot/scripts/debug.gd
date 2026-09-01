@@ -12,6 +12,9 @@ func setup(m: Node3D) -> void:
 		_debug_report_targets()
 	if "--screenshot" in OS.get_cmdline_user_args():
 		_schedule_screenshot()
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--transshot="):
+			_transshot(a.substr(12))
 
 
 ## Пресеты видовых точек для заявки/видео: cam lat/lon, AGL(м), target lat/lon, target +Δh(м).
@@ -167,6 +170,44 @@ func _schedule_screenshot() -> void:
 	img.save_png(out)
 	print("Screenshot saved: ", out)
 	get_tree().quit()
+
+
+## --transshot=a,b — прогон смены погоды a→b: камера над селом (тени домов/деревьев),
+## кадр до перехода и каждые 3 с в течение перехода (~18 с). Файлы trans_AtoB_tNN.png в корне проекта.
+func _transshot(spec: String) -> void:
+	var q := spec.split(",")
+	var wa := clampi(int(q[0]), 0, 5)
+	var wb := clampi(int(q[1]) if q.size() > 1 else 0, 0, 5)
+	await RenderingServer.frame_post_draw
+	for i in 90:
+		await get_tree().process_frame
+	main.replaying = true                        # физика дрона выключена — камера статична
+	var gv: Vector2 = main._world_from_latlon(48.2760, 24.5640)
+	var gy: float = main.height_at(gv.x, gv.y)
+	main.cam.global_position = Vector3(gv.x, gy + 45.0, gv.y)
+	var gt: Vector2 = main._world_from_latlon(48.2700, 24.5660)
+	main.cam.look_at(Vector3(gt.x, main.height_at(gt.x, gt.y) + 5.0, gt.y))
+	main.weather.apply(wa, true)
+	for i in 150:                                # дать лесу/усадьбам/свету достроиться
+		await get_tree().process_frame
+	await _save_shot("trans_%dto%d_t00" % [wa, wb])
+	main.weather.apply(wb)
+	var t := 0.0
+	while t < 18.5:
+		var t0 := Time.get_ticks_msec()
+		while Time.get_ticks_msec() - t0 < 3000:
+			await get_tree().process_frame
+		t += 3.0
+		await _save_shot("trans_%dto%d_t%02d" % [wa, wb, int(t)])
+	get_tree().quit()
+
+
+func _save_shot(shot_name: String) -> void:
+	await RenderingServer.frame_post_draw
+	var img := main.get_viewport().get_texture().get_image()
+	var out := ProjectSettings.globalize_path("res://../%s.png" % shot_name)
+	img.save_png(out)
+	print("Screenshot saved: ", out)
 
 
 func _debug_report_targets() -> void:
