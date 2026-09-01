@@ -79,10 +79,12 @@ func _schedule_screenshot() -> void:
 				await get_tree().process_frame
 			if main.hud != null and main.hud.get("fpv_on") != null and main.hud.fpv_on:
 				main.hud._toggle_fpv()               # галерея всегда обычной камерой
-			if key.begins_with("drone"):
+			var droneg := key.begins_with("drone") or key.begins_with("d5") or key.begins_with("dm") or key.begins_with("dh")
+			if droneg:
 				main.cam.near = 0.05          # дроны мелкие и близко — штатный near 2.0 их отсекает
-				_hold_cam = Vector3(base.x + 0.45, gy2 + 1.62, base.z + 0.34)
-				_hold_look = Vector3(base.x, gy2 + 1.41, base.z)
+				var dd := 2.6 if key.begins_with("dh") else 1.0   # матка крупная — камера дальше
+				_hold_cam = Vector3(base.x + 0.45 * dd, gy2 + 1.41 + 0.21 * dd, base.z + 0.34 * dd)
+				_hold_look = Vector3(base.x, gy2 + 1.41 + (0.28 if key.begins_with("dh") else 0.0), base.z)
 				main.cam.global_position = _hold_cam
 				main.cam.look_at(_hold_look)
 			elif key.begins_with("car"):

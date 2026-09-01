@@ -32,11 +32,14 @@ func setup(m: Node3D) -> void:
 	add_child(_chase)
 
 
+var _built_for := ""
+
 func _build_model() -> void:
 	if model != null:
 		model.queue_free()
 	var U = load("res://scripts/units.gd").new()
-	var d: Dictionary = U.drone_fpv7(skin)
+	_built_for = str(main.cam.drone_id) if main.cam != null and main.cam.get("drone_id") != null else "fpv7"
+	var d: Dictionary = U.build_drone(_built_for, skin)
 	model = d.root
 	_props = d.props
 	model.visible = false
@@ -84,6 +87,8 @@ func _unhandled_input(e: InputEvent) -> void:
 func _process(dt: float) -> void:
 	if main == null or main.cam == null or model == null:
 		return
+	if main.cam.get("drone_id") != null and str(main.cam.drone_id) != _built_for:
+		_build_model()                          # профиль сменили (меню/B) — модель перестраивается
 	var thr := 0.35
 	if main.cam.get("throttle") != null:
 		thr = clampf(float(main.cam.throttle), 0.0, 1.0)
@@ -101,8 +106,9 @@ func _process(dt: float) -> void:
 		var rot := Basis(Vector3.UP, _menu_t * 0.7) \
 			* Basis(Vector3(1, 0, 0), sin(_menu_t * 0.41) * 0.34) \
 			* Basis(Vector3(0, 0, 1), sin(_menu_t * 0.23) * 0.2)
-		var pos: Vector3 = ct * Vector3(1.05, -0.12, -3.6)
-		model.global_transform = Transform3D(ct.basis * rot * Basis.from_scale(Vector3.ONE * 6.5), pos)
+		var msc: float = {"fpv7": 6.5, "fpv5": 7.5, "mavic": 6.0, "mship": 1.9}.get(_built_for, 6.5)
+		var pos: Vector3 = ct * Vector3(1.05, -0.12 - (0.75 if _built_for == "mship" else 0.0), -3.6)
+		model.global_transform = Transform3D(ct.basis * rot * Basis.from_scale(Vector3.ONE * msc), pos)
 	elif third and not fpv and not main.get("replaying"):
 		model.visible = true
 		var b: Basis = main.cam.body if main.cam.get("body") != null else main.cam.global_transform.basis
@@ -111,13 +117,14 @@ func _process(dt: float) -> void:
 		var fwd: Vector3 = -b.z
 		fwd.y = 0.0
 		fwd = fwd.normalized() if fwd.length_squared() > 0.001 else Vector3.FORWARD
-		var tgt: Vector3 = dp - fwd * 1.55 + Vector3(0, 0.42, 0)
+		var big := _built_for == "mship"
+		var tgt: Vector3 = dp - fwd * (4.4 if big else 1.55) + Vector3(0, 1.3 if big else 0.42, 0)
 		tgt.y = maxf(tgt.y, main.height_at(tgt.x, tgt.z) + 0.35)
 		var k := 1.0 - exp(-dt * 8.0)
 		if _chase.global_position.distance_to(tgt) > 60.0:
 			k = 1.0                              # телепорт/рестарт — догоняем мгновенно
 		_chase.global_position = _chase.global_position.lerp(tgt, k)
-		_chase.look_at(dp + fwd * 1.1 + Vector3(0, 0.06, 0), Vector3.UP)
+		_chase.look_at(dp + fwd * (2.8 if big else 1.1) + Vector3(0, 0.06, 0), Vector3.UP)
 		if not _chase.current:
 			_chase.make_current()
 	else:

@@ -693,10 +693,14 @@ func drone_fpv7(variant: int) -> Dictionary:
 
 ## Лопасть винта: полоса сечений вдоль радиуса — хорда широкая в средней трети и сходит
 ## к скруглённому кончику, крутка (twist) падает от корня к кончику, как у реального винта.
-func _prop_blade() -> ArrayMesh:
+func _prop_blade(s: float = 1.0) -> ArrayMesh:
 	var m := ArrayMesh.new()
 	var rr: Array = [0.012, 0.022, 0.034, 0.047, 0.059, 0.070, 0.079, 0.086, 0.089]
 	var cc: Array = [0.010, 0.015, 0.019, 0.020, 0.019, 0.016, 0.013, 0.008, 0.002]
+	if s != 1.0:
+		for i in rr.size():
+			rr[i] = rr[i] * s
+			cc[i] = cc[i] * s
 	var tw: Array = [32.0, 26.0, 21.0, 17.0, 14.0, 12.0, 10.0, 9.0, 8.0]
 	var up := PackedVector3Array(); var dn := PackedVector3Array()
 	var nrm := PackedVector3Array()
@@ -721,15 +725,156 @@ func _prop_blade() -> ArrayMesh:
 	return m
 
 
+## Общий помощник: узел пропеллера с N лопастями масштаба s в точке pos.
+func _prop_node(nm: String, pos: Vector3, blades: int, s: float, col: Color) -> Node3D:
+	var p := Node3D.new()
+	p.name = nm
+	p.position = pos
+	var pm := ArrayMesh.new()
+	_append(pm, _cyl(0.006 * maxf(s, 1.0), 0.01 * maxf(s, 1.0)), Transform3D(Basis(), Vector3.ZERO), Color(0.12, 0.12, 0.12))
+	var blade := _prop_blade(s)
+	for k in blades:
+		_append_mesh(pm, blade, Transform3D(Basis(Vector3.UP, TAU * k / blades), Vector3.ZERO), col)
+	p.add_child(_mi(pm, "PropMesh"))
+	return p
+
+
+## fpv5 — 5" фристайл/перехватчик (~225 мм): та же школа, что fpv7, компактнее, без БЧ/GPS.
+func drone_fpv5(variant: int) -> Dictionary:
+	var root := Node3D.new()
+	root.name = "DroneFPV5v%d" % variant
+	var m := ArrayMesh.new()
+	var accent: Color = [Color(0.9, 0.72, 0.12), Color(0.34, 0.38, 0.27), Color(0.07, 0.07, 0.085)][variant - 1]
+	var prop_c: Color = [Color(0.2, 0.75, 0.9), Color(0.4, 0.52, 0.3), Color(0.1, 0.1, 0.12)][variant - 1]
+	var y0 := 0.02
+	_append(m, _box(0.112, 0.0025, 0.04), Transform3D(Basis(), Vector3(0, y0, 0)), CARBON)
+	_append(m, _box(0.095, 0.0025, 0.038), Transform3D(Basis(), Vector3(-0.004, y0 + 0.026, 0)), CARBON)
+	for sx: float in [1.0, -1.0]:
+		for sz: float in [1.0, -1.0]:
+			_append(m, _cyl(0.003, 0.026), Transform3D(Basis(), Vector3(sx * 0.034, y0 + 0.013, sz * 0.015)), Color(0.08, 0.08, 0.08))
+			var ang := atan2(sz, sx)
+			_append(m, _box(0.1, 0.005, 0.013), Transform3D(Basis(Vector3.UP, -ang), Vector3(sx * 0.047, y0 + 0.005, sz * 0.047)), CARBON)
+			_append(m, _cyl(0.011, 0.014), Transform3D(Basis(), Vector3(sx * 0.08, y0 + 0.014, sz * 0.08)), Color(0.22, 0.22, 0.24))
+			_append(m, _cyl(0.0115, 0.005), Transform3D(Basis(), Vector3(sx * 0.08, y0 + 0.023, sz * 0.08)), Color(0.55, 0.55, 0.58))
+	for sz: float in [1.0, -1.0]:
+		_append(m, _box(0.024, 0.024, 0.003), Transform3D(Basis(), Vector3(0.052, y0 + 0.015, sz * 0.013)), CARBON)
+	var cb := Basis(Vector3(0, 0, 1), deg_to_rad(-30.0))
+	_append(m, _box(0.016, 0.016, 0.016), Transform3D(cb, Vector3(0.054, y0 + 0.015, 0)), Color(0.1, 0.1, 0.1))
+	_append(m, _sph(0.005), Transform3D(Basis(), Vector3(0.068, y0 + 0.021, 0)), Color(0.2, 0.35, 0.6))
+	_append(m, _box(0.09, 0.032, 0.035), Transform3D(Basis(), Vector3(-0.006, y0 + 0.045, 0)), accent)
+	_append(m, _box(0.014, 0.038, 0.04), Transform3D(Basis(), Vector3(-0.006, y0 + 0.045, 0)), Color(0.07, 0.07, 0.07))
+	var ab := Basis(Vector3(0, 0, 1), deg_to_rad(65.0))
+	_append(m, _cyl(0.0024, 0.06), Transform3D(ab, Vector3(-0.068, y0 + 0.035, 0)), Color(0.1, 0.1, 0.1))
+	_append(m, _sph(0.006), Transform3D(Basis(), Vector3(-0.095, y0 + 0.048, 0)), Color(0.85, 0.85, 0.85) if variant != 3 else Color(0.15, 0.15, 0.15))
+	root.add_child(_mi(m, "Body"))
+	var props: Array = []
+	for sx: float in [1.0, -1.0]:
+		for sz: float in [1.0, -1.0]:
+			var pn := _prop_node("Prop%d%d" % [int(sx > 0), int(sz > 0)],
+				Vector3(sx * 0.08, y0 + 0.028, sz * 0.08), 3, 0.71, prop_c)
+			root.add_child(pn)
+			props.append(pn)
+	return {"root": root, "props": props}
+
+
+## mavic — складной потребительский квадрокоптер класса DJI Mavic 3 (корпус-монокок 231×98×95,
+## лучи из углов, 2-лопастные винты, гимбал-камера в рамке спереди). Скины: серый/олива/тёмный.
+func drone_mavic(variant: int) -> Dictionary:
+	var root := Node3D.new()
+	root.name = "DroneMavicV%d" % variant
+	var m := ArrayMesh.new()
+	var body_c: Color = [Color(0.45, 0.46, 0.48), Color(0.36, 0.4, 0.3), Color(0.16, 0.16, 0.18)][variant - 1]
+	var dark := Color(0.14, 0.14, 0.15)
+	var y0 := 0.035
+	# корпус: скошенный к носу монокок + «спина» и брюхо-сенсоры
+	var hull := _sloped_box(Vector3(0.21, 0.062, 0.088), 0.05)
+	_append_mesh(m, hull, Transform3D(Basis(Vector3.UP, PI), Vector3(0.0, y0 + 0.031, 0)), body_c)
+	_append(m, _box(0.13, 0.014, 0.07), Transform3D(Basis(), Vector3(-0.02, y0 + 0.068, 0)), body_c)
+	_append(m, _box(0.05, 0.008, 0.04), Transform3D(Basis(), Vector3(0.0, y0 - 0.002, 0)), dark)
+	# гимбал-камера спереди: рамка + сфера + объектив
+	_append(m, _box(0.03, 0.036, 0.05), Transform3D(Basis(), Vector3(0.1, y0 + 0.022, 0)), dark)
+	_append(m, _sph(0.018), Transform3D(Basis(), Vector3(0.108, y0 + 0.02, 0)), Color(0.2, 0.2, 0.22))
+	_append(m, _cyl(0.009, 0.008), Transform3D(Basis(Vector3(0, 0, 1), deg_to_rad(90.0)), Vector3(0.121, y0 + 0.02, 0)), Color(0.05, 0.05, 0.05))
+	_append(m, _sph(0.006), Transform3D(Basis(), Vector3(0.126, y0 + 0.02, 0)), Color(0.25, 0.4, 0.65))
+	var props: Array = []
+	# лучи: передние — вперёд-вбок, задние — назад-вбок чуть вверх; моторы плоские
+	for sx: float in [1.0, -1.0]:
+		for sz: float in [1.0, -1.0]:
+			var front := sx > 0.0
+			var ax := 0.085 * sx
+			var mx := (0.14 if front else -0.15)
+			var mz := sz * (0.115 if front else 0.1)
+			var arm_mid := Vector3((ax + mx) * 0.5, y0 + (0.03 if front else 0.05), mz * 0.55)
+			var yawa := atan2(mz, mx - ax)
+			_append(m, _box(Vector3(ax, 0, sz * 0.03).distance_to(Vector3(mx, 0, mz)) + 0.02, 0.008, 0.016),
+				Transform3D(Basis(Vector3.UP, -yawa), arm_mid), body_c)
+			var my := y0 + (0.032 if front else 0.052)
+			_append(m, _cyl(0.0125, 0.012), Transform3D(Basis(), Vector3(mx, my, mz)), dark)
+			var pn := _prop_node("Prop%d%d" % [int(sx > 0), int(sz > 0)], Vector3(mx, my + 0.009, mz), 2, 1.06, dark)
+			root.add_child(pn)
+			props.append(pn)
+	# ножки-выступы
+	for off: Vector3 in [Vector3(0.06, 0, 0.03), Vector3(0.06, 0, -0.03), Vector3(-0.08, 0, 0.028), Vector3(-0.08, 0, -0.028)]:
+		_append(m, _box(0.012, 0.018, 0.012), Transform3D(Basis(), Vector3(off.x, y0 - 0.008, off.z)), dark)
+	root.add_child(_mi(m, "Body"))
+	return {"root": root, "props": props}
+
+
+## mship — тяжёлая матка-носитель: гексакоптер ~1.1 м, батарейный блок, лыжи, подвес FPV снизу.
+func drone_mother(variant: int) -> Dictionary:
+	var root := Node3D.new()
+	root.name = "DroneMotherV%d" % variant
+	var m := ArrayMesh.new()
+	var body_c: Color = [Color(0.2, 0.22, 0.2), Color(0.32, 0.36, 0.26), Color(0.12, 0.12, 0.13)][variant - 1]
+	var accent: Color = [Color(0.9, 0.72, 0.12), Color(0.42, 0.46, 0.34), Color(0.2, 0.2, 0.22)][variant - 1]
+	var y0 := 0.42                                # клиренс: под брюхом висит подвес
+	var hex := CylinderMesh.new()
+	hex.top_radius = 0.15; hex.bottom_radius = 0.15; hex.height = 0.035; hex.radial_segments = 6
+	_append(m, hex, Transform3D(Basis(), Vector3(0, y0, 0)), body_c)
+	_append(m, _box(0.21, 0.09, 0.13), Transform3D(Basis(), Vector3(-0.01, y0 + 0.065, 0)), accent)
+	_append(m, _cyl(0.003, 0.09), Transform3D(Basis(), Vector3(-0.06, y0 + 0.15, 0.04)), Color(0.09, 0.09, 0.09))
+	_append(m, _cyl(0.02, 0.008), Transform3D(Basis(), Vector3(-0.06, y0 + 0.2, 0.04)), Color(0.9, 0.9, 0.9))
+	var props: Array = []
+	for k in 6:
+		var a := TAU * k / 6.0 + PI / 6.0
+		var dirv := Vector3(cos(a), 0, sin(a))
+		_append(m, _box(0.3, 0.012, 0.028), Transform3D(Basis(Vector3.UP, -a), Vector3(0, y0 + 0.01, 0) + dirv * 0.23), body_c)
+		var mp := Vector3(0, y0 + 0.018, 0) + dirv * 0.38
+		_append(m, _cyl(0.021, 0.026), Transform3D(Basis(), mp), Color(0.22, 0.22, 0.24))
+		var pn := _prop_node("Prop%d" % k, mp + Vector3(0, 0.018, 0), 2, 2.1, Color(0.13, 0.13, 0.14))
+		root.add_child(pn)
+		props.append(pn)
+	# посадочные лыжи
+	for sz: float in [1.0, -1.0]:
+		for px: float in [0.1, -0.1]:
+			_append(m, _cyl(0.006, 0.24), Transform3D(Basis(Vector3(1, 0, 0), sz * deg_to_rad(16.0)), Vector3(px, y0 - 0.13, sz * 0.14)), body_c)
+		_append(m, _box(0.36, 0.012, 0.012), Transform3D(Basis(), Vector3(0, y0 - 0.25, sz * 0.175)), body_c)
+	# подвес FPV: две штанги с захватами под брюхом
+	for px: float in [0.05, -0.05]:
+		_append(m, _box(0.014, 0.1, 0.014), Transform3D(Basis(), Vector3(px, y0 - 0.07, 0)), Color(0.09, 0.09, 0.09))
+		_append(m, _box(0.016, 0.014, 0.09), Transform3D(Basis(), Vector3(px, y0 - 0.125, 0)), Color(0.09, 0.09, 0.09))
+	root.add_child(_mi(m, "Body"))
+	return {"root": root, "props": props}
+
+
 ## Дрон «в висении» для галереи --unitshot (на земле тонет в траве/буграх рельефа).
-func _drone_hover(variant: int) -> Node3D:
+func _drone_hover(kind: String, variant: int) -> Node3D:
 	var holder := Node3D.new()
-	holder.name = "DroneHover%d" % variant
-	var d: Dictionary = drone_fpv7(variant)
+	holder.name = "DroneHover%s%d" % [kind, variant]
+	var d: Dictionary = build_drone(kind, variant)
 	var dn: Node3D = d.root
 	dn.position = Vector3(0, 1.4, 0)
 	holder.add_child(dn)
 	return holder
+
+
+## Модель дрона по ключу профиля flycam (fpv7/fpv5/mavic/mship) или краткому ключу галереи.
+func build_drone(kind: String, variant: int) -> Dictionary:
+	match kind:
+		"fpv5", "5": return drone_fpv5(variant)
+		"mavic", "m": return drone_mavic(variant)
+		"mship", "h": return drone_mother(variant)
+		_: return drone_fpv7(variant)
 
 
 func build_set(key: String) -> Array:
@@ -743,7 +888,9 @@ func build_set(key: String) -> Array:
 	if key.begins_with("car"):
 		return [[car_sedan(), -6.0], [car_wagon(), -3.0], [car_van(), 0.0], [car_truck(), 3.5], [car_bus(), 7.5]]
 	if key.begins_with("drone"):
-		return [[_drone_hover(clampi(variant, 1, 3)), 0.0]]
+		return [[_drone_hover("7", clampi(variant, 1, 3)), 0.0]]
+	if key.begins_with("d5") or key.begins_with("dm") or key.begins_with("dh"):
+		return [[_drone_hover(key.substr(1, 1), clampi(variant, 1, 3)), 0.0]]
 	return civ_set(variant)
 
 
