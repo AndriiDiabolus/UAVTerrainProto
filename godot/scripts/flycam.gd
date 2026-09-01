@@ -53,6 +53,8 @@ const DRONES := {
 		"rate": 800.0, "yaw_rate": 480.0, "tau": 0.045, "expo": 0.5, "cam_tilt": 32.0, "gps_v": 30.0},
 	"mavic": {"name": "квадрокоптер (класс Mavic)", "mass": 0.9, "tw": 2.0, "drag": 0.022, "tilt": 35.0,
 		"rate": 200.0, "yaw_rate": 120.0, "tau": 0.12, "expo": 0.2, "cam_tilt": 0.0, "gps_v": 20.0},
+	"mship": {"name": "матка-носитель (несёт FPV)", "mass": 7.5, "tw": 1.7, "drag": 0.030, "tilt": 22.0,
+		"rate": 130.0, "yaw_rate": 70.0, "tau": 0.22, "expo": 0.15, "cam_tilt": 8.0, "gps_v": 12.0},
 }
 var P: Dictionary = DRONES["fpv7"]
 

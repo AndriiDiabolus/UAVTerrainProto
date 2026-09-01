@@ -713,19 +713,18 @@ func _relay_add(m: ArrayMesh, prim: PrimitiveMesh, off: Vector3, c: Color) -> vo
 	m.surface_set_material(m.get_surface_count() - 1, mt)
 
 
-## «Матка»-носитель (клавиша J): тяжёлый дрон доносит FPV на дальний рубеж.
-## Камера переносится ~1.6 км вперёд по курсу, батарея заправляется, матка остаётся
-## висеть в точке отделения и ретранслирует канал (занимает слот ретранслятора).
+## Отделение FPV от матки (клавиша J). Оператор САМ долетел на матке (профиль "mship")
+## до рубежа и завис — здесь матка остаётся висеть в точке и ретранслирует канал, а
+## управление переходит на подвешенный FPV (свежий заряд), в той же точке. Без телепорта.
 func launch_from_mothership() -> void:
 	if crashed:
 		return
-	var fwd := -cam.global_transform.basis.z
-	fwd.y = 0.0
-	if fwd.length() < 0.01:
-		fwd = Vector3(1, 0, 0)
-	fwd = fwd.normalized()
-	var drop: Vector3 = cam.global_position                       # точка отделения — тут остаётся матка
-	# ретранслятор в точке отделения (переиспользуем слот)
+	if cam.get("drone_id") != "mship":
+		if hud != null:
+			hud.toast("нужна матка", "выбери дрон «матка-носитель» в меню и долети до рубежа", Color(1.0, 0.8, 0.5))
+		return
+	var drop: Vector3 = cam.global_position                       # тут висит матка после отделения
+	# матка остаётся точкой связи (ретранслятор), видимый гексакоптер + луч
 	if relay_node != null:
 		relay_node.queue_free()
 	relay_pos = drop
@@ -745,19 +744,18 @@ func launch_from_mothership() -> void:
 	beam.mesh.surface_set_material(0, bmat)
 	relay_node.add_child(beam)
 	relay_node.position = drop
-	# перенос FPV на рубеж + заправка
-	var tgt := drop + fwd * 1600.0
-	tgt.y = maxf(height_at(tgt.x, tgt.z) + 120.0, drop.y)
-	cam.global_position = tgt
+	# пересадка на подвешенный FPV (7" ударный) — та же точка, свежий заряд
+	if cam.has_method("set_drone"):
+		cam.set_drone("fpv7")
 	if cam.has_method("zero_velocity"):
 		cam.zero_velocity()
 	if _fpv_osd != null:
 		_fpv_osd.battery = 1.0
 		_fpv_osd.signal_q = 1.0
 	if hud != null:
-		hud.toast("ОТДЕЛЕНИЕ ОТ МАТКИ", "FPV на рубеже · батарея 100 % · матка ретранслирует", Color(0.6, 0.9, 1.0))
+		hud.toast("FPV ОТДЕЛЁН ОТ МАТКИ", "матка висит и ретранслирует · FPV свежий · работай", Color(0.6, 0.9, 1.0))
 	if telemetry != null:
-		telemetry.event("mothership_release", {"x": tgt.x, "z": tgt.z})
+		telemetry.event("mothership_release", {"x": drop.x, "z": drop.z})
 
 
 ## Тяжёлый носитель: широкая рама, 6 лучей с моторами, подвес FPV снизу.
