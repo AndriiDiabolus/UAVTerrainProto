@@ -262,7 +262,8 @@ func _process(dt: float) -> void:
 			continue
 		# --- обнаружение дрона и реакция ---
 		var dist_d: float = cam_pos.distance_to(t.node.position)
-		if not t.alert:
+		var can_see: bool = not main.get("menu_open")     # в главном меню дрон «невидим» для целей
+		if not t.alert and can_see:
 			var det := 250.0 if t.kind == "soldier" else 420.0
 			if dist_d < det and agl < 220.0:
 				t.alert = true
@@ -275,7 +276,7 @@ func _process(dt: float) -> void:
 			t.offset = lerpf(t.offset, t.hide_off, clampf(dt * 0.6, 0.0, 1.0))
 			t.speed = lerpf(t.speed, 0.15, clampf(dt * 0.8, 0.0, 1.0))
 		# --- ответный огонь (БТР — автопушка, танк — ЗПУ, пехота — стрелковое) ---
-		if t.alert and _aa_enabled:
+		if t.alert and _aa_enabled and can_see:
 			t.aa_t -= dt
 			var rng_max := 120.0 if t.kind == "soldier" else 450.0
 			if t.aa_t <= 0.0 and dist_d < rng_max:

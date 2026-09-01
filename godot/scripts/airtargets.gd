@@ -94,8 +94,8 @@ func _fly(e: Dictionary, dt: float, cp: Vector3) -> void:
 		# квадрик: держит горизонт, крутит корпус по курсу + винты
 		e.spin += dt * 40.0
 		e.node.transform.basis = Basis(Vector3.UP, yaw + e.spin * 0.0)
-	# перехват тараном: наш дрон сблизился на RAM_R
-	if cp.distance_to(pos) < RAM_R:
+	# перехват тараном: наш дрон сблизился на RAM_R (в главном меню не срабатывает)
+	if cp.distance_to(pos) < RAM_R and not main.get("menu_open"):
 		_kill(e)
 
 
