@@ -39,8 +39,9 @@ func toast(text: String, sub: String = "", col: Color = Color(1, 1, 1), dur: flo
 func _toggle_fpv() -> void:
 	fpv_on = not fpv_on
 	target_marker.visible = not fpv_on
-	# обычный HUD прячем — в FPV своя приборка (OSD живёт внутри видеотракта)
-	for c: Node in [_wind_label, _wind_flag, _min]:
+	# обычный HUD прячем — в FPV своя приборка (OSD живёт внутри видеотракта);
+	# _min остаётся видимым: в FPV он рисует только FPS-плашку (см. hud_min._draw)
+	for c: Node in [_wind_label, _wind_flag]:
 		if c != null:
 			c.visible = not fpv_on
 	if fpv_link != null:

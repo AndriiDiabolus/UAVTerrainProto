@@ -47,6 +47,15 @@ func _draw() -> void:
 		return
 	var vp := get_viewport_rect().size
 	var f := get_theme_default_font()
+
+	# --- FPS (верх-лево, постоянно; в FPV — поверх сигнала, вне видеотракта) ---
+	var fps := Engine.get_frames_per_second()
+	var fcol := Color(0.55, 1.0, 0.59) if fps >= 50.0 else (Color(1.0, 0.82, 0.45) if fps >= 30.0 else Color(1.0, 0.5, 0.45))
+	_panel(Rect2(14, 14, 92, 26), 0.35)
+	_txt(f, Vector2(24, 33), "FPS %d" % int(fps), 14, fcol)
+	if main.hud != null and main.hud.get("fpv_on") == true:
+		return          # в FPV остальным владеет OSD видеотракта
+
 	var cam: Camera3D = main.cam
 	var p: Vector3 = cam.global_position
 	var agl: float = p.y - main.height_at(p.x, p.z)
@@ -97,11 +106,11 @@ func _draw() -> void:
 	# --- контекст: батарея ---
 	if bat < 0.4:
 		var col := Color(1.0, 0.55, 0.5) if bat < 0.2 else Color(1.0, 0.78, 0.55)
-		_panel(Rect2(14, 14, 236, 44), 0.35, Color(col.r, col.g, col.b, 0.45))
+		_panel(Rect2(14, 48, 236, 44), 0.35, Color(col.r, col.g, col.b, 0.45))
 		var blocks := ""
 		for i in 5: blocks += "▮" if bat > (i + 0.5) / 5.0 else "▯"
-		_txt(f, Vector2(24, 34), "БАТАРЕЯ %d %%   %s" % [int(bat * 100.0), blocks], 14, col)
-		_txt(f, Vector2(24, 52), "садись" if bat < 0.2 else "возвращайся", 11, Color(col.r, col.g, col.b, 0.7))
+		_txt(f, Vector2(24, 68), "БАТАРЕЯ %d %%   %s" % [int(bat * 100.0), blocks], 14, col)
+		_txt(f, Vector2(24, 86), "садись" if bat < 0.2 else "возвращайся", 11, Color(col.r, col.g, col.b, 0.7))
 	# --- контекст: канал / РЭБ / failsafe ---
 	var jam_s := ""
 	if main.get("ew") != null:
