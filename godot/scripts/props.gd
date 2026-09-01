@@ -86,8 +86,11 @@ func _process(dt: float) -> void:
 		for l in _lights:
 			l.visible = false
 		return
-	# найти pool ближайших плафонов к камере
+	# найти pool ближайших плафонов к камере; с высоты пул сокращается — отдельные пятна света
+	# на земле сверху неразличимы (emissive-плафоны остаются и дают вид ночного села)
 	var cam: Vector3 = _main.cam.global_position
+	var agl: float = cam.y - _main.height_at(cam.x, cam.z)
+	var eff_pool: int = pool if agl <= 120.0 else maxi(4, int(lerpf(float(pool), 4.0, clampf((agl - 120.0) / 380.0, 0.0, 1.0))))
 	var best: Array = []                    # [dist2, index]
 	var gc := Vector2i(int(floor(cam.x / 256.0)), int(floor(cam.z / 256.0)))
 	var cand := PackedInt32Array()
@@ -98,12 +101,12 @@ func _process(dt: float) -> void:
 		var d2 := cam.distance_squared_to(_lamp_pos[i])
 		if d2 > 300.0 * 300.0:
 			continue
-		if best.size() < pool:
+		if best.size() < eff_pool:
 			best.append([d2, i])
-			if best.size() == pool:
+			if best.size() == eff_pool:
 				best.sort_custom(func(a, b): return a[0] < b[0])
-		elif d2 < best[pool - 1][0]:
-			best[pool - 1] = [d2, i]
+		elif d2 < best[eff_pool - 1][0]:
+			best[eff_pool - 1] = [d2, i]
 			best.sort_custom(func(a, b): return a[0] < b[0])
 	var energy := clampf(night * 1.1, 0.0, 5.0)
 	for k in _lights.size():

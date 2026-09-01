@@ -554,6 +554,37 @@ func _load_quality() -> void:
 			fsr_scale = 0.0 if fv in ["off", "0"] else clampf(float(fv), 0.5, 1.0)
 
 
+# --- динамический рендер-скейл: держит целевой FPS на слабом железе, жертвуя только внутренним
+# разрешением (темпоральная реконструкция скрывает); вниз быстро, вверх осторожно. --noautoscale выкл.
+var _dyn_enabled := true
+var _dyn_inited := false
+var _dyn_fps := 60.0
+var _dyn_t := 0.0
+
+func _process(dt: float) -> void:
+	if not _dyn_inited:
+		_dyn_inited = true
+		var args := OS.get_cmdline_user_args()
+		_dyn_enabled = fsr_scale > 0.0 and not ("--noautoscale" in args)
+		for a in args:
+			for fl in ["--bench", "--screenshot", "--transshot", "--selftest", "--replay"]:
+				if a.begins_with(fl):
+					_dyn_enabled = false
+	if not _dyn_enabled or quality == 0:
+		return
+	_dyn_fps = lerpf(_dyn_fps, Engine.get_frames_per_second(), minf(dt * 1.5, 1.0))
+	_dyn_t += dt
+	if _dyn_t < 1.2:
+		return
+	_dyn_t = 0.0
+	var vp := get_viewport()
+	var s := vp.scaling_3d_scale
+	if _dyn_fps < 38.0 and s > 0.56:
+		vp.scaling_3d_scale = maxf(s - 0.06, 0.55)
+	elif _dyn_fps > 52.0 and s < fsr_scale - 0.005:
+		vp.scaling_3d_scale = minf(s + 0.03, fsr_scale)
+
+
 ## medium/high: темпоральный апскейл (сам антиалиасит — TAA/FXAA не нужны); --fsr=off — натив+TAA.
 ## macOS: MetalFX Temporal (аппаратный, FSR2 на Metal по бенчу МЕДЛЕННЕЕ натива); иначе FSR2.
 func _set_upscale(vp: Viewport) -> void:

@@ -51,8 +51,13 @@ func _draw() -> void:
 	# --- FPS (верх-лево, постоянно; в FPV — поверх сигнала, вне видеотракта) ---
 	var fps := Engine.get_frames_per_second()
 	var fcol := Color(0.55, 1.0, 0.59) if fps >= 50.0 else (Color(1.0, 0.82, 0.45) if fps >= 30.0 else Color(1.0, 0.5, 0.45))
-	_panel(Rect2(14, 14, 92, 26), 0.35)
-	_txt(f, Vector2(24, 33), "FPS %d" % int(fps), 14, fcol)
+	var fps_s := "FPS %d" % int(fps)
+	var base_scale: float = float(main.get("fsr_scale"))
+	var cur_scale := get_viewport().scaling_3d_scale
+	if base_scale > 0.0 and cur_scale < base_scale - 0.005:
+		fps_s += " ·%d%%" % int(cur_scale * 100.0)     # авто-скейл понизил внутреннее разрешение
+	_panel(Rect2(14, 14, 30 + f.get_string_size(fps_s, HORIZONTAL_ALIGNMENT_LEFT, -1, 14).x, 26), 0.35)
+	_txt(f, Vector2(24, 33), fps_s, 14, fcol)
 	if main.hud != null and main.hud.get("fpv_on") == true:
 		return          # в FPV остальным владеет OSD видеотракта
 

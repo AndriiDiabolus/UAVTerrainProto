@@ -137,6 +137,10 @@ func _process(dt: float) -> void:
 	var night := 0.0
 	if main.weather != null and int(main.weather.idx) == 4: night = 1.0
 	_lamp_mat.emission_energy_multiplier = 4.0 * night
+	# конусы фар с высоты не видны — гасим SpotLight'ы (emissive-лампочки остаются)
+	var cpos: Vector3 = main.cam.global_position
+	var lfade := clampf(1.0 - (cpos.y - main.height_at(cpos.x, cpos.z) - 180.0) / 220.0, 0.0, 1.0)
+	night *= lfade
 	var zero := Transform3D(Basis().scaled(Vector3.ZERO), Vector3(0, -1000, 0))
 	for i in N_CARS:
 		if i >= cars.size():
@@ -176,6 +180,7 @@ func _process(dt: float) -> void:
 		if i < _spots.size():
 			var sp := _spots[i]
 			sp.light_energy = 6.0 * night
+			sp.visible = night > 0.02
 			if night > 0.0:
 				var fwd3: Vector3 = b * Vector3(1, 0, 0)
 				sp.global_position = Vector3(wx, y + 0.4, wz) + fwd3 * 2.3
