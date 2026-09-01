@@ -63,6 +63,8 @@ func _draw() -> void:
 	var fs := 15
 	var segs: Array = [[mode_s, TXT], ["·", DIM], ["CAM", CAM_COL[cam_i]], ["·", DIM], ["%d м" % int(agl), TXT], ["·", DIM],
 		["%d м/с" % int(spd), TXT], ["·", DIM], ["канал %d %%" % int(lq * 100.0), TXT if lq > 0.7 else Color(1.0, 0.75, 0.45)]]
+	if main._fpv_osd != null and main._fpv_osd.get("via_relay") == true:
+		segs.append(["·", DIM]); segs.append(["РЕТР", Color(0.5, 0.85, 1.0)])
 	if main.targets != null:
 		segs.append(["·", DIM])
 		if main.targets.weapon == 2:
@@ -113,7 +115,8 @@ func _draw() -> void:
 		var bars := ""
 		for i in 5: bars += "▂▃▅▆▇"[i] if lq > (i + 0.5) / 5.0 else " "
 		_txt(f, Vector2(vp.x - 240, 34), ("✖ FAILSAFE" if fsafe else "КАНАЛ %d %%   %s" % [int(lq * 100.0), bars]), 14, col)
-		_txt(f, Vector2(vp.x - 240, 52), jam_s if jam_s != "" else "вернись в прямую видимость", 11, Color(col.r, col.g, col.b, 0.7))
+		var hint := jam_s if jam_s != "" else "вернись в прямую видимость или разверни ретранслятор (H)"
+		_txt(f, Vector2(vp.x - 240, 52), hint, 11, Color(col.r, col.g, col.b, 0.7))
 	# --- контекст: миссия ---
 	if main.mission != null and main.mission.active:
 		var ml: String = main.mission.hud_line()

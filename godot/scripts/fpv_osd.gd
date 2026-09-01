@@ -8,6 +8,7 @@ var home := Vector3.ZERO
 var flight_t := 0.0
 var battery := 1.0
 var signal_q := 1.0
+var via_relay := false      # канал держится через ретранслятор
 var link_type := 0          # 0 аналог / 1 цифра (меняет раскладку и подписи)
 var lost := false           # цифра: фриз + SIGNAL LOST
 
@@ -34,8 +35,13 @@ func _process(dt: float) -> void:
 	if main != null and main.cam != null:
 		var dp: Vector3 = main.cam.global_position
 		var d := home.distance_to(dp)
+		# дистанция: с ретранслятором — от ближайшего активного узла (двойной хоп ослабляет меньше)
+		if main.get("relay_node") != null:
+			d = minf(d, main.relay_pos.distance_to(dp))
 		var dist_q := clampf(1.0 - maxf(0.0, d - 900.0) / 4000.0, 0.0, 1.0)
-		var los: float = main.los_factor(home + Vector3(0, 2, 0), dp)
+		var link: Dictionary = main.link_los(home, dp)
+		var los: float = link.los
+		via_relay = bool(link.via)
 		var jam := 1.0
 		if main.get("ew") != null:
 			jam = main.ew.jam_factor(dp)

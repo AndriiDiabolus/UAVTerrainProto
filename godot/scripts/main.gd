@@ -649,6 +649,83 @@ func los_factor(op: Vector3, drone: Vector3) -> float:
 	return collision.los_factor(op, drone)
 
 
+# --- дрон-ретранслятор: висит точкой, продлевает канал вторым хопом ---
+var relay_node: Node3D = null
+var relay_pos := Vector3.ZERO
+
+
+## Развернуть/снять ретранслятор в текущей позиции дрона (клавиша H).
+func toggle_relay() -> void:
+	if relay_node != null:
+		relay_node.queue_free(); relay_node = null
+		if hud != null: hud.toast("ретранслятор снят")
+		return
+	relay_pos = cam.global_position
+	relay_node = Node3D.new()
+	add_child(relay_node)
+	var mi := MeshInstance3D.new()
+	mi.mesh = _relay_mesh()
+	relay_node.add_child(mi)
+	var beam := MeshInstance3D.new()
+	var bm := BoxMesh.new(); bm.size = Vector3(0.4, 60.0, 0.4)
+	beam.mesh = bm; beam.position = Vector3(0, 30.0, 0)
+	var bmat := StandardMaterial3D.new()
+	bmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	bmat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	bmat.albedo_color = Color(0.3, 0.7, 1.0, 0.35)
+	bmat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	beam.mesh.surface_set_material(0, bmat)
+	relay_node.add_child(beam)
+	relay_node.position = relay_pos
+	if hud != null: hud.toast("РЕТРАНСЛЯТОР развёрнут", "держит канал за препятствием, пока висит", Color(0.6, 0.9, 1.0))
+	if telemetry != null: telemetry.event("relay_deploy", {"x": relay_pos.x, "z": relay_pos.z})
+
+
+func _relay_mesh() -> ArrayMesh:
+	var m := ArrayMesh.new()
+	var dark := Color(0.13, 0.13, 0.15)
+	var body := BoxMesh.new(); body.size = Vector3(0.4, 0.16, 0.4)
+	_relay_add(m, body, Vector3.ZERO, dark)
+	var arm := BoxMesh.new(); arm.size = Vector3(0.8, 0.05, 0.05)
+	for a in 4:
+		var ang := PI / 4.0 + TAU * a / 4.0
+		var b := Basis(Vector3.UP, ang)
+		var arr: Array = arm.get_mesh_arrays()
+		var v: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+		for i in v.size(): v[i] = b * v[i]
+		arr[Mesh.ARRAY_VERTEX] = v
+		m.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+		var mt := StandardMaterial3D.new(); mt.albedo_color = dark
+		m.surface_set_material(m.get_surface_count() - 1, mt)
+	# антенна
+	var ant := CylinderMesh.new(); ant.top_radius = 0.01; ant.bottom_radius = 0.02; ant.height = 0.5; ant.radial_segments = 6
+	_relay_add(m, ant, Vector3(0, 0.33, 0), Color(0.6, 0.6, 0.6))
+	return m
+
+
+func _relay_add(m: ArrayMesh, prim: PrimitiveMesh, off: Vector3, c: Color) -> void:
+	var arr: Array = prim.get_mesh_arrays()
+	var v: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+	for i in v.size(): v[i] += off
+	arr[Mesh.ARRAY_VERTEX] = v
+	m.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+	var mt := StandardMaterial3D.new(); mt.albedo_color = c
+	m.surface_set_material(m.get_surface_count() - 1, mt)
+
+
+## LOS канала с учётом ретранслятора: прямой ИЛИ через ретранслятор (второй хоп).
+## Возвращает {los, via_relay}.
+func link_los(home: Vector3, drone: Vector3) -> Dictionary:
+	var direct: float = los_factor(home + Vector3(0, 2, 0), drone)
+	if relay_node == null:
+		return {"los": direct, "via": false}
+	var r := relay_pos
+	var hop: float = los_factor(home + Vector3(0, 2, 0), r) * los_factor(r, drone)
+	if hop > direct:
+		return {"los": hop, "via": true}
+	return {"los": direct, "via": false}
+
+
 ## Столкновение → краш дрона (падает, ждёт перезапуска R).
 func crash(what: String) -> void:
 	if crashed:
@@ -670,6 +747,8 @@ func crash(what: String) -> void:
 
 func _respawn() -> void:
 	crashed = false
+	if relay_node != null:
+		relay_node.queue_free(); relay_node = null
 	if targets != null:
 		targets.reset_ammo()
 		targets.armed = false
@@ -995,6 +1074,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			thermal.cycle_palette()
 		elif event.keycode == KEY_V and targets != null:
 			targets.cycle_weapon()
+		elif event.keycode == KEY_H:
+			toggle_relay()
 
 
 func _latlon_at(x: float, z: float) -> Vector2:

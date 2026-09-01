@@ -18,6 +18,7 @@ func setup(m: Node3D) -> void:
 		_check("РЭБ: jam_factor", _test_ew())
 		_check("баллистика сброса + поражение", _test_ballistics())
 		_check("БЧ-камикадзе: подрыв при столкновении", _test_kamikaze())
+		_check("ретранслятор: канал вторым хопом", _test_relay())
 	if "--selftest" in args or "--flytest" in args:
 		any = true
 		_check("лётная модель", main.cam.self_test())
@@ -33,6 +34,23 @@ func _check(name: String, ok: bool) -> void:
 	print("SELFTEST [%s] %s" % ["OK" if ok else "FAIL", name])
 	if not ok:
 		fails += 1
+
+
+## Ретранслятор в прямой видимости и станции, и дрона даёт канал не хуже прямого.
+func _test_relay() -> bool:
+	var home: Vector3 = main._home_pos + Vector3(0, 2, 0)
+	var drone: Vector3 = main._home_pos + Vector3(300, 80, 0)
+	var direct: Dictionary = main.link_los(main._home_pos, drone)
+	if bool(direct.via):
+		print("  без ретранслятора via=true — ошибка"); return false
+	# развернём ретранслятор высоко между станцией и дроном
+	main.relay_pos = main._home_pos + Vector3(150, 200, 0)
+	main.relay_node = Node3D.new(); main.add_child(main.relay_node)
+	var withr: Dictionary = main.link_los(main._home_pos, drone)
+	var ok: bool = float(withr.los) >= float(direct.los) - 0.001
+	print("  прямой los=%.2f, с ретранслятором los=%.2f via=%s" % [direct.los, withr.los, withr.via])
+	main.relay_node.queue_free(); main.relay_node = null
+	return ok
 
 
 ## Взведённая БЧ камикадзе поражает цель в радиусе точки столкновения.
