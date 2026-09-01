@@ -536,6 +536,9 @@ var quality := 2                       # 0 низкое / 1 среднее / 2 �
 var _quality_from_flag := false
 const QUALITY_NAMES := ["низкое", "среднее", "высокое"]
 const SETTINGS_PATH := "user://settings.cfg"
+# FSR2: рендерим ~59% пикселей, темпоральная реконструкция до полного окна — по замерам 01.09
+# окно «правая половина Retina» стоило −14 FPS чистого GPU; FSR2 возвращает эту цену.
+var fsr_scale := 0.77                  # --fsr=0.6..1.0 подбор; --fsr=off — выключить (нативный рендер)
 
 func _load_quality() -> void:
 	var cfg := ConfigFile.new()
@@ -546,6 +549,25 @@ func _load_quality() -> void:
 			var v := a.substr(10).to_lower()
 			quality = {"low": 0, "0": 0, "medium": 1, "med": 1, "1": 1, "high": 2, "2": 2}.get(v, quality)
 			_quality_from_flag = true            # флаг не должен перезаписывать сохранённый выбор игрока
+		elif a.begins_with("--fsr="):
+			var fv := a.substr(6).to_lower()
+			fsr_scale = 0.0 if fv in ["off", "0"] else clampf(float(fv), 0.5, 1.0)
+
+
+## medium/high: темпоральный апскейл (сам антиалиасит — TAA/FXAA не нужны); --fsr=off — натив+TAA.
+## macOS: MetalFX Temporal (аппаратный, FSR2 на Metal по бенчу МЕДЛЕННЕЕ натива); иначе FSR2.
+func _set_upscale(vp: Viewport) -> void:
+	if fsr_scale > 0.0:
+		vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_METALFX_TEMPORAL if OS.get_name() == "macOS" \
+			else Viewport.SCALING_3D_MODE_FSR2
+		vp.scaling_3d_scale = fsr_scale
+		vp.use_taa = false
+		vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_DISABLED
+	else:
+		vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR
+		vp.scaling_3d_scale = 1.0
+		vp.use_taa = true
+		vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA
 
 
 func apply_quality(q: int) -> void:
@@ -555,6 +577,7 @@ func apply_quality(q: int) -> void:
 	var grass := get_node_or_null("Grass")
 	match quality:
 		0:
+			vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR
 			vp.scaling_3d_scale = 0.7
 			vp.use_taa = false
 			vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA
@@ -568,9 +591,7 @@ func apply_quality(q: int) -> void:
 			if grass != null: grass.enabled = false
 			if props != null: props.pool = 6
 		1:
-			vp.scaling_3d_scale = 1.0
-			vp.use_taa = true
-			vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA
+			_set_upscale(vp)
 			sun.shadow_enabled = true
 			sun.directional_shadow_max_distance = 2500.0
 			environment.ssr_enabled = false
@@ -582,9 +603,7 @@ func apply_quality(q: int) -> void:
 			if grass != null: grass.enabled = true; grass.radius = 45.0
 			if props != null: props.pool = 12
 		2:
-			vp.scaling_3d_scale = 1.0
-			vp.use_taa = true
-			vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA
+			_set_upscale(vp)
 			sun.shadow_enabled = true
 			sun.directional_shadow_max_distance = 3500.0
 			environment.ssr_enabled = true

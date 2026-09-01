@@ -60,6 +60,7 @@ func setup(m: Node3D, s: DirectionalLight3D, e: Environment, sk: ShaderMaterial)
 	_build_rain()
 	_parse_time_flags()
 	_fog_extra = "--fog" in OS.get_cmdline_user_args()
+	_noshadows = "--noshadows" in OS.get_cmdline_user_args()
 	var start := 0
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--weather="):
@@ -285,6 +286,7 @@ var _occ := 0.0              # 0..1 — насколько кучевое обл
 var _sun_drift := 0.0        # накопленный ход солнца по азимуту, °
 var _timescale := 1.0        # --timescale=N: ускорение хода солнца (1 = реальное время)
 var _ephem_announce := false
+var _noshadows := false      # --noshadows: диагностика цены теневого прохода
 
 
 ## Насколько облако закрывает солнце над камерой (0..1) — по той же карте и смещению,
@@ -320,7 +322,7 @@ func _update_sun(dt: float) -> void:
 	var shop: float = float(c.get("shop", 0.9)) * (1.0 - 0.85 * _occ)
 	sun.shadow_opacity = shop
 	sun.light_angular_distance = float(c.get("sang", 0.53))
-	sun.shadow_enabled = int(main.get("quality")) != 0 and shop > 0.02
+	sun.shadow_enabled = int(main.get("quality")) != 0 and shop > 0.02 and not _noshadows
 	sky.set_shader_parameter("sun_dir", -sun.global_transform.basis.z)
 
 func _unhandled_input(event: InputEvent) -> void:

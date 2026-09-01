@@ -41,6 +41,8 @@ tools/.venv/bin/python tools/build_region.py --name steppe --lat 47.66 --lon 33.
 
 **Качество** (клавиша **G**, `--quality=low|medium|high`, запоминается в `user://settings.cfg`): low — рендер-скейл 0.7, без теней/SSR/bloom, лес 1.4 км, 6 фонарей-источников; medium — тени 6 км, без SSR, лес 2.2 км; high — всё (тени 30 км, SSR, лес 3 км, 24 источника). Для школьных ПК начинать с low.
 
+**Апскейл** (medium/high): рендер 0.77 от окна + темпоральная реконструкция — на macOS **MetalFX Temporal** (аппаратный; FSR2 на Metal по бенчу медленнее натива), иначе FSR2; TAA при этом выключен (реконструкция сама антиалиасит, картинка даже резче TAA). `--fsr=0.5..1.0` — подбор, `--fsr=off` — натив+TAA. Замер 01.09 (M4 Pro, окно «правая половина Retina», high, avg FPS): ясный 44 · облачно 40 · шторм 60 · закат 39 · ночь 37 · пасмурно 45 (до апскейла: 39/34/54/33/32/40). Диагностика: `--noshadows` (цена теневого прохода ≈ 0), `--transshot=a,b` (кадры перехода погоды).
+
 **Экспорт билдов** (`tools/export.sh win|linux|mac|all` → `build/`): пресеты в `godot/export_presets.cfg` (PCK встроен, `*.raw`/`*.json` включены, `height16.png`/`albedo_clean.jpg` исключены). Нужны export templates 4.6.1 (в Godot: Editor → Manage Export Templates → Download; сейчас установлены только web-шаблоны). Вместе с билдом раздавать `ATTRIBUTION.md`.
 
 **Git**: репозиторий инициализирован (кеши `tools/tile_cache`, `osm_cache`, `.venv`, `.godot`, `build/`, `.app` — в `.gitignore`; ассеты `godot/assets` ~60 МБ — в репо, чтобы проект запускался после клона).
