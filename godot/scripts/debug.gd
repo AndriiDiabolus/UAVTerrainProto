@@ -2,6 +2,8 @@ extends Node
 ## Отладочные режимы: пресеты видовых точек, --screenshot и производные флаги, --targetreport.
 
 var main: Node3D
+var _hold_cam := Vector3.INF          # желаемая позиция камеры галереи (переприменяется перед кадром)
+var _hold_look := Vector3.ZERO
 
 
 func setup(m: Node3D) -> void:
@@ -77,7 +79,13 @@ func _schedule_screenshot() -> void:
 				await get_tree().process_frame
 			if main.hud != null and main.hud.get("fpv_on") != null and main.hud.fpv_on:
 				main.hud._toggle_fpv()               # галерея всегда обычной камерой
-			if key.begins_with("car"):
+			if key.begins_with("drone"):
+				main.cam.near = 0.05          # дроны мелкие и близко — штатный near 2.0 их отсекает
+				_hold_cam = Vector3(base.x + 0.45, gy2 + 1.62, base.z + 0.34)
+				_hold_look = Vector3(base.x, gy2 + 1.41, base.z)
+				main.cam.global_position = _hold_cam
+				main.cam.look_at(_hold_look)
+			elif key.begins_with("car"):
 				main.cam.global_position = Vector3(base.x + 11.0, gy2 + 5.0, base.z + 12.0)
 				main.cam.look_at(Vector3(base.x, gy2 + 1.0, base.z + 0.5))
 			elif vehicle:
@@ -162,6 +170,11 @@ func _schedule_screenshot() -> void:
 			main.cam.global_position = tp + Vector3(8.0, 6.5, 8.5)
 			main.cam.look_at(tp + Vector3(0, 1.9, 0))
 		await RenderingServer.frame_post_draw
+		await get_tree().process_frame
+	if _hold_cam != Vector3.INF:
+		# камеру могли сместить между установкой и кадром — переприменить и дать кадр
+		main.cam.global_position = _hold_cam
+		main.cam.look_at(_hold_look)
 		await get_tree().process_frame
 	await RenderingServer.frame_post_draw
 	var img := main.get_viewport().get_texture().get_image()

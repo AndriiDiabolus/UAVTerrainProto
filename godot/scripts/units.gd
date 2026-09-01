@@ -611,6 +611,97 @@ func civ_set(variant: int) -> Array:
 
 ## Единая точка входа для галереи: ключ вида tank2 / apc1 / sold3 / civ2.
 ## Техника возвращается ригом (Node3D), люди — мешами.
+# ============================ ДРОНЫ (модели БпЛА игрока) ============================
+# fpv7 — 7" ударный long-range класса Mark4 (реальные пропорции: X-рама 295 мм, карбон,
+# камера между «щёк» с наклоном ~20°, VTX-антенна назад, липо 6S сверху под ремешком).
+# Варианты: 1 «классика» (жёлтая липо, оранжевые пропы, БЧ под брюхом), 2 «полевой»
+# (олива, GPS-стойка), 3 «ночной» (чёрный матовый, крупная ночная камера, красный габарит).
+# Риг: {root, props: [4×Node3D]} — узлы пропеллеров вращаются по газу (3-е лицо/меню).
+
+const CARBON := Color(0.13, 0.13, 0.145)
+
+func drone_fpv7(variant: int) -> Dictionary:
+	var root := Node3D.new()
+	root.name = "DroneFPV7v%d" % variant
+	var m := ArrayMesh.new()
+	var accent: Color = [Color(0.9, 0.72, 0.12), Color(0.34, 0.38, 0.27), Color(0.07, 0.07, 0.085)][variant - 1]
+	var prop_c: Color = [Color(0.92, 0.44, 0.1), Color(0.4, 0.52, 0.3), Color(0.1, 0.1, 0.12)][variant - 1]
+	var y0 := 0.024                                             # низ рамы над опорой
+	# рама: нижняя/верхняя пластины + стойки стека
+	_append(m, _box(0.15, 0.0025, 0.048), Transform3D(Basis(), Vector3(0, y0, 0)), CARBON)
+	_append(m, _box(0.125, 0.0025, 0.046), Transform3D(Basis(), Vector3(-0.005, y0 + 0.032, 0)), CARBON)
+	for sx: float in [1.0, -1.0]:
+		for sz: float in [1.0, -1.0]:
+			_append(m, _cyl(0.0035, 0.032), Transform3D(Basis(), Vector3(sx * 0.045, y0 + 0.016, sz * 0.018)), Color(0.08, 0.08, 0.08))
+	# лучи к моторам (X-рама 295 мм: моторы на ±0.104/±0.104) и моторы с колоколами
+	for sx: float in [1.0, -1.0]:
+		for sz: float in [1.0, -1.0]:
+			var ang := atan2(sz, sx)
+			_append(m, _box(0.135, 0.005, 0.015), Transform3D(Basis(Vector3.UP, -ang), Vector3(sx * 0.062, y0 + 0.006, sz * 0.062)), CARBON)
+			_append(m, _cyl(0.0135, 0.017), Transform3D(Basis(), Vector3(sx * 0.104, y0 + 0.017, sz * 0.104)), Color(0.22, 0.22, 0.24))
+			_append(m, _cyl(0.014, 0.006), Transform3D(Basis(), Vector3(sx * 0.104, y0 + 0.028, sz * 0.104)), Color(0.55, 0.55, 0.58))
+	# камера между карбоновых щёк, наклон 20°
+	var cam_s := 0.024 if variant == 3 else 0.019
+	for sz: float in [1.0, -1.0]:
+		_append(m, _box(0.03, 0.03, 0.003), Transform3D(Basis(), Vector3(0.07, y0 + 0.018, sz * 0.016)), CARBON)
+	var cb := Basis(Vector3(0, 0, 1), deg_to_rad(-20.0))
+	_append(m, _box(cam_s, cam_s, cam_s), Transform3D(cb, Vector3(0.072, y0 + 0.018, 0)), Color(0.1, 0.1, 0.1))
+	_append(m, _cyl(0.008, 0.012), Transform3D(cb.rotated(Vector3(0, 0, 1), deg_to_rad(90)), Vector3(0.085, y0 + 0.022, 0)), Color(0.05, 0.05, 0.05))
+	_append(m, _sph(0.0055), Transform3D(Basis(), Vector3(0.0915, y0 + 0.024, 0)), Color(0.2, 0.35, 0.6))
+	# липо сверху под ремешком + XT60
+	_append(m, _box(0.132, 0.038, 0.044), Transform3D(Basis(), Vector3(-0.01, y0 + 0.052, 0)), accent)
+	_append(m, _box(0.018, 0.044, 0.05), Transform3D(Basis(), Vector3(-0.01, y0 + 0.052, 0)), Color(0.07, 0.07, 0.07))
+	_append(m, _box(0.014, 0.01, 0.016), Transform3D(Basis(), Vector3(-0.083, y0 + 0.042, 0.01)), Color(0.85, 0.7, 0.1))
+	# VTX-антенна назад-вверх с капсулой + два RX-усика
+	var ab := Basis(Vector3(0, 0, 1), deg_to_rad(65.0))
+	_append(m, _cyl(0.0028, 0.085), Transform3D(ab, Vector3(-0.1, y0 + 0.045, 0)), Color(0.1, 0.1, 0.1))
+	_append(m, _sph(0.0075), Transform3D(Basis(), Vector3(-0.138, y0 + 0.063, 0)), Color(0.85, 0.85, 0.85) if variant != 3 else Color(0.15, 0.15, 0.15))
+	for sz: float in [1.0, -1.0]:
+		_append(m, _cyl(0.0014, 0.055), Transform3D(Basis(Vector3(1, 0, 0), sz * deg_to_rad(40.0)).rotated(Vector3(0, 0, 1), deg_to_rad(65.0)), Vector3(-0.078, y0 + 0.03, sz * 0.022)), Color(0.1, 0.1, 0.1))
+	match variant:
+		1:
+			# БЧ под брюхом: цилиндр с носовым конусом и двумя скобами подвеса
+			_append(m, _cyl(0.024, 0.13), Transform3D(Basis(Vector3(0, 0, 1), deg_to_rad(90.0)), Vector3(0.005, -0.006, 0)), Color(0.33, 0.36, 0.26))
+			_append(m, _cyl(0.005, 0.035, 0.023), Transform3D(Basis(Vector3(0, 0, 1), deg_to_rad(-90.0)), Vector3(0.088, -0.006, 0)), Color(0.3, 0.32, 0.24))
+			for px: float in [-0.03, 0.045]:
+				_append(m, _box(0.012, 0.03, 0.052), Transform3D(Basis(), Vector3(px, y0 - 0.014, 0)), Color(0.09, 0.09, 0.09))
+		2:
+			# GPS-таблетка на стойке сзади
+			_append(m, _cyl(0.0025, 0.05), Transform3D(Basis(), Vector3(-0.055, y0 + 0.06, 0.014)), Color(0.09, 0.09, 0.09))
+			_append(m, _cyl(0.014, 0.007), Transform3D(Basis(), Vector3(-0.055, y0 + 0.088, 0.014)), Color(0.9, 0.9, 0.9))
+		3:
+			# красный габарит-светлячок сзади
+			_append(m, _sph(0.004), Transform3D(Basis(), Vector3(-0.07, y0 + 0.036, 0)), Color(0.9, 0.12, 0.1))
+	root.add_child(_mi(m, "Body"))
+	# пропеллеры — отдельные узлы (вращение по газу); 7" = диск r0.089
+	var props: Array = []
+	for sx: float in [1.0, -1.0]:
+		for sz: float in [1.0, -1.0]:
+			var p := Node3D.new()
+			p.name = "Prop%d%d" % [int(sx > 0), int(sz > 0)]
+			p.position = Vector3(sx * 0.104, y0 + 0.034, sz * 0.104)
+			var pm := ArrayMesh.new()
+			_append(pm, _cyl(0.005, 0.009), Transform3D(Basis(), Vector3.ZERO), Color(0.12, 0.12, 0.12))
+			for k in 2:
+				var bb := Basis(Vector3.UP, PI * k) * Basis(Vector3(1, 0, 0), deg_to_rad(9.0))
+				_append(pm, _box(0.078, 0.0016, 0.013), Transform3D(bb, bb * Vector3(0.049, 0, 0)), prop_c)
+			p.add_child(_mi(pm, "PropMesh"))
+			root.add_child(p)
+			props.append(p)
+	return {"root": root, "props": props}
+
+
+## Дрон «в висении» для галереи --unitshot (на земле тонет в траве/буграх рельефа).
+func _drone_hover(variant: int) -> Node3D:
+	var holder := Node3D.new()
+	holder.name = "DroneHover%d" % variant
+	var d: Dictionary = drone_fpv7(variant)
+	var dn: Node3D = d.root
+	dn.position = Vector3(0, 1.4, 0)
+	holder.add_child(dn)
+	return holder
+
+
 func build_set(key: String) -> Array:
 	var variant := int(key.substr(key.length() - 1))
 	if key.begins_with("tank"):
@@ -621,6 +712,8 @@ func build_set(key: String) -> Array:
 		return [[soldier(variant), 0.0]]
 	if key.begins_with("car"):
 		return [[car_sedan(), -6.0], [car_wagon(), -3.0], [car_van(), 0.0], [car_truck(), 3.5], [car_bus(), 7.5]]
+	if key.begins_with("drone"):
+		return [[_drone_hover(clampi(variant, 1, 3)), 0.0]]
 	return civ_set(variant)
 
 
