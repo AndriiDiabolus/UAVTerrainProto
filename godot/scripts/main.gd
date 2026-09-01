@@ -24,7 +24,22 @@ var e_max: float
 @onready var cam: Camera3D
 
 
+## Окно занимает правую половину экрана (тренажёр рядом с браузером/доками).
+## Отключается флагом --fullwin (обычное окно) — например для скриншотов/бенча.
+func _place_window_right_half() -> void:
+	if "--fullwin" in OS.get_cmdline_user_args() or "--screenshot" in OS.get_cmdline_user_args():
+		return
+	var scr := DisplayServer.window_get_current_screen()
+	var pos := DisplayServer.screen_get_position(scr)
+	var usable := DisplayServer.screen_get_usable_rect(scr)
+	var half_w := int(usable.size.x / 2.0)
+	DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
+	DisplayServer.window_set_size(Vector2i(half_w, int(usable.size.y)))
+	DisplayServer.window_set_position(Vector2i(pos.x + usable.position.x + half_w, pos.y + usable.position.y))
+
+
 func _ready() -> void:
+	_place_window_right_half()
 	# фиксированный сид — расстановка/движение целей повторяются от запуска к запуску
 	# (нужно тренажёру для разбора «того же полёта»). Меняется флагом --seed=N.
 	var sv := 1
