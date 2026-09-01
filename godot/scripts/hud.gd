@@ -298,6 +298,11 @@ func _update_target_marker(p: Vector3) -> void:
 	if target_marker == null or main.targets == null:
 		return
 	var n: Dictionary = main.targets.nearest(p)
+	# воздушная цель: выбираем ближайшую из наземной и воздушной
+	if main.get("airtargets") != null:
+		var na: Dictionary = main.airtargets.nearest(p)
+		if not na.is_empty() and (n.is_empty() or float(na.dist) < float(n.dist)):
+			n = na
 	if n.is_empty() or fpv_on:
 		target_marker.visible = false
 		return
@@ -315,8 +320,10 @@ func _update_target_marker(p: Vector3) -> void:
 	sp.x = clampf(sp.x, margin, vp.x - margin)
 	sp.y = clampf(sp.y, margin, vp.y - margin)
 	target_marker.position = sp - target_marker.size * 0.5
-	var names := {"tank": "ТАНК", "apc": "БТР", "soldier": "ПЕХОТА"}
+	var names := {"tank": "ТАНК", "apc": "БТР", "soldier": "ПЕХОТА", "air_wing": "БпЛА-крыло", "air_quad": "БпЛА-квадро"}
 	var name_ru: String = names.get(n.kind, "ЦЕЛЬ")
+	var air: bool = str(n.kind).begins_with("air_")
+	target_marker.add_theme_color_override("font_color", Color(0.35, 0.7, 1.0) if air else Color(1, 0.25, 0.15))
 	target_marker.text = "◆ %s  %d м" % [name_ru, int(n.dist)]
 
 

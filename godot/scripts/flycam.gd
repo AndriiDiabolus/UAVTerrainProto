@@ -192,7 +192,11 @@ func _unhandled_input(event: InputEvent) -> void:
 					Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 					mouse_captured = true
 				elif main != null and main.targets != null:
-					main.targets.fire(self)
+					if main.targets.weapon == 3:
+						if main.get("airtargets") != null:
+							main.airtargets.shoot(self)
+					else:
+						main.targets.fire(self)
 			MOUSE_BUTTON_WHEEL_UP:
 				current_speed = clampf(current_speed * 1.15, SPEED_MIN, SPEED_MAX)
 			MOUSE_BUTTON_WHEEL_DOWN:

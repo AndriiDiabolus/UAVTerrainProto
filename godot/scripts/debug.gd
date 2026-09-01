@@ -135,6 +135,16 @@ func _schedule_screenshot() -> void:
 		for _i in 90:
 			await get_tree().process_frame
 		await RenderingServer.frame_post_draw
+	if "--aircam" in OS.get_cmdline_user_args() and main.get("airtargets") != null:
+		for _i in 30:
+			await get_tree().process_frame
+		var na: Dictionary = main.airtargets.nearest(main.cam.global_position)
+		if not na.is_empty():
+			var ap: Vector3 = na.pos
+			main.cam.global_position = ap + Vector3(7, -1.5, 8)
+			main.cam.look_at(ap + Vector3(0, -0.5, 0))
+		await get_tree().process_frame
+		await RenderingServer.frame_post_draw
 	if "--targetcam" in OS.get_cmdline_user_args() and main.targets != null:
 		var want := "tank"
 		if "--oneapc" in OS.get_cmdline_user_args(): want = "apc"

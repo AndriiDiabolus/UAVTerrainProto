@@ -52,6 +52,7 @@ func _ready() -> void:
 	_build_roads()
 	_build_fx()
 	_build_villagers()
+	_build_airtargets()
 	_build_props()
 	_build_buildings()
 	_spawn_camera()
@@ -414,6 +415,16 @@ func _build_water() -> void:
 
 
 var villagers: Node3D
+
+var airtargets: Node3D
+
+func _build_airtargets() -> void:
+	airtargets = Node3D.new()
+	airtargets.name = "AirTargets"
+	airtargets.set_script(load("res://scripts/airtargets.gd"))
+	add_child(airtargets)
+	airtargets.setup(self)
+
 
 func _build_villagers() -> void:
 	if "--novillagers" in OS.get_cmdline_user_args():
