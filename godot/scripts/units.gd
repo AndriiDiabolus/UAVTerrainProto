@@ -621,86 +621,88 @@ func civ_set(variant: int) -> Array:
 const CARBON := Color(0.13, 0.13, 0.145)
 
 func drone_fpv7(variant: int) -> Dictionary:
+	# Референс: iFlight Chimera7 Pro V2 — DeadCat-геометрия (передние моторы шире и вперёд),
+	# база 327 мм, длинный корпус-балка с боковыми панелями, GoPro-маунт спереди сверху,
+	# TPU-бамперы под моторами, антенны-диполи назад. Фото: iflight.com.
 	var root := Node3D.new()
 	root.name = "DroneFPV7v%d" % variant
 	var m := ArrayMesh.new()
-	var accent: Color = [Color(0.9, 0.72, 0.12), Color(0.34, 0.38, 0.27), Color(0.07, 0.07, 0.085)][variant - 1]
+	var accent: Color = [Color(0.78, 0.14, 0.12), Color(0.34, 0.38, 0.27), Color(0.1, 0.1, 0.115)][variant - 1]
 	var prop_c: Color = [Color(0.92, 0.44, 0.1), Color(0.4, 0.52, 0.3), Color(0.1, 0.1, 0.12)][variant - 1]
-	var y0 := 0.024                                             # низ рамы над опорой
-	# рама: нижняя/верхняя пластины + стойки стека
-	_append(m, _box(0.15, 0.0025, 0.048), Transform3D(Basis(), Vector3(0, y0, 0)), CARBON)
-	_append(m, _box(0.125, 0.0025, 0.046), Transform3D(Basis(), Vector3(-0.005, y0 + 0.032, 0)), CARBON)
-	for sx: float in [1.0, -1.0]:
-		for sz: float in [1.0, -1.0]:
-			_append(m, _cyl(0.0035, 0.032), Transform3D(Basis(), Vector3(sx * 0.045, y0 + 0.016, sz * 0.018)), Color(0.08, 0.08, 0.08))
-	# лучи к моторам (X-рама 295 мм: моторы на ±0.104/±0.104) и моторы с колоколами
-	for sx: float in [1.0, -1.0]:
-		for sz: float in [1.0, -1.0]:
-			var ang := atan2(sz, sx)
-			_append(m, _box(0.135, 0.005, 0.015), Transform3D(Basis(Vector3.UP, -ang), Vector3(sx * 0.062, y0 + 0.006, sz * 0.062)), CARBON)
-			_append(m, _cyl(0.0135, 0.017), Transform3D(Basis(), Vector3(sx * 0.104, y0 + 0.017, sz * 0.104)), Color(0.22, 0.22, 0.24))
-			_append(m, _cyl(0.014, 0.006), Transform3D(Basis(), Vector3(sx * 0.104, y0 + 0.028, sz * 0.104)), Color(0.55, 0.55, 0.58))
-	# камера между карбоновых щёк, наклон 20°
-	var cam_s := 0.024 if variant == 3 else 0.019
+	var bat_c: Color = [Color(0.12, 0.12, 0.13), Color(0.3, 0.33, 0.24), Color(0.08, 0.08, 0.09)][variant - 1]
+	var y0 := 0.026
+	# корпус-балка: нижняя плита, боковые панели с акцентом, верхняя плита с накладками-слотами
+	_append(m, _box(0.205, 0.0025, 0.052), Transform3D(Basis(), Vector3(-0.01, y0, 0)), CARBON)
 	for sz: float in [1.0, -1.0]:
-		_append(m, _box(0.03, 0.03, 0.003), Transform3D(Basis(), Vector3(0.07, y0 + 0.018, sz * 0.016)), CARBON)
+		_append(m, _box(0.185, 0.03, 0.004), Transform3D(Basis(), Vector3(-0.012, y0 + 0.016, sz * 0.026)), CARBON)
+		_append(m, _box(0.07, 0.012, 0.0045), Transform3D(Basis(), Vector3(-0.03, y0 + 0.016, sz * 0.0265)), accent)
+	_append(m, _box(0.195, 0.0025, 0.056), Transform3D(Basis(), Vector3(-0.012, y0 + 0.032, 0)), CARBON)
+	_append(m, _box(0.09, 0.002, 0.03), Transform3D(Basis(), Vector3(-0.03, y0 + 0.034, 0)), Color(0.08, 0.08, 0.09))
+	# GoPro-маунт спереди сверху: TPU-клин + экшн-камера с линзой
+	var gb := Basis(Vector3(0, 0, 1), deg_to_rad(-22.0))
+	_append(m, _box(0.034, 0.014, 0.032), Transform3D(gb, Vector3(0.058, y0 + 0.04, 0)), accent)
+	_append(m, _box(0.026, 0.024, 0.034), Transform3D(gb, Vector3(0.064, y0 + 0.054, 0)), Color(0.09, 0.09, 0.1))
+	_append(m, _cyl(0.008, 0.007), Transform3D(gb.rotated(Vector3(0, 0, 1), deg_to_rad(90)), Vector3(0.075, y0 + 0.059, 0.006)), Color(0.05, 0.05, 0.05))
+	# FPV-камера в носу между щёк
+	for sz: float in [1.0, -1.0]:
+		_append(m, _box(0.026, 0.026, 0.003), Transform3D(Basis(), Vector3(0.085, y0 + 0.016, sz * 0.014)), CARBON)
 	var cb := Basis(Vector3(0, 0, 1), deg_to_rad(-20.0))
-	_append(m, _box(cam_s, cam_s, cam_s), Transform3D(cb, Vector3(0.072, y0 + 0.018, 0)), Color(0.1, 0.1, 0.1))
-	_append(m, _cyl(0.008, 0.012), Transform3D(cb.rotated(Vector3(0, 0, 1), deg_to_rad(90)), Vector3(0.085, y0 + 0.022, 0)), Color(0.05, 0.05, 0.05))
-	_append(m, _sph(0.0055), Transform3D(Basis(), Vector3(0.0915, y0 + 0.024, 0)), Color(0.2, 0.35, 0.6))
-	# липо сверху под ремешком + XT60
-	_append(m, _box(0.132, 0.038, 0.044), Transform3D(Basis(), Vector3(-0.01, y0 + 0.052, 0)), accent)
-	_append(m, _box(0.018, 0.044, 0.05), Transform3D(Basis(), Vector3(-0.01, y0 + 0.052, 0)), Color(0.07, 0.07, 0.07))
-	_append(m, _box(0.014, 0.01, 0.016), Transform3D(Basis(), Vector3(-0.083, y0 + 0.042, 0.01)), Color(0.85, 0.7, 0.1))
-	# VTX-антенна назад-вверх с капсулой + два RX-усика
-	var ab := Basis(Vector3(0, 0, 1), deg_to_rad(65.0))
-	_append(m, _cyl(0.0028, 0.085), Transform3D(ab, Vector3(-0.1, y0 + 0.045, 0)), Color(0.1, 0.1, 0.1))
-	_append(m, _sph(0.0075), Transform3D(Basis(), Vector3(-0.138, y0 + 0.063, 0)), Color(0.85, 0.85, 0.85) if variant != 3 else Color(0.15, 0.15, 0.15))
+	_append(m, _box(0.018, 0.018, 0.018), Transform3D(cb, Vector3(0.087, y0 + 0.016, 0)), Color(0.1, 0.1, 0.1))
+	_append(m, _sph(0.0055), Transform3D(Basis(), Vector3(0.098, y0 + 0.02, 0)), Color(0.2, 0.35, 0.6))
+	# липо 6S лежит сверху вдоль под ремешком, XT60 сбоку
+	_append(m, _box(0.14, 0.04, 0.047), Transform3D(Basis(), Vector3(-0.028, y0 + 0.055, 0)), bat_c)
+	_append(m, _box(0.02, 0.046, 0.052), Transform3D(Basis(), Vector3(-0.028, y0 + 0.055, 0)), Color(0.05, 0.05, 0.05))
+	_append(m, _box(0.014, 0.01, 0.014), Transform3D(Basis(), Vector3(-0.1, y0 + 0.026, 0.024)), Color(0.85, 0.7, 0.1))
+	# DeadCat: передние лучи шире и вперёд, задние уже; моторы с колоколами и TPU-бамперами
+	var mots: Array = [Vector3(0.135, 0, 0.1), Vector3(0.135, 0, -0.1), Vector3(-0.135, 0, 0.084), Vector3(-0.135, 0, -0.084)]
+	var arm_roots: Array = [Vector3(0.075, 0, 0.02), Vector3(0.075, 0, -0.02), Vector3(-0.09, 0, 0.02), Vector3(-0.09, 0, -0.02)]
+	var props: Array = []
+	for i in mots.size():
+		var mp: Vector3 = mots[i]
+		var ar: Vector3 = arm_roots[i]
+		var d2: Vector3 = mp - ar
+		var yawa := atan2(d2.z, d2.x)
+		_append(m, _box(d2.length() + 0.03, 0.006, 0.016), Transform3D(Basis(Vector3.UP, -yawa), (ar + mp) * 0.5 + Vector3(0, y0 + 0.005, 0)), CARBON)
+		_append(m, _cyl(0.0135, 0.017), Transform3D(Basis(), mp + Vector3(0, y0 + 0.014, 0)), Color(0.2, 0.2, 0.22))
+		_append(m, _cyl(0.014, 0.006), Transform3D(Basis(), mp + Vector3(0, y0 + 0.026, 0)), Color(0.5, 0.5, 0.53))
+		_append(m, _box(0.024, 0.012, 0.024), Transform3D(Basis(), mp + Vector3(0, y0 - 0.004, 0)), accent)
+		var pn := _prop_node("Prop%d" % i, mp + Vector3(0, y0 + 0.032, 0), 3, 1.0, prop_c)
+		root.add_child(pn)
+		props.append(pn)
+	# антенны: два диполя V-образно назад + шток VTX вверх-назад
 	for sz: float in [1.0, -1.0]:
-		_append(m, _cyl(0.0014, 0.055), Transform3D(Basis(Vector3(1, 0, 0), sz * deg_to_rad(40.0)).rotated(Vector3(0, 0, 1), deg_to_rad(65.0)), Vector3(-0.078, y0 + 0.03, sz * 0.022)), Color(0.1, 0.1, 0.1))
+		var db := Basis(Vector3.UP, sz * deg_to_rad(28.0)) * Basis(Vector3(0, 0, 1), deg_to_rad(80.0))
+		_append(m, _cyl(0.0022, 0.1), Transform3D(db, Vector3(-0.135, y0 + 0.026, sz * 0.028)), Color(0.1, 0.1, 0.1))
+	var ab := Basis(Vector3(0, 0, 1), deg_to_rad(55.0))
+	_append(m, _cyl(0.0028, 0.075), Transform3D(ab, Vector3(-0.108, y0 + 0.05, 0)), Color(0.1, 0.1, 0.1))
+	_append(m, _sph(0.007), Transform3D(Basis(), Vector3(-0.138, y0 + 0.071, 0)), Color(0.8, 0.8, 0.8) if variant != 3 else Color(0.15, 0.15, 0.15))
 	match variant:
 		1:
 			# БЧ под брюхом: цилиндр с носовым конусом и двумя скобами подвеса
-			_append(m, _cyl(0.024, 0.13), Transform3D(Basis(Vector3(0, 0, 1), deg_to_rad(90.0)), Vector3(0.005, -0.006, 0)), Color(0.33, 0.36, 0.26))
-			_append(m, _cyl(0.005, 0.035, 0.023), Transform3D(Basis(Vector3(0, 0, 1), deg_to_rad(-90.0)), Vector3(0.088, -0.006, 0)), Color(0.3, 0.32, 0.24))
-			for px: float in [-0.03, 0.045]:
-				_append(m, _box(0.012, 0.03, 0.052), Transform3D(Basis(), Vector3(px, y0 - 0.014, 0)), Color(0.09, 0.09, 0.09))
+			_append(m, _cyl(0.024, 0.13), Transform3D(Basis(Vector3(0, 0, 1), deg_to_rad(90.0)), Vector3(0.0, -0.004, 0)), Color(0.33, 0.36, 0.26))
+			_append(m, _cyl(0.005, 0.035, 0.023), Transform3D(Basis(Vector3(0, 0, 1), deg_to_rad(-90.0)), Vector3(0.083, -0.004, 0)), Color(0.3, 0.32, 0.24))
+			for px: float in [-0.035, 0.04]:
+				_append(m, _box(0.012, 0.032, 0.052), Transform3D(Basis(), Vector3(px, y0 - 0.015, 0)), Color(0.09, 0.09, 0.09))
 		2:
 			# GPS-таблетка на стойке сзади
-			_append(m, _cyl(0.0025, 0.05), Transform3D(Basis(), Vector3(-0.055, y0 + 0.06, 0.014)), Color(0.09, 0.09, 0.09))
-			_append(m, _cyl(0.014, 0.007), Transform3D(Basis(), Vector3(-0.055, y0 + 0.088, 0.014)), Color(0.9, 0.9, 0.9))
+			_append(m, _cyl(0.0025, 0.05), Transform3D(Basis(), Vector3(-0.06, y0 + 0.06, 0.016)), Color(0.09, 0.09, 0.09))
+			_append(m, _cyl(0.014, 0.007), Transform3D(Basis(), Vector3(-0.06, y0 + 0.088, 0.016)), Color(0.9, 0.9, 0.9))
 		3:
-			# красный габарит-светлячок сзади
-			_append(m, _sph(0.004), Transform3D(Basis(), Vector3(-0.07, y0 + 0.036, 0)), Color(0.9, 0.12, 0.1))
+			_append(m, _sph(0.004), Transform3D(Basis(), Vector3(-0.075, y0 + 0.036, 0)), Color(0.9, 0.12, 0.1))
 	root.add_child(_mi(m, "Body"))
-	# пропеллеры — отдельные узлы (вращение по газу); 7" трёхлопастные (HQProp 7×4×3-класс)
-	var props: Array = []
-	for sx: float in [1.0, -1.0]:
-		for sz: float in [1.0, -1.0]:
-			var p := Node3D.new()
-			p.name = "Prop%d%d" % [int(sx > 0), int(sz > 0)]
-			p.position = Vector3(sx * 0.104, y0 + 0.034, sz * 0.104)
-			var pm := ArrayMesh.new()
-			_append(pm, _cyl(0.006, 0.01), Transform3D(Basis(), Vector3.ZERO), Color(0.12, 0.12, 0.12))
-			var blade := _prop_blade()
-			for k in 3:
-				_append_mesh(pm, blade, Transform3D(Basis(Vector3.UP, TAU * k / 3.0), Vector3.ZERO), prop_c)
-			p.add_child(_mi(pm, "PropMesh"))
-			root.add_child(p)
-			props.append(p)
 	return {"root": root, "props": props}
 
 
 ## Лопасть винта: полоса сечений вдоль радиуса — хорда широкая в средней трети и сходит
 ## к скруглённому кончику, крутка (twist) падает от корня к кончику, как у реального винта.
-func _prop_blade(s: float = 1.0) -> ArrayMesh:
+func _prop_blade(s: float = 1.0, chord_k: float = 1.0) -> ArrayMesh:
 	var m := ArrayMesh.new()
 	var rr: Array = [0.012, 0.022, 0.034, 0.047, 0.059, 0.070, 0.079, 0.086, 0.089]
 	var cc: Array = [0.010, 0.015, 0.019, 0.020, 0.019, 0.016, 0.013, 0.008, 0.002]
-	if s != 1.0:
+	if s != 1.0 or chord_k != 1.0:
 		for i in rr.size():
 			rr[i] = rr[i] * s
-			cc[i] = cc[i] * s
+			cc[i] = cc[i] * s * chord_k
 	var tw: Array = [32.0, 26.0, 21.0, 17.0, 14.0, 12.0, 10.0, 9.0, 8.0]
 	var up := PackedVector3Array(); var dn := PackedVector3Array()
 	var nrm := PackedVector3Array()
@@ -726,13 +728,13 @@ func _prop_blade(s: float = 1.0) -> ArrayMesh:
 
 
 ## Общий помощник: узел пропеллера с N лопастями масштаба s в точке pos.
-func _prop_node(nm: String, pos: Vector3, blades: int, s: float, col: Color) -> Node3D:
+func _prop_node(nm: String, pos: Vector3, blades: int, s: float, col: Color, chord_k: float = 1.0) -> Node3D:
 	var p := Node3D.new()
 	p.name = nm
 	p.position = pos
 	var pm := ArrayMesh.new()
 	_append(pm, _cyl(0.006 * maxf(s, 1.0), 0.01 * maxf(s, 1.0)), Transform3D(Basis(), Vector3.ZERO), Color(0.12, 0.12, 0.12))
-	var blade := _prop_blade(s)
+	var blade := _prop_blade(s, chord_k)
 	for k in blades:
 		_append_mesh(pm, blade, Transform3D(Basis(Vector3.UP, TAU * k / blades), Vector3.ZERO), col)
 	p.add_child(_mi(pm, "PropMesh"))
@@ -756,6 +758,7 @@ func drone_fpv5(variant: int) -> Dictionary:
 			_append(m, _box(0.1, 0.005, 0.013), Transform3D(Basis(Vector3.UP, -ang), Vector3(sx * 0.047, y0 + 0.005, sz * 0.047)), CARBON)
 			_append(m, _cyl(0.011, 0.014), Transform3D(Basis(), Vector3(sx * 0.08, y0 + 0.014, sz * 0.08)), Color(0.22, 0.22, 0.24))
 			_append(m, _cyl(0.0115, 0.005), Transform3D(Basis(), Vector3(sx * 0.08, y0 + 0.023, sz * 0.08)), Color(0.55, 0.55, 0.58))
+			_append(m, _box(0.02, 0.01, 0.02), Transform3D(Basis(), Vector3(sx * 0.08, y0 - 0.003, sz * 0.08)), accent)
 	for sz: float in [1.0, -1.0]:
 		_append(m, _box(0.024, 0.024, 0.003), Transform3D(Basis(), Vector3(0.052, y0 + 0.015, sz * 0.013)), CARBON)
 	var cb := Basis(Vector3(0, 0, 1), deg_to_rad(-30.0))
@@ -766,6 +769,9 @@ func drone_fpv5(variant: int) -> Dictionary:
 	var ab := Basis(Vector3(0, 0, 1), deg_to_rad(65.0))
 	_append(m, _cyl(0.0024, 0.06), Transform3D(ab, Vector3(-0.068, y0 + 0.035, 0)), Color(0.1, 0.1, 0.1))
 	_append(m, _sph(0.006), Transform3D(Basis(), Vector3(-0.095, y0 + 0.048, 0)), Color(0.85, 0.85, 0.85) if variant != 3 else Color(0.15, 0.15, 0.15))
+	for sz: float in [1.0, -1.0]:
+		var db := Basis(Vector3.UP, sz * deg_to_rad(30.0)) * Basis(Vector3(0, 0, 1), deg_to_rad(82.0))
+		_append(m, _cyl(0.0016, 0.07), Transform3D(db, Vector3(-0.06, y0 + 0.02, sz * 0.02)), Color(0.1, 0.1, 0.1))
 	root.add_child(_mi(m, "Body"))
 	var props: Array = []
 	for sx: float in [1.0, -1.0]:
@@ -780,79 +786,100 @@ func drone_fpv5(variant: int) -> Dictionary:
 ## mavic — складной потребительский квадрокоптер класса DJI Mavic 3 (корпус-монокок 231×98×95,
 ## лучи из углов, 2-лопастные винты, гимбал-камера в рамке спереди). Скины: серый/олива/тёмный.
 func drone_mavic(variant: int) -> Dictionary:
+	# Референс: DJI Mavic 3 (фото Wikimedia) — вытянутый обтекаемый корпус (двухтоновый серый),
+	# КРУПНЫЙ прямоугольный камера-блок Hasselblad под носом, передние лучи низко от носа,
+	# задние — с «коленом» вверх и плавниками-ногами вниз; узкие 2-лопастные винты.
 	var root := Node3D.new()
 	root.name = "DroneMavicV%d" % variant
 	var m := ArrayMesh.new()
-	var body_c: Color = [Color(0.45, 0.46, 0.48), Color(0.36, 0.4, 0.3), Color(0.16, 0.16, 0.18)][variant - 1]
-	var dark := Color(0.14, 0.14, 0.15)
-	var y0 := 0.035
-	# корпус: скошенный к носу монокок + «спина» и брюхо-сенсоры
-	var hull := _sloped_box(Vector3(0.21, 0.062, 0.088), 0.05)
-	_append_mesh(m, hull, Transform3D(Basis(Vector3.UP, PI), Vector3(0.0, y0 + 0.031, 0)), body_c)
-	_append(m, _box(0.13, 0.014, 0.07), Transform3D(Basis(), Vector3(-0.02, y0 + 0.068, 0)), body_c)
-	_append(m, _box(0.05, 0.008, 0.04), Transform3D(Basis(), Vector3(0.0, y0 - 0.002, 0)), dark)
-	# гимбал-камера спереди: рамка + сфера + объектив
-	_append(m, _box(0.03, 0.036, 0.05), Transform3D(Basis(), Vector3(0.1, y0 + 0.022, 0)), dark)
-	_append(m, _sph(0.018), Transform3D(Basis(), Vector3(0.108, y0 + 0.02, 0)), Color(0.2, 0.2, 0.22))
-	_append(m, _cyl(0.009, 0.008), Transform3D(Basis(Vector3(0, 0, 1), deg_to_rad(90.0)), Vector3(0.121, y0 + 0.02, 0)), Color(0.05, 0.05, 0.05))
-	_append(m, _sph(0.006), Transform3D(Basis(), Vector3(0.126, y0 + 0.02, 0)), Color(0.25, 0.4, 0.65))
+	var body_c: Color = [Color(0.42, 0.43, 0.45), Color(0.36, 0.4, 0.3), Color(0.16, 0.16, 0.18)][variant - 1]
+	var top_c: Color = [Color(0.55, 0.56, 0.58), Color(0.4, 0.44, 0.34), Color(0.2, 0.2, 0.22)][variant - 1]
+	var dark := Color(0.13, 0.13, 0.14)
+	var y0 := 0.05
+	# корпус: длинный низкий, сужается к хвосту (скос назад) и к носу сверху; «спина» светлее
+	var hull := _sloped_box(Vector3(0.2, 0.05, 0.082), 0.045)
+	_append_mesh(m, hull, Transform3D(Basis(Vector3.UP, PI), Vector3(-0.005, y0 + 0.02, 0)), body_c)
+	var back := _sloped_box(Vector3(0.17, 0.024, 0.072), 0.05)
+	_append_mesh(m, back, Transform3D(Basis(), Vector3(-0.008, y0 + 0.055, 0)), top_c)
+	_append(m, _box(0.06, 0.01, 0.05), Transform3D(Basis(), Vector3(-0.01, y0 - 0.002, 0)), dark)
+	# камера-блок под носом: крупный прямоугольный, большой + малый объективы, «глазки»-сенсоры
+	_append(m, _box(0.048, 0.046, 0.058), Transform3D(Basis(Vector3(0, 0, 1), deg_to_rad(-6.0)), Vector3(0.085, y0 + 0.004, 0)), dark)
+	_append(m, _cyl(0.016, 0.007), Transform3D(Basis(Vector3(0, 0, 1), deg_to_rad(90.0)), Vector3(0.111, y0 + 0.008, -0.011)), Color(0.05, 0.05, 0.05))
+	_append(m, _sph(0.011), Transform3D(Basis(), Vector3(0.114, y0 + 0.008, -0.011)), Color(0.22, 0.3, 0.45))
+	_append(m, _cyl(0.008, 0.006), Transform3D(Basis(Vector3(0, 0, 1), deg_to_rad(90.0)), Vector3(0.111, y0 + 0.017, 0.013)), Color(0.05, 0.05, 0.05))
+	for sz: float in [1.0, -1.0]:
+		_append(m, _sph(0.005), Transform3D(Basis(), Vector3(0.095, y0 + 0.038, sz * 0.024)), Color(0.06, 0.06, 0.07))
 	var props: Array = []
-	# лучи: передние — вперёд-вбок, задние — назад-вбок чуть вверх; моторы плоские
+	# передние лучи: от низа носа вперёд-вбок, тонкие, моторы низко;
+	# задние: от хвоста назад-вбок с подъёмом («колено»), мотор выше, под мотором плавник-нога
 	for sx: float in [1.0, -1.0]:
 		for sz: float in [1.0, -1.0]:
 			var front := sx > 0.0
-			var ax := 0.085 * sx
-			var mx := (0.14 if front else -0.15)
-			var mz := sz * (0.115 if front else 0.1)
-			var arm_mid := Vector3((ax + mx) * 0.5, y0 + (0.03 if front else 0.05), mz * 0.55)
-			var yawa := atan2(mz, mx - ax)
-			_append(m, _box(Vector3(ax, 0, sz * 0.03).distance_to(Vector3(mx, 0, mz)) + 0.02, 0.008, 0.016),
-				Transform3D(Basis(Vector3.UP, -yawa), arm_mid), body_c)
-			var my := y0 + (0.032 if front else 0.052)
-			_append(m, _cyl(0.0125, 0.012), Transform3D(Basis(), Vector3(mx, my, mz)), dark)
-			var pn := _prop_node("Prop%d%d" % [int(sx > 0), int(sz > 0)], Vector3(mx, my + 0.009, mz), 2, 1.06, dark)
+			var ar := Vector3(0.07, y0 + 0.008, sz * 0.03) if front else Vector3(-0.075, y0 + 0.02, sz * 0.028)
+			var mp := Vector3(0.145, y0 + 0.006, sz * 0.118) if front else Vector3(-0.155, y0 + 0.055, sz * 0.105)
+			var d2 := mp - ar
+			var yawa := atan2(d2.z, d2.x)
+			var pitcha := atan2(d2.y, Vector2(d2.x, d2.z).length())
+			var bb := Basis(Vector3.UP, -yawa) * Basis(Vector3(0, 0, 1), pitcha)
+			_append(m, _box(d2.length() + 0.02, 0.007, 0.013), Transform3D(bb, (ar + mp) * 0.5), body_c)
+			_append(m, _cyl(0.0125, 0.012), Transform3D(Basis(), mp + Vector3(0, 0.006, 0)), dark)
+			if not front:
+				_append(m, _box(0.006, 0.034, 0.012), Transform3D(Basis(), mp + Vector3(0, -0.016, 0)), body_c)
+			var pn := _prop_node("Prop%d%d" % [int(sx > 0), int(sz > 0)], mp + Vector3(0, 0.014, 0), 2, 1.06, dark, 0.7)
 			root.add_child(pn)
 			props.append(pn)
-	# ножки-выступы
-	for off: Vector3 in [Vector3(0.06, 0, 0.03), Vector3(0.06, 0, -0.03), Vector3(-0.08, 0, 0.028), Vector3(-0.08, 0, -0.028)]:
-		_append(m, _box(0.012, 0.018, 0.012), Transform3D(Basis(), Vector3(off.x, y0 - 0.008, off.z)), dark)
+	# передние ножки под носом
+	for sz: float in [1.0, -1.0]:
+		_append(m, _box(0.008, 0.02, 0.01), Transform3D(Basis(), Vector3(0.055, y0 - 0.028, sz * 0.03)), dark)
 	root.add_child(_mi(m, "Body"))
 	return {"root": root, "props": props}
 
 
 ## mship — тяжёлая матка-носитель: гексакоптер ~1.1 м, батарейный блок, лыжи, подвес FPV снизу.
 func drone_mother(variant: int) -> Dictionary:
+	# Референс: украинский тяжёлый гексакоптер «Вампир» (фото Wikimedia, UA Vampire UCAV) —
+	# круглая дисковая плита с «грибом»-обтекателем сверху, 6 тонких трубчатых лучей,
+	# длинные УЗКИЕ 2-лопастные винты, блоки электроники и подвес под брюхом,
+	# 4 наклонные «паучьи» ноги-палки. Всё чёрное каркасное.
 	var root := Node3D.new()
 	root.name = "DroneMotherV%d" % variant
 	var m := ArrayMesh.new()
-	var body_c: Color = [Color(0.2, 0.22, 0.2), Color(0.32, 0.36, 0.26), Color(0.12, 0.12, 0.13)][variant - 1]
-	var accent: Color = [Color(0.9, 0.72, 0.12), Color(0.42, 0.46, 0.34), Color(0.2, 0.2, 0.22)][variant - 1]
-	var y0 := 0.42                                # клиренс: под брюхом висит подвес
-	var hex := CylinderMesh.new()
-	hex.top_radius = 0.15; hex.bottom_radius = 0.15; hex.height = 0.035; hex.radial_segments = 6
-	_append(m, hex, Transform3D(Basis(), Vector3(0, y0, 0)), body_c)
-	_append(m, _box(0.21, 0.09, 0.13), Transform3D(Basis(), Vector3(-0.01, y0 + 0.065, 0)), accent)
-	_append(m, _cyl(0.003, 0.09), Transform3D(Basis(), Vector3(-0.06, y0 + 0.15, 0.04)), Color(0.09, 0.09, 0.09))
-	_append(m, _cyl(0.02, 0.008), Transform3D(Basis(), Vector3(-0.06, y0 + 0.2, 0.04)), Color(0.9, 0.9, 0.9))
+	var body_c: Color = [Color(0.14, 0.14, 0.15), Color(0.28, 0.31, 0.23), Color(0.1, 0.1, 0.11)][variant - 1]
+	var tube_c: Color = [Color(0.1, 0.1, 0.11), Color(0.22, 0.25, 0.19), Color(0.08, 0.08, 0.09)][variant - 1]
+	var y0 := 0.36                                 # клиренс под подвес и ноги
+	# дисковая плита + «гриб»-обтекатель на ноге + GPS-шток
+	_append(m, _cyl(0.155, 0.02), Transform3D(Basis(), Vector3(0, y0, 0)), body_c)
+	_append(m, _cyl(0.02, 0.05), Transform3D(Basis(), Vector3(0, y0 + 0.035, 0)), tube_c)
+	_append(m, _cyl(0.075, 0.032, 0.095), Transform3D(Basis(), Vector3(0, y0 + 0.075, 0)), body_c)
+	_append(m, _sph(0.075, true), Transform3D(Basis(), Vector3(0, y0 + 0.09, 0)), body_c)
+	_append(m, _cyl(0.0025, 0.06), Transform3D(Basis(), Vector3(0.06, y0 + 0.05, -0.06)), Color(0.09, 0.09, 0.09))
+	_append(m, _cyl(0.013, 0.006), Transform3D(Basis(), Vector3(0.06, y0 + 0.083, -0.06)), Color(0.85, 0.85, 0.85))
+	# блоки электроники/батарей под плитой + подвес-рельсы с зацепами
+	_append(m, _box(0.12, 0.055, 0.09), Transform3D(Basis(), Vector3(0.01, y0 - 0.05, 0)), Color(0.09, 0.09, 0.1))
+	_append(m, _box(0.08, 0.04, 0.06), Transform3D(Basis(), Vector3(-0.07, y0 - 0.042, 0.01)), Color(0.12, 0.12, 0.13))
+	for pz: float in [0.035, -0.035]:
+		_append(m, _box(0.16, 0.01, 0.012), Transform3D(Basis(), Vector3(0, y0 - 0.095, pz)), tube_c)
+	_append(m, _box(0.012, 0.01, 0.08), Transform3D(Basis(), Vector3(0.06, y0 - 0.095, 0)), tube_c)
+	_append(m, _box(0.012, 0.01, 0.08), Transform3D(Basis(), Vector3(-0.06, y0 - 0.095, 0)), tube_c)
 	var props: Array = []
 	for k in 6:
 		var a := TAU * k / 6.0 + PI / 6.0
 		var dirv := Vector3(cos(a), 0, sin(a))
-		_append(m, _box(0.3, 0.012, 0.028), Transform3D(Basis(Vector3.UP, -a), Vector3(0, y0 + 0.01, 0) + dirv * 0.23), body_c)
-		var mp := Vector3(0, y0 + 0.018, 0) + dirv * 0.38
-		_append(m, _cyl(0.021, 0.026), Transform3D(Basis(), mp), Color(0.22, 0.22, 0.24))
-		var pn := _prop_node("Prop%d" % k, mp + Vector3(0, 0.018, 0), 2, 2.1, Color(0.13, 0.13, 0.14))
+		# трубчатый луч
+		var tb := Basis(Vector3.UP, -a) * Basis(Vector3(0, 0, 1), deg_to_rad(90.0))
+		_append(m, _cyl(0.0075, 0.31), Transform3D(tb, Vector3(0, y0 + 0.012, 0) + dirv * 0.245), tube_c)
+		var mp := Vector3(0, y0 + 0.016, 0) + dirv * 0.4
+		_append(m, _cyl(0.017, 0.03), Transform3D(Basis(), mp), Color(0.16, 0.16, 0.17))
+		var pn := _prop_node("Prop%d" % k, mp + Vector3(0, 0.02, 0), 2, 2.35, Color(0.1, 0.1, 0.11), 0.5)
 		root.add_child(pn)
 		props.append(pn)
-	# посадочные лыжи
-	for sz: float in [1.0, -1.0]:
-		for px: float in [0.1, -0.1]:
-			_append(m, _cyl(0.006, 0.24), Transform3D(Basis(Vector3(1, 0, 0), sz * deg_to_rad(16.0)), Vector3(px, y0 - 0.13, sz * 0.14)), body_c)
-		_append(m, _box(0.36, 0.012, 0.012), Transform3D(Basis(), Vector3(0, y0 - 0.25, sz * 0.175)), body_c)
-	# подвес FPV: две штанги с захватами под брюхом
-	for px: float in [0.05, -0.05]:
-		_append(m, _box(0.014, 0.1, 0.014), Transform3D(Basis(), Vector3(px, y0 - 0.07, 0)), Color(0.09, 0.09, 0.09))
-		_append(m, _box(0.016, 0.014, 0.09), Transform3D(Basis(), Vector3(px, y0 - 0.125, 0)), Color(0.09, 0.09, 0.09))
+	# 4 наклонные ноги-палки (паук) с резиновыми пятками
+	for k in 4:
+		var a := TAU * k / 4.0 + PI / 4.0
+		var dirv := Vector3(cos(a), 0, sin(a))
+		var lb := Basis(Vector3.UP, -a) * Basis(Vector3(0, 0, 1), deg_to_rad(62.0))
+		_append(m, _cyl(0.0055, 0.4), Transform3D(lb, Vector3(0, y0 - 0.17, 0) + dirv * 0.11), tube_c)
+		_append(m, _sph(0.009), Transform3D(Basis(), Vector3(0, y0 - 0.264, 0) + dirv * 0.287), Color(0.08, 0.08, 0.08))
 	root.add_child(_mi(m, "Body"))
 	return {"root": root, "props": props}
 
