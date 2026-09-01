@@ -673,7 +673,7 @@ func drone_fpv7(variant: int) -> Dictionary:
 			# красный габарит-светлячок сзади
 			_append(m, _sph(0.004), Transform3D(Basis(), Vector3(-0.07, y0 + 0.036, 0)), Color(0.9, 0.12, 0.1))
 	root.add_child(_mi(m, "Body"))
-	# пропеллеры — отдельные узлы (вращение по газу); 7" = диск r0.089
+	# пропеллеры — отдельные узлы (вращение по газу); 7" трёхлопастные (HQProp 7×4×3-класс)
 	var props: Array = []
 	for sx: float in [1.0, -1.0]:
 		for sz: float in [1.0, -1.0]:
@@ -681,14 +681,44 @@ func drone_fpv7(variant: int) -> Dictionary:
 			p.name = "Prop%d%d" % [int(sx > 0), int(sz > 0)]
 			p.position = Vector3(sx * 0.104, y0 + 0.034, sz * 0.104)
 			var pm := ArrayMesh.new()
-			_append(pm, _cyl(0.005, 0.009), Transform3D(Basis(), Vector3.ZERO), Color(0.12, 0.12, 0.12))
-			for k in 2:
-				var bb := Basis(Vector3.UP, PI * k) * Basis(Vector3(1, 0, 0), deg_to_rad(9.0))
-				_append(pm, _box(0.078, 0.0016, 0.013), Transform3D(bb, bb * Vector3(0.049, 0, 0)), prop_c)
+			_append(pm, _cyl(0.006, 0.01), Transform3D(Basis(), Vector3.ZERO), Color(0.12, 0.12, 0.12))
+			var blade := _prop_blade()
+			for k in 3:
+				_append_mesh(pm, blade, Transform3D(Basis(Vector3.UP, TAU * k / 3.0), Vector3.ZERO), prop_c)
 			p.add_child(_mi(pm, "PropMesh"))
 			root.add_child(p)
 			props.append(p)
 	return {"root": root, "props": props}
+
+
+## Лопасть винта: полоса сечений вдоль радиуса — хорда широкая в средней трети и сходит
+## к скруглённому кончику, крутка (twist) падает от корня к кончику, как у реального винта.
+func _prop_blade() -> ArrayMesh:
+	var m := ArrayMesh.new()
+	var rr: Array = [0.012, 0.022, 0.034, 0.047, 0.059, 0.070, 0.079, 0.086, 0.089]
+	var cc: Array = [0.010, 0.015, 0.019, 0.020, 0.019, 0.016, 0.013, 0.008, 0.002]
+	var tw: Array = [32.0, 26.0, 21.0, 17.0, 14.0, 12.0, 10.0, 9.0, 8.0]
+	var up := PackedVector3Array(); var dn := PackedVector3Array()
+	var nrm := PackedVector3Array()
+	for i in rr.size():
+		var th: float = deg_to_rad(tw[i])
+		var half: float = cc[i] * 0.5
+		up.append(Vector3(rr[i], sin(th) * half, cos(th) * half))
+		dn.append(Vector3(rr[i], -sin(th) * half, -cos(th) * half))
+		nrm.append(Vector3(0, cos(th), -sin(th)))
+	var v := PackedVector3Array(); var n := PackedVector3Array()
+	for i in rr.size() - 1:
+		# верхняя сторона (два треугольника квада) и нижняя с обратным порядком
+		for tri: Array in [[up[i], dn[i], up[i + 1]], [dn[i], dn[i + 1], up[i + 1]]]:
+			for q in 3: v.append(tri[q]); n.append(nrm[i])
+		for tri: Array in [[up[i], up[i + 1], dn[i]], [dn[i], up[i + 1], dn[i + 1]]]:
+			for q in 3: v.append(tri[q]); n.append(-nrm[i])
+	var arr := []
+	arr.resize(Mesh.ARRAY_MAX)
+	arr[Mesh.ARRAY_VERTEX] = v
+	arr[Mesh.ARRAY_NORMAL] = n
+	m.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+	return m
 
 
 ## Дрон «в висении» для галереи --unitshot (на земле тонет в траве/буграх рельефа).

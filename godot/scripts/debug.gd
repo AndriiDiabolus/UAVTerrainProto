@@ -146,6 +146,11 @@ func _schedule_screenshot() -> void:
 		for _i in 90:
 			await get_tree().process_frame
 		await RenderingServer.frame_post_draw
+	if "--third" in OS.get_cmdline_user_args() and main.get("droneview") != null:
+		main.droneview.toggle_third()
+		for _i in 45:
+			await get_tree().process_frame
+		await RenderingServer.frame_post_draw
 	if "--aircam" in OS.get_cmdline_user_args() and main.get("airtargets") != null:
 		for _i in 30:
 			await get_tree().process_frame

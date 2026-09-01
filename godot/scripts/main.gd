@@ -88,7 +88,18 @@ func _ready() -> void:
 	apply_quality(quality)
 	_build_selftest()
 	_build_debug()
+	_build_droneview()
 	_build_menu()
+
+
+var droneview: Node3D
+
+func _build_droneview() -> void:
+	droneview = Node3D.new()
+	droneview.name = "DroneView"
+	droneview.set_script(load("res://scripts/droneview.gd"))
+	add_child(droneview)
+	droneview.setup(self)
 
 
 func _build_menu() -> void:

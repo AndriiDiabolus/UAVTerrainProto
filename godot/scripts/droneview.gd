@@ -1,0 +1,131 @@
+extends Node3D
+## Внешняя модель дрона игрока (units.drone_fpv7) и всё вокруг неё:
+## - вид от ТРЕТЬЕГО лица: клавиша U — 1-е ⇄ 3-е лицо; chase-камера с плавным хвостом,
+##   модель наклоняется как корпус flycam.body, пропеллеры крутятся по газу;
+## - ВЕРТУШКА в главном меню: модель крупно вращается в трёх осях перед камерой облёта;
+## - СКИНЫ 1..3 (классика / полевой / ночной) — пункт меню «скин», user://settings.cfg.
+## В FPV-очках (F) модель скрыта (иначе видна изнутри камерой видеотракта).
+
+var main: Node3D
+var skin := 1
+var third := false
+const SKIN_NAMES := ["классика", "полевой", "ночной"]
+
+var model: Node3D
+var _props: Array = []
+var _chase: Camera3D
+var _spin := 0.0
+var _menu_t := 0.0
+
+
+func setup(m: Node3D) -> void:
+	main = m
+	process_priority = 30                       # после menu._process (позиция от камеры облёта)
+	var cfg := ConfigFile.new()
+	if cfg.load("user://settings.cfg") == OK:
+		skin = clampi(int(cfg.get_value("game", "drone_skin", 1)), 1, 3)
+	_build_model()
+	_chase = Camera3D.new()
+	_chase.near = 0.2
+	_chase.far = 150000.0
+	_chase.fov = 72.0
+	add_child(_chase)
+
+
+func _build_model() -> void:
+	if model != null:
+		model.queue_free()
+	var U = load("res://scripts/units.gd").new()
+	var d: Dictionary = U.drone_fpv7(skin)
+	model = d.root
+	_props = d.props
+	model.visible = false
+	add_child(model)
+
+
+func set_skin(s: int) -> void:
+	skin = posmod(s - 1, 3) + 1
+	var cfg := ConfigFile.new()
+	cfg.load("user://settings.cfg")
+	cfg.set_value("game", "drone_skin", skin)
+	cfg.save("user://settings.cfg")
+	_build_model()
+
+
+func skin_name() -> String:
+	return SKIN_NAMES[skin - 1]
+
+
+func toggle_third() -> void:
+	third = not third
+	if third and main.hud != null and main.hud.fpv_on:
+		main.hud._toggle_fpv()                  # из очков выходим в обычный вид
+	if not third:
+		_to_first()
+	elif main.hud != null and main.hud.has_method("toast"):
+		main.hud.toast("ВИД · ТРЕТЬЕ ЛИЦО", "U — вернуться к виду с борта", Color(0.62, 0.86, 1.0))
+
+
+func _to_first() -> void:
+	if _chase.current:
+		main.cam.make_current()
+	model.visible = false
+	if main.hud != null and main.hud.has_method("toast"):
+		main.hud.toast("ВИД · С БОРТА", "", Color(0.62, 0.86, 1.0))
+
+
+func _unhandled_input(e: InputEvent) -> void:
+	if e is InputEventKey and e.pressed and not e.echo and e.keycode == KEY_U:
+		if main == null or main.get("menu_open") == true:
+			return
+		toggle_third()
+
+
+func _process(dt: float) -> void:
+	if main == null or main.cam == null or model == null:
+		return
+	var thr := 0.35
+	if main.cam.get("throttle") != null:
+		thr = clampf(float(main.cam.throttle), 0.0, 1.0)
+	_spin += dt * (16.0 + 120.0 * thr)
+	var menu: bool = main.get("menu_open") == true
+	var fpv: bool = main.hud != null and main.hud.get("fpv_on") == true
+
+	if menu:
+		# вертушка: крупная модель перед камерой облёта, вращение в трёх осях
+		if _chase.current:
+			main.cam.make_current()
+		_menu_t += dt
+		model.visible = true
+		var ct: Transform3D = main.cam.global_transform
+		var rot := Basis(Vector3.UP, _menu_t * 0.7) \
+			* Basis(Vector3(1, 0, 0), sin(_menu_t * 0.41) * 0.34) \
+			* Basis(Vector3(0, 0, 1), sin(_menu_t * 0.23) * 0.2)
+		var pos: Vector3 = ct * Vector3(1.05, -0.12, -3.6)
+		model.global_transform = Transform3D(ct.basis * rot * Basis.from_scale(Vector3.ONE * 6.5), pos)
+	elif third and not fpv and not main.get("replaying"):
+		model.visible = true
+		var b: Basis = main.cam.body if main.cam.get("body") != null else main.cam.global_transform.basis
+		var dp: Vector3 = main.cam.global_position
+		model.global_transform = Transform3D(b, dp)
+		var fwd: Vector3 = -b.z
+		fwd.y = 0.0
+		fwd = fwd.normalized() if fwd.length_squared() > 0.001 else Vector3.FORWARD
+		var tgt: Vector3 = dp - fwd * 1.55 + Vector3(0, 0.42, 0)
+		tgt.y = maxf(tgt.y, main.height_at(tgt.x, tgt.z) + 0.35)
+		var k := 1.0 - exp(-dt * 8.0)
+		if _chase.global_position.distance_to(tgt) > 60.0:
+			k = 1.0                              # телепорт/рестарт — догоняем мгновенно
+		_chase.global_position = _chase.global_position.lerp(tgt, k)
+		_chase.look_at(dp + fwd * 1.1 + Vector3(0, 0.06, 0), Vector3.UP)
+		if not _chase.current:
+			_chase.make_current()
+	else:
+		model.visible = false
+		if _chase.current:
+			main.cam.make_current()
+
+	if model.visible:
+		for i in _props.size():
+			var pr: Node3D = _props[i]
+			pr.rotation.y = _spin * (1.0 if i % 2 == 0 else -1.0)

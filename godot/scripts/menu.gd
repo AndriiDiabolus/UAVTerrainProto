@@ -12,7 +12,7 @@ var replay_pick := 0
 var replay_files: PackedStringArray = []
 var _orbit_t := 0.0
 var _panel: Control
-const ITEMS := ["полёт", "миссия", "реплей", "регион", "дрон", "оружие", "камера", "погода", "качество", "выход"]
+const ITEMS := ["полёт", "миссия", "реплей", "регион", "дрон", "скин", "оружие", "камера", "погода", "качество", "выход"]
 const ACC := Color(1.0, 0.78, 0.35)
 const TXT := Color(0.92, 0.92, 0.9)
 const DIM := Color(0.78, 0.78, 0.76, 0.8)
@@ -32,6 +32,8 @@ func setup(m: Node3D) -> void:
 		for f in ["--screenshot", "--bench", "--selftest", "--flytest", "--missiontest", "--coltest", "--replay", "--mission", "--targetreport", "--nomenu"]:
 			if a.begins_with(f):
 				auto = false
+	if "--menushot" in args:
+		auto = true                              # скрин меню (вертушка дрона) при --screenshot
 	set_open(auto)
 
 
@@ -103,6 +105,9 @@ func _adjust(dir: int) -> void:
 		"регион":
 			_switch_region()
 		"дрон": main.cam.cycle_drone()
+		"скин":
+			if main.get("droneview") != null:
+				main.droneview.set_skin(main.droneview.skin + dir)
 		"оружие":
 			if main.targets != null:
 				main.targets.cycle_weapon(dir)
@@ -127,6 +132,9 @@ func _activate() -> void:
 				main.telemetry.start_replay("user://flights/" + replay_files[replay_pick])
 		"регион": _switch_region()
 		"дрон": main.cam.cycle_drone()
+		"скин":
+			if main.get("droneview") != null:
+				main.droneview.set_skin(main.droneview.skin + 1)
 		"оружие":
 			if main.targets != null:
 				main.targets.cycle_weapon(1)
@@ -174,13 +182,14 @@ func _draw_panel() -> void:
 		"реплей": (replay_files[replay_pick].trim_prefix("flight_").trim_suffix(".csv") if not replay_files.is_empty() else "нет записей"),
 		"регион": ("степь" if main.region == "steppe" else "Карпаты"),
 		"дрон": "%s · T/W %.1f" % [str(main.cam.drone_name()), float(main.cam.P["tw"])],
+		"скин": (str(main.droneview.skin_name()) if main.get("droneview") != null else "—"),
 		"оружие": ("%s ×%d" % [main.targets.WEAPONS[main.targets.weapon], main.targets.weapon_ammo()]) if main.targets != null else "—",
 		"камера": (main.hud.fpv_link.camera_name() if main.hud != null and main.hud.fpv_link != null else "—"),
 		"погода": str(main.weather.label) if main.weather != null else "—",
 		"качество": main.QUALITY_NAMES[main.quality],
 		"выход": "",
 	}
-	var icons := {"полёт": "▶", "миссия": "◎", "реплей": "↺", "регион": "🗺", "дрон": "🛠", "оружие": "✚", "камера": "📷", "погода": "☀", "качество": "⚙", "выход": "⏻"}
+	var icons := {"полёт": "▶", "миссия": "◎", "реплей": "↺", "регион": "🗺", "дрон": "🛠", "скин": "🎨", "оружие": "✚", "камера": "📷", "погода": "☀", "качество": "⚙", "выход": "⏻"}
 	var y := 170.0
 	for i in ITEMS.size():
 		var it: String = ITEMS[i]
@@ -197,12 +206,13 @@ func _draw_panel() -> void:
 		y += 50.0
 	d.draw_string(f, Vector2(40, y + 6), "↑↓ пункт · ◂▸ значение · Enter — выбрать · Esc — продолжить", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, DIM)
 	# памятка справа внизу
-	var px := vp.x - 560.0; var py := vp.y - 300.0
-	d.draw_rect(Rect2(px, py, 520, 262), Color(0.03, 0.04, 0.055, 0.72))
-	d.draw_rect(Rect2(px, py, 520, 262), Color(1, 1, 1, 0.14), false, 1.0)
+	var px := vp.x - 560.0; var py := vp.y - 324.0
+	d.draw_rect(Rect2(px, py, 520, 286), Color(0.03, 0.04, 0.055, 0.72))
+	d.draw_rect(Rect2(px, py, 520, 286), Color(1, 1, 1, 0.14), false, 1.0)
 	d.draw_string(f, Vector2(px + 20, py + 26), "ПАМЯТКА  (в игре — удерживай I)", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, TXT)
 	var rows := [["W/S · A/D · E/Q", "тангаж · крен · газ"], ["мышь / ←→", "рыскание (в GPS — обзор)"],
-		["Tab · B · C", "режим · дрон · камера"], ["F · T · Y", "FPV-очки · тепловизор · палитра"],
+		["Tab · B · C", "режим · дрон · камера"], ["U", "вид с борта ⇄ третье лицо"],
+		["F · T · Y", "FPV-очки · тепловизор · палитра"],
 		["ЛКМ", "захват мыши / сброс боеприпаса"], ["N", "следующая миссия"],
 		["V · H · J", "оружие · ретранслятор · матка"],
 		["1–5, 8 · 6 · 7", "погода · туман · дождь"], ["G · M", "качество · звук"], ["R · Esc", "рестарт · меню"]]
