@@ -307,6 +307,8 @@ func _gen_house(h: Array, rng: RandomNumberGenerator) -> void:
 				continue
 			if main.collision != null and main.collision.in_building(wp.x, wp.z, 0.0):
 				continue
+			if main.near_road(wp.x, wp.z, 1.4):
+				continue                          # забор не ставим на полотно дороги (+1 м обочины)
 			_panel_cells[cell] = true
 			_cur_cells.append(cell)
 			_cur_fences.append(Transform3D(bs, Vector3(wp.x, gy - 0.05, wp.z)))

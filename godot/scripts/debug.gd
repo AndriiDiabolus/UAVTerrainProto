@@ -14,6 +14,8 @@ func setup(m: Node3D) -> void:
 		_debug_report_targets()
 	if "--screenshot" in OS.get_cmdline_user_args():
 		_schedule_screenshot()
+	if "--mapdump" in OS.get_cmdline_user_args():
+		_mapdump()
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--transshot="):
 			_transshot(a.substr(12))
@@ -238,6 +240,34 @@ func _save_shot(shot_name: String) -> void:
 	var out := ProjectSettings.globalize_path("res://../%s.png" % shot_name)
 	img.save_png(out)
 	print("Screenshot saved: ", out)
+
+
+## --mapdump: выгрузка геометрии для аудита пересечений (дороги/заборы/мосты) в mapdump.json.
+## Ждёт стриминг усадеб вокруг старта, потом пишет клетки панелей заборов (сетка 1.2 м),
+## сегменты полотна дорог (road_index) и палуб мостов (deck_index) + точку старта.
+func _mapdump() -> void:
+	await RenderingServer.frame_post_draw
+	for i in 700:
+		await get_tree().process_frame
+	var yards := main.get_node_or_null("Yards")
+	var cells: Array = []
+	if yards != null:
+		for c: Vector2i in yards.get("_panel_cells").keys():
+			cells.append([c.x, c.y])
+	var roads: Array = []
+	for arr: Array in main.road_index.values():
+		for sg: Array in arr:
+			roads.append(sg)
+	var decks: Array = []
+	for arr: Array in main.deck_index.values():
+		for sg: Array in arr:
+			decks.append([sg[0], sg[1], sg[2], sg[3], sg[4]])
+	var out := {"home": [main._home_pos.x, main._home_pos.z], "cells": cells, "roads": roads, "decks": decks}
+	var f := FileAccess.open(ProjectSettings.globalize_path("res://../mapdump.json"), FileAccess.WRITE)
+	f.store_string(JSON.stringify(out))
+	f.close()
+	print("MAPDUMP: клеток забора %d, сегментов дорог %d, палуб %d" % [cells.size(), roads.size(), decks.size()])
+	get_tree().quit()
 
 
 func _debug_report_targets() -> void:
