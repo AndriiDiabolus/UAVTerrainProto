@@ -408,7 +408,8 @@ func _step_wing(dt: float, s: Dictionary, wind: Vector3) -> void:
 			main.hud.toast("КАТАПУЛЬТА", "набор высоты · колесо мыши — зум гимбала", Color(0.7, 0.9, 1.0))
 	# управление ориентацией
 	_wing_roll = move_toward(_wing_roll, float(s.r) * deg_to_rad(50.0), dt * deg_to_rad(70.0))
-	_wing_pitch = move_toward(_wing_pitch, float(s.p) * deg_to_rad(26.0), dt * deg_to_rad(45.0))
+	# авиационная схема, консистентно с ANGLE: W («ручка от себя») — нос вниз, S — кабрирование
+	_wing_pitch = move_toward(_wing_pitch, -float(s.p) * deg_to_rad(26.0), dt * deg_to_rad(45.0))
 	# газ → целевая скорость; кабрирование тормозит, пикирование разгоняет
 	var thr_tgt := clampf(0.55 + float(s.get("thr_c", 0.0)) * 0.45, 0.0, 1.0)
 	throttle = move_toward(throttle, thr_tgt, dt * 0.8)
