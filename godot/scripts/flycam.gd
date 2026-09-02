@@ -145,6 +145,8 @@ func set_drone(id: String) -> void:
 	if DRONES.has(id):
 		drone_id = id
 		P = DRONES[id]
+		if id == "mship" and main != null and main.get("targets") != null and main.targets != null:
+			main.targets.armed = false           # носитель не вооружён — взвод БЧ снимается
 
 
 func cycle_mode() -> void:
@@ -194,7 +196,11 @@ func _unhandled_input(event: InputEvent) -> void:
 					Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 					mouse_captured = true
 				elif main != null and main.targets != null:
-					if main.targets.weapon == 3:
+					if drone_id == "mship":
+						# матка — невооружённый носитель: оружие доступно только FPV после отделения
+						if main.hud != null and main.hud.has_method("toast"):
+							main.hud.toast("МАТКА НЕ ВООРУЖЕНА", "оружие — у FPV после отделения (J)", Color(1.0, 0.78, 0.47))
+					elif main.targets.weapon == 3:
 						if main.get("airtargets") != null:
 							main.airtargets.shoot(self)
 					else:
