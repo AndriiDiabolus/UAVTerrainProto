@@ -222,13 +222,13 @@ func _add_marker(node: Node3D, color: Color, h: float) -> void:
 	var beam := MeshInstance3D.new()
 	beam.name = "Marker"
 	var bm := BoxMesh.new()
-	bm.size = Vector3(3.0, h, 3.0)
+	bm.size = Vector3(0.55, h, 0.55)          # тонкая нить: толстый столб закрывал саму цель
 	beam.mesh = bm
 	beam.position = Vector3(0, h * 0.5 + 3.0, 0)
 	var mat := StandardMaterial3D.new()
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mat.albedo_color = Color(color.r, color.g, color.b, 0.45)
+	mat.albedo_color = Color(color.r, color.g, color.b, 0.38)
 	mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED   # столб всегда развёрнут к камере
 	mat.billboard_keep_scale = true
 	beam.mesh.surface_set_material(0, mat)
@@ -236,9 +236,9 @@ func _add_marker(node: Node3D, color: Color, h: float) -> void:
 	node.add_child(beam)
 	var cap := MeshInstance3D.new()
 	cap.name = "MarkerCap"
-	var sph := SphereMesh.new(); sph.radius = 2.2; sph.height = 4.4
+	var sph := SphereMesh.new(); sph.radius = 1.1; sph.height = 2.2
 	cap.mesh = sph
-	cap.position = Vector3(0, h + 5.0, 0)
+	cap.position = Vector3(0, h + 4.0, 0)
 	var cm := StandardMaterial3D.new()
 	cm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	cm.albedo_color = color
