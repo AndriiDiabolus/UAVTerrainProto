@@ -100,6 +100,19 @@ func setup(m: Node3D) -> void:
 	target_marker.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	layer.add_child(target_marker)
 
+	# маркеры целей, отмеченных разведчиком (оранжевые, видны с любого дрона)
+	for i in 12:
+		var mk := Label.new()
+		mk.add_theme_font_size_override("font_size", 14)
+		mk.add_theme_color_override("font_color", Color(1.0, 0.62, 0.2))
+		mk.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.9))
+		mk.add_theme_constant_override("shadow_offset_x", 1)
+		mk.add_theme_constant_override("shadow_offset_y", 1)
+		mk.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		mk.visible = false
+		layer.add_child(mk)
+		_marked_labels.append(mk)
+
 	# флажок-ветрометр в левом нижнем углу
 	_wind_flag = Control.new()
 	_wind_flag.set_script(load("res://scripts/windflag.gd"))
@@ -253,6 +266,7 @@ func _process(_dt: float) -> void:
 	hud_label.text = "%.5f°N  %.5f°E\nMSL %d м   AGL %d м\nскорость %d м/с   FPS %d%s%s%s\nW/S тангаж · A/D крен · E/Q газ · ←/→ рыскание · Tab режим · B дрон · Shift буст · ЛКМ огонь · 1-5/8/P погода · 6 туман · 7 дождь · M звук · F FPV · C камера · T тепло · R рестарт" % [
 		ll.x, ll.y, int(p.y), int(p.y - ground), int(spd), int(Engine.get_frames_per_second()), fline, tline, wline]
 	_update_target_marker(p)
+	_update_marked_markers()
 	_update_mission_marker()
 	# полная телеметрия — по удержанию I; флажок ветра — при ветре ≥ 5 м/с; стики — только с пультом (или I)
 	_info_held = Input.is_key_pressed(KEY_I)
@@ -293,6 +307,35 @@ func _wind_arrow(w: Vector3) -> String:
 	var a := atan2(w.z, w.x)
 	var dirs := ["→", "↘", "↓", "↙", "←", "↖", "↑", "↗"]
 	return dirs[int(round(a / (PI / 4.0))) & 7]
+
+
+var _marked_labels: Array = []
+
+## Маркеры целей, отмеченных разведчиком: «◇ ВИД · дистанция», живут пока цель жива.
+func _update_marked_markers() -> void:
+	var names := {"tank": "ТАНК", "apc": "БТР", "soldier": "ПЕХОТА"}
+	var lst: Array = main.targets.marked_list() if main.targets != null else []
+	var cam: Camera3D = main.cam
+	var vp := get_viewport().get_visible_rect().size
+	for i in _marked_labels.size():
+		var mk: Label = _marked_labels[i]
+		if fpv_on or i >= lst.size():
+			mk.visible = false
+			continue
+		var t: Dictionary = lst[i]
+		var tpos: Vector3 = t.node.position + Vector3(0, 12, 0)
+		if cam.is_position_behind(tpos):
+			mk.visible = false
+			continue
+		var sp := cam.unproject_position(tpos)
+		if sp.x < -40 or sp.x > vp.x + 40 or sp.y < -40 or sp.y > vp.y + 40:
+			mk.visible = false
+			continue
+		mk.visible = true
+		mk.text = "◇ %s  %d м" % [names.get(t.kind, "ЦЕЛЬ"), int(cam.global_position.distance_to(t.node.position))]
+		mk.position = sp - mk.size * 0.5
+	if lst.size() > _marked_labels.size():
+		pass                                        # хвост списка не влезает в пул — не критично
 
 
 func _update_target_marker(p: Vector3) -> void:

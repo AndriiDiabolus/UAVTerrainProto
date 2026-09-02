@@ -196,7 +196,7 @@ func _spawn_vehicle(kind: String, road: Dictionary, d: float) -> void:
 		"dir": 1.0 if randf() < 0.5 else -1.0,
 		"speed": randf_range(3.0, 5.0) if kind == "tank" else randf_range(6.0, 9.0),
 		"radius": 5.0, "alive": true, "leader": true, "wreck_t": 0.0, "offset": 0.0,
-		"alert": false, "aa_t": randf_range(0.0, 1.5),
+		"alert": false, "aa_t": randf_range(0.0, 1.5), "marked": false,
 		"dust": main.fx.dust(mi) if main.get("fx") != null else null})
 
 
@@ -212,7 +212,7 @@ func _spawn_squad(road: Dictionary, d: float) -> void:
 			"d": d - i * 4.0, "dir": 1.0, "speed": randf_range(1.2, 1.7),
 			"radius": 2.0, "alive": true, "leader": i == 0, "wreck_t": 0.0,
 			"offset": randf_range(-2.5, 2.5), "alert": false, "aa_t": randf_range(0.0, 2.0),
-			"hide_off": randf_range(9.0, 14.0) * (1.0 if randf() < 0.5 else -1.0)})
+			"marked": false, "hide_off": randf_range(9.0, 14.0) * (1.0 if randf() < 0.5 else -1.0)})
 
 
 ## Яркий столб-маркер над целью + billboard-ромб на вершине (видно с воздуха).
@@ -265,7 +265,8 @@ func _process(dt: float) -> void:
 			continue
 		# --- обнаружение дрона и реакция ---
 		var dist_d: float = cam_pos.distance_to(t.node.position)
-		var can_see: bool = not main.get("menu_open")     # в главном меню дрон «невидим» для целей
+		# в главном меню дрон «невидим»; высотный разведчик-крыло цели не замечают и не обстреливают
+		var can_see: bool = not main.get("menu_open") and str(main.cam.get("drone_id")) != "wing"
 		if not t.alert and can_see:
 			var det := 250.0 if t.kind == "soldier" else 420.0
 			if dist_d < det and agl < 220.0:
@@ -532,6 +533,39 @@ func _explode(pos: Vector3, wt: int = 1) -> void:
 
 
 var _aa_enabled := not ("--noaa" in OS.get_cmdline_user_args())
+
+
+## Отметка цели разведчиком (ЛКМ у wing): ближайшая к оптической оси живая цель
+## в конусе max_ang_deg и до 6 км помечается (t.marked) — метку видят все дроны в HUD.
+func mark_at(cam: Camera3D, max_ang_deg: float) -> Dictionary:
+	var fwd: Vector3 = -cam.global_transform.basis.z
+	var origin: Vector3 = cam.global_position
+	var best_ang := deg_to_rad(max_ang_deg)
+	var best: Dictionary = {}
+	for t: Dictionary in targets:
+		if not t.alive:
+			continue
+		var to: Vector3 = (t.node.position + Vector3(0, 1.5, 0)) - origin
+		if to.length() > 6000.0:
+			continue
+		var ang := fwd.angle_to(to.normalized())
+		if ang < best_ang:
+			best_ang = ang
+			best = t
+	if not best.is_empty():
+		best.marked = true
+		if main.get("telemetry") != null:
+			main.telemetry.event("target_marked", {"kind": best.kind})
+	return best
+
+
+## Живые отмеченные цели — для HUD-маркеров всех дронов.
+func marked_list() -> Array:
+	var out: Array = []
+	for t: Dictionary in targets:
+		if t.alive and t.get("marked", false):
+			out.append(t)
+	return out
 
 
 ## Очередь по дрону: вероятность попадания растёт вблизи, при малой скорости и малой высоте.

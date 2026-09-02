@@ -81,7 +81,11 @@ func _draw() -> void:
 		segs.append(["·", DIM]); segs.append(["РЕТР", Color(0.5, 0.85, 1.0)])
 	if main.targets != null:
 		segs.append(["·", DIM])
-		if str(cam.get("drone_id")) == "mship":
+		if str(cam.get("drone_id")) == "wing":
+			segs.append(["зум ×%.0f" % float(cam.get("wing_zoom")), TXT])
+			segs.append(["·", DIM])
+			segs.append(["метки %d" % main.targets.marked_list().size(), Color(1.0, 0.62, 0.2)])
+		elif str(cam.get("drone_id")) == "mship":
 			segs.append(["носитель FPV", DIM])
 		elif main.targets.weapon == 2:
 			segs.append(["БЧ ⚠ ВЗВЕДЕНА" if main.targets.armed else "БЧ снята", Color(1.0, 0.45, 0.35) if main.targets.armed else DIM])

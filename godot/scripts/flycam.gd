@@ -201,7 +201,16 @@ func _unhandled_input(event: InputEvent) -> void:
 					Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 					mouse_captured = true
 				elif main != null and main.targets != null:
-					if drone_id == "mship":
+					if drone_id == "wing":
+						# разведчик: ЛКМ отмечает цель под перекрестием (порог сужается с зумом)
+						var mt: Dictionary = main.targets.mark_at(self, clampf(fov * 0.12, 0.5, 5.0))
+						if main.hud != null and main.hud.has_method("toast"):
+							if mt.is_empty():
+								main.hud.toast("ЦЕЛЬ НЕ ЗАХВАЧЕНА", "наведи перекрестие точнее (зум — колесо)", Color(1.0, 0.78, 0.47), 1.2)
+							else:
+								var nm := {"tank": "ТАНК", "apc": "БТР", "soldier": "ПЕХОТА"}
+								main.hud.toast("ЦЕЛЬ ОТМЕЧЕНА · %s" % nm.get(mt.kind, "ЦЕЛЬ"), "метку видят все дроны", Color(1.0, 0.62, 0.2), 1.6)
+					elif drone_id == "mship":
 						# матка — невооружённый носитель: оружие доступно только FPV после отделения
 						if main.hud != null and main.hud.has_method("toast"):
 							main.hud.toast("МАТКА НЕ ВООРУЖЕНА", "оружие — у FPV после отделения (J)", Color(1.0, 0.78, 0.47))
@@ -394,18 +403,35 @@ func _process(dt: float) -> void:
 var wing_zoom := 1.0                 # оптический зум гимбала ×1..×30 (колесо мыши)
 var _gim_yaw := 0.0                  # рыскание подвеса относительно курса (мышь X)
 var _wing_air := 22.0                # воздушная скорость, м/с
+var _wing_auto := false              # авто-набор высоты после катапульты
 var _wing_roll := 0.0
 var _wing_pitch := 0.0
 
 func _step_wing(dt: float, s: Dictionary, wind: Vector3) -> void:
 	if landed or (velocity.length() < 3.0 and position.y - main.height_at(position.x, position.z) < 2.0):
-		# катапультный старт
+		# катапультный старт + авто-набор рабочей высоты (пока пилот не вмешался)
 		landed = false
 		_wing_air = 20.0
 		_wing_roll = 0.0; _wing_pitch = deg_to_rad(12.0)
+		_wing_auto = true
 		position.y += 1.5
 		if main.hud != null and main.hud.has_method("toast"):
-			main.hud.toast("КАТАПУЛЬТА", "набор высоты · колесо мыши — зум гимбала", Color(0.7, 0.9, 1.0))
+			main.hud.toast("КАТАПУЛЬТА", "авто-набор до 350 м · колесо мыши — зум · ЛКМ — отметить цель", Color(0.7, 0.9, 1.0))
+	if absf(float(s.p)) > 0.15 or absf(float(s.r)) > 0.3:
+		_wing_auto = false                       # пилот взял управление
+	if _wing_auto:
+		var agl: float = position.y - main.height_at(position.x, position.z)
+		if agl < 350.0:
+			throttle = move_toward(throttle, 1.0, dt * 0.8)
+			_wing_air = move_toward(_wing_air, 33.0, dt * 2.2)
+			_wing_pitch = move_toward(_wing_pitch, deg_to_rad(11.0), dt * deg_to_rad(30.0))
+		else:
+			_wing_pitch = move_toward(_wing_pitch, 0.0, dt * deg_to_rad(20.0))
+		_yaw -= tan(_wing_roll) * G / maxf(_wing_air, 8.0) * dt
+		body = Basis.from_euler(Vector3(_wing_pitch, _yaw, -_wing_roll))
+		velocity = -body.z * _wing_air + wind * 0.55
+		position += velocity * dt
+		return
 	# управление ориентацией
 	_wing_roll = move_toward(_wing_roll, float(s.r) * deg_to_rad(50.0), dt * deg_to_rad(70.0))
 	# авиационная схема, консистентно с ANGLE: W («ручка от себя») — нос вниз, S — кабрирование

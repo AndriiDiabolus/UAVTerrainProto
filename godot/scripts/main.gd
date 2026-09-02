@@ -1207,7 +1207,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif event.keycode == KEY_Y and thermal != null:
 			thermal.cycle_palette()
 		elif event.keycode == KEY_V and targets != null:
-			targets.cycle_weapon()
+			if str(cam.get("drone_id")) == "wing":
+				if hud != null:
+					hud.toast("РАЗВЕДЧИК НЕ ВООРУЖЁН", "ЛКМ — отметить цель для ударных дронов", Color(1.0, 0.78, 0.47))
+			else:
+				targets.cycle_weapon()
 		elif event.keycode == KEY_H:
 			toggle_relay()
 		elif event.keycode == KEY_J:
