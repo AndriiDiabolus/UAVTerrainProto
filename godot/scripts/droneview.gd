@@ -122,7 +122,9 @@ func _process(dt: float) -> void:
 			* Basis(Vector3(1, 0, 0), sin(_menu_t * 0.41) * 0.34) \
 			* Basis(Vector3(0, 0, 1), sin(_menu_t * 0.23) * 0.2)
 		var msc: float = {"fpv7": 6.5, "fpv5": 7.5, "mavic": 6.0, "mship": 1.9, "wing": 1.0}.get(_built_for, 6.5)
-		var pos: Vector3 = ct * Vector3(1.05, -0.12 - (0.75 if _built_for in ["mship", "wing"] else 0.0), -3.6)
+		# модель — в центре ИГРОВОЙ области экрана (окно минус панель меню 434 px слева)
+		var vps := get_viewport().get_visible_rect().size
+		var pos: Vector3 = main.cam.project_position(Vector2((434.0 + vps.x) * 0.5, vps.y * 0.5), 3.6)
 		model.global_transform = Transform3D(ct.basis * rot * Basis.from_scale(Vector3.ONE * msc), pos)
 	elif third and not fpv and not main.get("replaying"):
 		model.visible = true

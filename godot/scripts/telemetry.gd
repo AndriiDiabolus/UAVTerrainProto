@@ -49,6 +49,24 @@ func _start_recording() -> void:
 	_f.store_line("t,x,y,z,agl,vx,vy,vz,speed,pitch,yaw,roll,throttle,mode,st_p,st_r,st_y,st_t,rssi,battery,event")
 	recording = true
 	print("Телеметрия пишется в ", ProjectSettings.globalize_path(path))
+	_rotate_recordings()
+
+
+## Храним только 10 последних записей (имена с таймстампом — сортировка по имени = по времени).
+const KEEP_RECORDINGS := 10
+
+func _rotate_recordings() -> void:
+	var dir := DirAccess.open("user://flights")
+	if dir == null:
+		return
+	var files: Array = []
+	for f in dir.get_files():
+		if f.ends_with(".csv"):
+			files.append(f)
+	files.sort()
+	while files.size() > KEEP_RECORDINGS:
+		var victim: String = files.pop_front()
+		dir.remove(victim)
 
 
 ## Событие в журнал (пишется в колонку event ближайшего кадра, несколько — через ';').
