@@ -236,11 +236,11 @@ func _build_rain() -> void:
 	add_child(_rain_holder)
 	_streak_curtain_tex = _curtain_texture()
 	# три вложенных куртины: ближняя быстрая крупная, дальние плотнее и медленнее по UV
-	for cfg in [[7.0, 26.0, 3.0, 1.0, 1.35, 0.13], [16.0, 44.0, 5.0, 1.6, 0.8, 0.16], [36.0, 70.0, 8.0, 2.4, 0.5, 0.2]]:
+	for cfg in [[7.0, 26.0, 3.0, 1.0, 1.35, 0.075], [16.0, 44.0, 5.0, 1.6, 0.8, 0.095], [36.0, 70.0, 8.0, 2.4, 0.5, 0.12]]:
 		var c := _make_curtain(cfg[0], cfg[1], cfg[2], cfg[3], cfg[4], cfg[5])
 		_rain_holder.add_child(c)
 		_curtains.append(c)
-	_rain = _make_rain_layer(1100, 26.0, 0.030, 0.8, 0.42)     # ближние крупные капли-штрихи
+	_rain = _make_rain_layer(1100, 26.0, 0.030, 0.8, 0.3)     # ближние крупные капли-штрихи
 	_rain_far = _make_rain_layer(1400, 90.0, 0.1, 2.6, 0.15)   # редкие дальние акценты
 	_rain_holder.add_child(_rain)
 	_rain_holder.add_child(_rain_far)
@@ -358,7 +358,7 @@ func apply(i: int, instant: bool = false) -> void:
 	_rain.emitting = raining_now
 	_rain_far.emitting = raining_now
 	_splash.emitting = raining_now
-	var amt := 1.0 if float(p.rain) > 0.0 else 0.75   # шторм — полная стена, клавиша 7 — умереннее
+	var amt := 0.85 if float(p.rain) > 0.0 else 0.6   # шторм — полная стена, клавиша 7 — умереннее
 	for c: MeshInstance3D in _curtains:
 		c.visible = raining_now
 		(c.material_override as ShaderMaterial).set_shader_parameter("amount", amt)
