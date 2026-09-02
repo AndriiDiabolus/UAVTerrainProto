@@ -16,6 +16,14 @@ var _props: Array = []
 var _chase: Camera3D
 var _spin := 0.0
 var _menu_t := 0.0
+var _user_rot := Basis()      # ручное вращение вертушки мышью (трекбол в осях камеры)
+var _idle := 99.0             # секунд с последнего драга; авто-вращение после паузы
+
+
+## Драг мышью в меню: вращение модели на 360° по всем осям (в экранных осях).
+func orbit(rel: Vector2) -> void:
+	_idle = 0.0
+	_user_rot = Basis(Vector3.UP, -rel.x * 0.01) * Basis(Vector3(1, 0, 0), -rel.y * 0.01) * _user_rot
 
 
 func setup(m: Node3D) -> void:
@@ -33,13 +41,18 @@ func setup(m: Node3D) -> void:
 
 
 var _built_for := ""
+var _built_weapon := -2
+
+func _cur_weapon() -> int:
+	return int(main.targets.weapon) if main.get("targets") != null and main.targets != null else -1
 
 func _build_model() -> void:
 	if model != null:
 		model.queue_free()
 	var U = load("res://scripts/units.gd").new()
 	_built_for = str(main.cam.drone_id) if main.cam != null and main.cam.get("drone_id") != null else "fpv7"
-	var d: Dictionary = U.build_drone(_built_for, skin)
+	_built_weapon = _cur_weapon()
+	var d: Dictionary = U.build_drone(_built_for, skin, _built_weapon)
 	model = d.root
 	_props = d.props
 	model.visible = false
@@ -87,8 +100,8 @@ func _unhandled_input(e: InputEvent) -> void:
 func _process(dt: float) -> void:
 	if main == null or main.cam == null or model == null:
 		return
-	if main.cam.get("drone_id") != null and str(main.cam.drone_id) != _built_for:
-		_build_model()                          # профиль сменили (меню/B) — модель перестраивается
+	if (main.cam.get("drone_id") != null and str(main.cam.drone_id) != _built_for) or _cur_weapon() != _built_weapon:
+		_build_model()                          # сменили профиль (B/меню) или оружие (V/меню) — модель перестраивается
 	var thr := 0.35
 	if main.cam.get("throttle") != null:
 		thr = clampf(float(main.cam.throttle), 0.0, 1.0)
@@ -100,10 +113,12 @@ func _process(dt: float) -> void:
 		# вертушка: крупная модель перед камерой облёта, вращение в трёх осях
 		if _chase.current:
 			main.cam.make_current()
-		_menu_t += dt
+		_idle += dt
+		if _idle > 3.0:
+			_menu_t += dt                       # авто-вращение возобновляется после паузы драга
 		model.visible = true
 		var ct: Transform3D = main.cam.global_transform
-		var rot := Basis(Vector3.UP, _menu_t * 0.7) \
+		var rot := _user_rot * Basis(Vector3.UP, _menu_t * 0.7) \
 			* Basis(Vector3(1, 0, 0), sin(_menu_t * 0.41) * 0.34) \
 			* Basis(Vector3(0, 0, 1), sin(_menu_t * 0.23) * 0.2)
 		var msc: float = {"fpv7": 6.5, "fpv5": 7.5, "mavic": 6.0, "mship": 1.9}.get(_built_for, 6.5)

@@ -36,6 +36,9 @@ func setup(m: Node3D) -> void:
 	for i in 14:
 		_try_spawn()
 	_spawn_near_override = 0.0
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--weapon="):
+			weapon = clampi(int(a.substr(9)), 0, WEAPONS.size() - 1)
 	if "--targetdebug" in OS.get_cmdline_user_args():
 		_debug_spawn_ahead()
 

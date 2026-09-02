@@ -32,6 +32,12 @@ func _append_mesh(dst: ArrayMesh, src: ArrayMesh, xform: Transform3D, color: Col
 		_append_arrays(dst, src.surface_get_arrays(s), xform, _mat(color))
 
 
+## Перенос суб-меша с СОХРАНЕНИЕМ его материалов (для многоцветных сборок, напр. weapon_pod).
+func _append_mesh_keep(dst: ArrayMesh, src: ArrayMesh, xform: Transform3D) -> void:
+	for s in src.get_surface_count():
+		_append_arrays(dst, src.surface_get_arrays(s), xform, src.surface_get_material(s))
+
+
 func _append_arrays(mesh: ArrayMesh, arr: Array, xform: Transform3D, mt: Material) -> void:
 	var verts: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
 	var norms: PackedVector3Array = arr[Mesh.ARRAY_NORMAL]
@@ -620,7 +626,7 @@ func civ_set(variant: int) -> Array:
 
 const CARBON := Color(0.13, 0.13, 0.145)
 
-func drone_fpv7(variant: int) -> Dictionary:
+func drone_fpv7(variant: int, weapon: int = -1) -> Dictionary:
 	# Референс: iFlight Chimera7 Pro V2 — DeadCat-геометрия (передние моторы шире и вперёд),
 	# база 327 мм, длинный корпус-балка с боковыми панелями, GoPro-маунт спереди сверху,
 	# TPU-бамперы под моторами, антенны-диполи назад. Фото: iflight.com.
@@ -677,18 +683,14 @@ func drone_fpv7(variant: int) -> Dictionary:
 	_append(m, _cyl(0.0028, 0.075), Transform3D(ab, Vector3(-0.108, y0 + 0.05, 0)), Color(0.1, 0.1, 0.1))
 	_append(m, _sph(0.007), Transform3D(Basis(), Vector3(-0.138, y0 + 0.071, 0)), Color(0.8, 0.8, 0.8) if variant != 3 else Color(0.15, 0.15, 0.15))
 	match variant:
-		1:
-			# БЧ под брюхом: цилиндр с носовым конусом и двумя скобами подвеса
-			_append(m, _cyl(0.024, 0.13), Transform3D(Basis(Vector3(0, 0, 1), deg_to_rad(90.0)), Vector3(0.0, -0.004, 0)), Color(0.33, 0.36, 0.26))
-			_append(m, _cyl(0.005, 0.035, 0.023), Transform3D(Basis(Vector3(0, 0, 1), deg_to_rad(-90.0)), Vector3(0.083, -0.004, 0)), Color(0.3, 0.32, 0.24))
-			for px: float in [-0.035, 0.04]:
-				_append(m, _box(0.012, 0.032, 0.052), Transform3D(Basis(), Vector3(px, y0 - 0.015, 0)), Color(0.09, 0.09, 0.09))
 		2:
 			# GPS-таблетка на стойке сзади
 			_append(m, _cyl(0.0025, 0.05), Transform3D(Basis(), Vector3(-0.06, y0 + 0.06, 0.016)), Color(0.09, 0.09, 0.09))
 			_append(m, _cyl(0.014, 0.007), Transform3D(Basis(), Vector3(-0.06, y0 + 0.088, 0.016)), Color(0.9, 0.9, 0.9))
 		3:
 			_append(m, _sph(0.004), Transform3D(Basis(), Vector3(-0.075, y0 + 0.036, 0)), Color(0.9, 0.12, 0.1))
+	if weapon >= 0:
+		_append_mesh_keep(m, weapon_pod(weapon), Transform3D(Basis(), Vector3(0.0, y0 - 0.004, 0)))
 	root.add_child(_mi(m, "Body"))
 	return {"root": root, "props": props}
 
@@ -727,6 +729,41 @@ func _prop_blade(s: float = 1.0, chord_k: float = 1.0) -> ArrayMesh:
 	return m
 
 
+## Обвес вооружения под брюхом FPV (точка (0,0,0) — центр нижней плиты, нос по +X):
+## 0 — кассета осколочных сбросов (рейка + 6 «ВОГ»), 1 — кумулятивный (ПГ-образная граната),
+## 2 — БЧ-камикадзе (цилиндр с носовым конусом), 3 — дробовик воздух-воздух (блок + 2 ствола вперёд-вверх).
+func weapon_pod(w: int) -> ArrayMesh:
+	var m := ArrayMesh.new()
+	var frag_c := Color(0.32, 0.35, 0.26)
+	match w:
+		0:
+			_append(m, _box(0.112, 0.008, 0.052), Transform3D(Basis(), Vector3(0, -0.006, 0)), Color(0.09, 0.09, 0.09))
+			for i in 3:
+				for sz: float in [1.0, -1.0]:
+					var px := -0.038 + 0.038 * i
+					_append(m, _cyl(0.0095, 0.045), Transform3D(Basis(), Vector3(px, -0.033, sz * 0.015)), frag_c)
+					_append(m, _sph(0.0095, true), Transform3D(Basis(Vector3(1, 0, 0), PI), Vector3(px, -0.055, sz * 0.015)), Color(0.75, 0.72, 0.3))
+		1:
+			_append(m, _box(0.07, 0.02, 0.03), Transform3D(Basis(), Vector3(-0.01, -0.012, 0)), Color(0.09, 0.09, 0.09))
+			_append(m, _cyl(0.011, 0.11), Transform3D(Basis(Vector3(0, 0, 1), deg_to_rad(90.0)), Vector3(-0.02, -0.038, 0)), frag_c)
+			_append(m, _cyl(0.011, 0.05, 0.027), Transform3D(Basis(Vector3(0, 0, 1), deg_to_rad(90.0)), Vector3(0.06, -0.038, 0)), Color(0.28, 0.3, 0.24))
+			_append(m, _cyl(0.002, 0.022, 0.012), Transform3D(Basis(Vector3(0, 0, 1), deg_to_rad(90.0)), Vector3(0.096, -0.038, 0)), Color(0.2, 0.2, 0.2))
+			for k in 4:
+				_append(m, _box(0.03, 0.002, 0.016), Transform3D(Basis(Vector3(1, 0, 0), PI * 0.25 + PI * 0.5 * k), Vector3(-0.068, -0.038, 0)), Color(0.18, 0.2, 0.16))
+		2:
+			_append(m, _cyl(0.024, 0.13), Transform3D(Basis(Vector3(0, 0, 1), deg_to_rad(90.0)), Vector3(0.0, -0.032, 0)), frag_c)
+			_append(m, _cyl(0.005, 0.035, 0.023), Transform3D(Basis(Vector3(0, 0, 1), deg_to_rad(-90.0)), Vector3(0.083, -0.032, 0)), Color(0.3, 0.32, 0.24))
+			for px: float in [-0.035, 0.04]:
+				_append(m, _box(0.012, 0.032, 0.052), Transform3D(Basis(), Vector3(px, -0.014, 0)), Color(0.09, 0.09, 0.09))
+		3:
+			_append(m, _box(0.055, 0.022, 0.044), Transform3D(Basis(), Vector3(0.01, -0.014, 0)), Color(0.09, 0.09, 0.09))
+			var sb := Basis(Vector3(0, 0, 1), deg_to_rad(75.0))
+			for sz: float in [1.0, -1.0]:
+				_append(m, _cyl(0.007, 0.1), Transform3D(sb, Vector3(0.05, -0.008, sz * 0.014)), Color(0.13, 0.13, 0.14))
+				_append(m, _cyl(0.0078, 0.014), Transform3D(sb, Vector3(0.085, 0.001, sz * 0.014)), Color(0.18, 0.18, 0.19))
+	return m
+
+
 ## Общий помощник: узел пропеллера с N лопастями масштаба s в точке pos.
 func _prop_node(nm: String, pos: Vector3, blades: int, s: float, col: Color, chord_k: float = 1.0) -> Node3D:
 	var p := Node3D.new()
@@ -742,7 +779,7 @@ func _prop_node(nm: String, pos: Vector3, blades: int, s: float, col: Color, cho
 
 
 ## fpv5 — 5" фристайл/перехватчик (~225 мм): та же школа, что fpv7, компактнее, без БЧ/GPS.
-func drone_fpv5(variant: int) -> Dictionary:
+func drone_fpv5(variant: int, weapon: int = -1) -> Dictionary:
 	var root := Node3D.new()
 	root.name = "DroneFPV5v%d" % variant
 	var m := ArrayMesh.new()
@@ -772,6 +809,8 @@ func drone_fpv5(variant: int) -> Dictionary:
 	for sz: float in [1.0, -1.0]:
 		var db := Basis(Vector3.UP, sz * deg_to_rad(30.0)) * Basis(Vector3(0, 0, 1), deg_to_rad(82.0))
 		_append(m, _cyl(0.0016, 0.07), Transform3D(db, Vector3(-0.06, y0 + 0.02, sz * 0.02)), Color(0.1, 0.1, 0.1))
+	if weapon >= 0:
+		_append_mesh_keep(m, weapon_pod(weapon), Transform3D(Basis().scaled(Vector3.ONE * 0.8), Vector3(0.0, y0 - 0.003, 0)))
 	root.add_child(_mi(m, "Body"))
 	var props: Array = []
 	for sx: float in [1.0, -1.0]:
@@ -896,12 +935,13 @@ func _drone_hover(kind: String, variant: int) -> Node3D:
 
 
 ## Модель дрона по ключу профиля flycam (fpv7/fpv5/mavic/mship) или краткому ключу галереи.
-func build_drone(kind: String, variant: int) -> Dictionary:
+## weapon >= 0 вешает обвес вооружения (только FPV-профили; mavic/матка обвес не несут).
+func build_drone(kind: String, variant: int, weapon: int = -1) -> Dictionary:
 	match kind:
-		"fpv5", "5": return drone_fpv5(variant)
+		"fpv5", "5": return drone_fpv5(variant, weapon)
 		"mavic", "m": return drone_mavic(variant)
 		"mship", "h": return drone_mother(variant)
-		_: return drone_fpv7(variant)
+		_: return drone_fpv7(variant, weapon)
 
 
 func build_set(key: String) -> Array:

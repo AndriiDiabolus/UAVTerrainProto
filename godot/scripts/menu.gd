@@ -92,6 +92,11 @@ func _input(event: InputEvent) -> void:
 			KEY_RIGHT: _adjust(1)
 			KEY_ENTER, KEY_KP_ENTER, KEY_SPACE: _activate()
 		get_viewport().set_input_as_handled()
+	elif event is InputEventMouseMotion and (event.button_mask & MOUSE_BUTTON_MASK_LEFT) != 0:
+		# драг ЛКМ — вращение модели дрона на витрине по всем осям
+		if main.get("droneview") != null:
+			main.droneview.orbit(event.relative)
+		get_viewport().set_input_as_handled()
 	elif event is InputEventMouseButton:
 		get_viewport().set_input_as_handled()
 
