@@ -928,6 +928,21 @@ func drone_mother(variant: int) -> Dictionary:
 ## с изломом и стреловидными законцовками (размах ~3.4 м), перевёрнутое V-оперение,
 ## толкающий винт сзади. Скины: 1 серый SHARK / 2 олива (Лелека-стиль) / 3 ночной.
 func drone_wing(variant: int) -> Dictionary:
+	# Основной путь: сгенерированный текстурированный меш (Meshy 7 по фото SHARK,
+	# assets/models/shark.glb); процедурная сборка ниже — запасной вариант без файла.
+	if ResourceLoader.exists("res://assets/models/shark.glb"):
+		var glb: PackedScene = load("res://assets/models/shark.glb")
+		var root2 := Node3D.new()
+		root2.name = "DroneWingV%d" % variant
+		var inst: Node3D = glb.instantiate()
+		root2.add_child(inst)
+		var aabb := _combined_aabb(inst)
+		var s := 3.4 / maxf(aabb.size.x, maxf(aabb.size.y, aabb.size.z))   # размах → 3.4 м
+		var rot := Basis(Vector3.UP, PI)                # Meshy отдаёт нос в -X — разворот
+		if aabb.size.x >= aabb.size.z:
+			rot = Basis(Vector3.UP, -PI * 0.5)         # длинная ось (размах) должна лечь на Z
+		inst.transform = Transform3D(rot * Basis.from_scale(Vector3.ONE * s), -(rot * (aabb.get_center() * s)))
+		return {"root": root2, "props": []}
 	var root := Node3D.new()
 	root.name = "DroneWingV%d" % variant
 	var m := ArrayMesh.new()
@@ -969,6 +984,23 @@ func drone_wing(variant: int) -> Dictionary:
 	var pn := _prop_node("PropPush", Vector3.ZERO, 2, 2.2, Color(0.12, 0.12, 0.13), 0.5)
 	holder.add_child(pn)
 	return {"root": root, "props": [pn]}
+
+
+## Совокупный AABB всех MeshInstance3D поддерева (в координатах узла n).
+func _combined_aabb(n: Node3D, xf: Transform3D = Transform3D()) -> AABB:
+	var res := AABB()
+	var found := false
+	var cur := xf * n.transform if n.get_parent() != null else xf
+	if n is MeshInstance3D and (n as MeshInstance3D).mesh != null:
+		res = cur * (n as MeshInstance3D).mesh.get_aabb()
+		found = true
+	for c in n.get_children():
+		if c is Node3D:
+			var a := _combined_aabb(c, cur)
+			if a.size != Vector3.ZERO:
+				res = res.merge(a) if found else a
+				found = true
+	return res
 
 
 ## Дрон «в висении» для галереи --unitshot (на земле тонет в траве/буграх рельефа).
