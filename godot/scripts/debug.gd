@@ -62,6 +62,8 @@ func _schedule_screenshot() -> void:
 			var yaw := -0.2 if vehicle else -0.6     # техника — лоб+борт 3/4, люди — лицом к камере
 			if key.begins_with("car"):
 				yaw = -0.55                          # автопарк — передом 3/4
+			elif key.begins_with("dw"):
+				yaw = 0.0                            # крыло — строгий профиль, нос вправо
 			for it: Array in items:
 				var obj = it[0]
 				var mi: Node3D
@@ -79,12 +81,18 @@ func _schedule_screenshot() -> void:
 				await get_tree().process_frame
 			if main.hud != null and main.hud.get("fpv_on") != null and main.hud.fpv_on:
 				main.hud._toggle_fpv()               # галерея всегда обычной камерой
-			var droneg := key.begins_with("drone") or key.begins_with("d5") or key.begins_with("dm") or key.begins_with("dh")
+			var droneg := key.begins_with("drone") or key.begins_with("d5") or key.begins_with("dm") or key.begins_with("dh") or key.begins_with("dw")
 			if droneg:
 				main.cam.near = 0.05          # дроны мелкие и близко — штатный near 2.0 их отсекает
-				var dd := 2.6 if key.begins_with("dh") else 1.0   # матка крупная — камера дальше
+				var dd := 2.6 if key.begins_with("dh") else 1.0   # крупные — камера дальше
 				_hold_cam = Vector3(base.x + 0.45 * dd, gy2 + 1.41 + 0.21 * dd, base.z + 0.34 * dd)
 				_hold_look = Vector3(base.x, gy2 + 1.41 + (0.28 if key.begins_with("dh") else 0.0), base.z)
+				if key.begins_with("dw"):     # крыло: 3/4 сверху-сбоку («--wside» — строгий профиль)
+					_hold_cam = Vector3(base.x + 2.4, gy2 + 2.6, base.z + 2.8)
+					_hold_look = Vector3(base.x, gy2 + 1.3, base.z)
+					if "--wside" in OS.get_cmdline_user_args():
+						_hold_cam = Vector3(base.x, gy2 + 1.5, base.z + 4.0)
+						_hold_look = Vector3(base.x, gy2 + 1.38, base.z)
 				main.cam.global_position = _hold_cam
 				main.cam.look_at(_hold_look)
 			elif key.begins_with("car"):

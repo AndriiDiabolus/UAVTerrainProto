@@ -923,6 +923,54 @@ func drone_mother(variant: int) -> Dictionary:
 	return {"root": root, "props": props}
 
 
+## wing — украинский разведчик-крыло класса SHARK (Ukrspecsystems, фото Wikimedia):
+## серый обтекаемый фюзеляж с «акульей пастью», гимбал-шар под носом, высокое крыло
+## с изломом и стреловидными законцовками (размах ~3.4 м), перевёрнутое V-оперение,
+## толкающий винт сзади. Скины: 1 серый SHARK / 2 олива (Лелека-стиль) / 3 ночной.
+func drone_wing(variant: int) -> Dictionary:
+	var root := Node3D.new()
+	root.name = "DroneWingV%d" % variant
+	var m := ArrayMesh.new()
+	var body_c: Color = [Color(0.63, 0.66, 0.69), Color(0.38, 0.42, 0.32), Color(0.16, 0.16, 0.18)][variant - 1]
+	var y0 := 0.0
+	# фюзеляж: нос-капля → тело → сужающаяся хвостовая балка
+	_append(m, _sph(0.085), Transform3D(Basis().scaled(Vector3(1.8, 1.0, 1.0)), Vector3(0.78, y0, 0)), body_c)
+	_append(m, _cyl(0.083, 0.95, 0.05), Transform3D(Basis(Vector3(0, 0, 1), deg_to_rad(-90.0)), Vector3(0.28, y0, 0)), body_c)
+	_append(m, _cyl(0.05, 0.85, 0.02), Transform3D(Basis(Vector3(0, 0, 1), deg_to_rad(-90.0)), Vector3(-0.62, y0 + 0.01, 0)), body_c)
+	# «акулья пасть» по бокам носа + глаз
+	if variant == 1:
+		for sz: float in [1.0, -1.0]:
+			_append(m, _box(0.18, 0.032, 0.003), Transform3D(Basis(Vector3(1, 0, 0), sz * deg_to_rad(8.0)), Vector3(0.82, y0 - 0.008, sz * 0.074)), Color(0.75, 0.12, 0.1))
+			_append(m, _sph(0.008), Transform3D(Basis(), Vector3(0.87, y0 + 0.038, sz * 0.062)), Color(0.1, 0.1, 0.1))
+	# гимбал-шар под фюзеляжем за носом, с линзой
+	_append(m, _sph(0.055), Transform3D(Basis(), Vector3(0.58, y0 - 0.085, 0)), Color(0.35, 0.36, 0.38) if variant != 3 else Color(0.12, 0.12, 0.13))
+	_append(m, _cyl(0.018, 0.012), Transform3D(Basis(Vector3(0, 0, 1), deg_to_rad(65.0)), Vector3(0.615, y0 - 0.105, 0)), Color(0.05, 0.05, 0.05))
+	_append(m, _sph(0.012), Transform3D(Basis(), Vector3(0.622, y0 - 0.11, 0)), Color(0.2, 0.32, 0.5))
+	# пито-трубка на носу, антенна сверху
+	_append(m, _cyl(0.003, 0.12), Transform3D(Basis(Vector3(0, 0, 1), deg_to_rad(90.0)), Vector3(0.98, y0 + 0.02, 0)), Color(0.15, 0.15, 0.15))
+	_append(m, _cyl(0.0025, 0.05), Transform3D(Basis(), Vector3(0.2, y0 + 0.1, 0)), Color(0.1, 0.1, 0.1))
+	# крыло: центроплан + стреловидные внешние панели + загнутые законцовки (размах ~3.4)
+	_append(m, _box(0.3, 0.022, 1.24), Transform3D(Basis(), Vector3(0.18, y0 + 0.075, 0)), body_c)
+	for sz: float in [1.0, -1.0]:
+		var wb := Basis(Vector3.UP, sz * deg_to_rad(14.0)) * Basis(Vector3(1, 0, 0), sz * deg_to_rad(3.0))
+		_append(m, _box(0.24, 0.018, 1.1), Transform3D(wb, Vector3(0.065, y0 + 0.085, sz * 1.0)), body_c)
+		var tb := Basis(Vector3.UP, sz * deg_to_rad(24.0)) * Basis(Vector3(1, 0, 0), sz * deg_to_rad(12.0))
+		_append(m, _box(0.15, 0.012, 0.34), Transform3D(tb, Vector3(-0.1, y0 + 0.115, sz * 1.56)), body_c)
+	# перевёрнутое V-оперение на конце балки (панели от балки вниз-в стороны)
+	for sz: float in [1.0, -1.0]:
+		var vb := Basis(Vector3(1, 0, 0), sz * deg_to_rad(42.0))
+		_append(m, _box(0.15, 0.01, 0.3), Transform3D(vb, Vector3(-0.98, y0 - 0.075, sz * 0.11)), body_c)
+	root.add_child(_mi(m, "Body"))
+	# толкающий винт: диск в плоскости YZ — держатель повёрнут, внутренний узел крутится по Y
+	var holder := Node3D.new()
+	holder.position = Vector3(-1.08, y0 + 0.01, 0)
+	holder.basis = Basis(Vector3(0, 0, 1), deg_to_rad(90.0))
+	root.add_child(holder)
+	var pn := _prop_node("PropPush", Vector3.ZERO, 2, 2.2, Color(0.12, 0.12, 0.13), 0.5)
+	holder.add_child(pn)
+	return {"root": root, "props": [pn]}
+
+
 ## Дрон «в висении» для галереи --unitshot (на земле тонет в траве/буграх рельефа).
 func _drone_hover(kind: String, variant: int) -> Node3D:
 	var holder := Node3D.new()
@@ -941,6 +989,7 @@ func build_drone(kind: String, variant: int, weapon: int = -1) -> Dictionary:
 		"fpv5", "5": return drone_fpv5(variant, weapon)
 		"mavic", "m": return drone_mavic(variant)
 		"mship", "h": return drone_mother(variant)
+		"wing", "w": return drone_wing(variant)
 		_: return drone_fpv7(variant, weapon)
 
 
@@ -956,7 +1005,7 @@ func build_set(key: String) -> Array:
 		return [[car_sedan(), -6.0], [car_wagon(), -3.0], [car_van(), 0.0], [car_truck(), 3.5], [car_bus(), 7.5]]
 	if key.begins_with("drone"):
 		return [[_drone_hover("7", clampi(variant, 1, 3)), 0.0]]
-	if key.begins_with("d5") or key.begins_with("dm") or key.begins_with("dh"):
+	if key.begins_with("d5") or key.begins_with("dm") or key.begins_with("dh") or key.begins_with("dw"):
 		return [[_drone_hover(key.substr(1, 1), clampi(variant, 1, 3)), 0.0]]
 	return civ_set(variant)
 
