@@ -16,9 +16,38 @@ func setup(m: Node3D) -> void:
 		_schedule_screenshot()
 	if "--mapdump" in OS.get_cmdline_user_args():
 		_mapdump()
+
+	if "--rainshot" in OS.get_cmdline_user_args():
+		_rainshot()
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--transshot="):
 			_transshot(a.substr(12))
+
+
+## --rainshot: серия кадров падающего дождя (шторм, точка groundshot, 6 кадров ~5 с).
+func _rainshot() -> void:
+	await RenderingServer.frame_post_draw
+	for i in 90:
+		await get_tree().process_frame
+	main.replaying = true
+	var gv: Vector2 = main._world_from_latlon(48.2760, 24.5640)
+	var gyy: float = main.height_at(gv.x, gv.y)
+	main.cam.global_position = Vector3(gv.x, gyy + 2.5, gv.y)
+	var gt: Vector2 = main._world_from_latlon(48.2700, 24.5660)
+	main.cam.look_at(Vector3(gt.x, main.height_at(gt.x, gt.y) + 6.0, gt.y))
+	main.weather.apply(2, true)
+	var t0 := Time.get_ticks_msec()
+	while Time.get_ticks_msec() - t0 < 3000:
+		await get_tree().process_frame
+	for k in 6:
+		var t1 := Time.get_ticks_msec()
+		while Time.get_ticks_msec() - t1 < 800:
+			await get_tree().process_frame
+		await RenderingServer.frame_post_draw
+		var img := main.get_viewport().get_texture().get_image()
+		img.save_png(ProjectSettings.globalize_path("res://../rainshot_%d.png" % k))
+		print("rainshot ", k)
+	get_tree().quit()
 
 
 ## Пресеты видовых точек для заявки/видео: cam lat/lon, AGL(м), target lat/lon, target +Δh(м).

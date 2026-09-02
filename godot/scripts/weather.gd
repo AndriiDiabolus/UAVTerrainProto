@@ -169,11 +169,79 @@ func _ring_texture() -> ImageTexture:
 	return ImageTexture.create_from_image(img)
 
 
+# «Куртины» дождя (метод WoW/MMO): вложенные цилиндры вокруг камеры со скроллящейся
+# текстурой из сотен штрихов — плотная стена воды на любом фоне, параллакс между слоями.
+var _curtains: Array = []
+
+func _curtain_texture() -> ImageTexture:
+	var img := Image.create(256, 256, true, Image.FORMAT_RGBA8)
+	img.fill(Color(1, 1, 1, 0))
+	var rng := RandomNumberGenerator.new(); rng.seed = 11
+	for i in 240:
+		var x := rng.randi_range(0, 255)
+		var y0i := rng.randi_range(0, 255)
+		var ln := rng.randi_range(18, 64)
+		var al := rng.randf_range(0.16, 0.5)
+		var wdt := 1 if rng.randf() < 0.7 else 2
+		for k in ln:
+			var y := (y0i + k) % 256
+			var fade := sin(float(k) / ln * PI)          # мягкие концы штриха
+			for wx in wdt:
+				img.set_pixel((x + wx) % 256, y, Color(1, 1, 1, al * fade))
+	img.generate_mipmaps()
+	return ImageTexture.create_from_image(img)
+
+
+const CURTAIN_SHADER := "
+shader_type spatial;
+render_mode unshaded, blend_mix, cull_disabled, depth_draw_never;
+uniform sampler2D streaks;
+uniform float speed = 1.0;
+uniform float reps = 6.0;
+uniform float vreps = 1.0;
+uniform float amount = 1.0;
+uniform vec4 tint : source_color = vec4(0.78, 0.83, 0.92, 0.16);
+void fragment() {
+	vec2 uv = vec2(UV.x * reps, UV.y * vreps + TIME * speed);
+	float a = texture(streaks, uv).a;
+	float edge = smoothstep(0.0, 0.12, UV.y) * smoothstep(1.0, 0.88, UV.y);
+	ALBEDO = tint.rgb;
+	ALPHA = a * tint.a * edge * amount;
+}"
+
+func _make_curtain(radius: float, h: float, reps: float, vreps: float, speed: float, alpha: float) -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	var cyl := CylinderMesh.new()
+	cyl.top_radius = radius; cyl.bottom_radius = radius; cyl.height = h
+	cyl.cap_top = false; cyl.cap_bottom = false
+	cyl.radial_segments = 24; cyl.rings = 1
+	mi.mesh = cyl
+	var sh := Shader.new(); sh.code = CURTAIN_SHADER
+	var mat := ShaderMaterial.new(); mat.shader = sh
+	mat.set_shader_parameter("streaks", _streak_curtain_tex)
+	mat.set_shader_parameter("reps", reps)
+	mat.set_shader_parameter("vreps", vreps)
+	mat.set_shader_parameter("speed", speed)
+	mat.set_shader_parameter("tint", Color(0.78, 0.83, 0.92, alpha))
+	mi.material_override = mat
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mi.visible = false
+	return mi
+
+
+var _streak_curtain_tex: ImageTexture
+
 func _build_rain() -> void:
 	_rain_holder = Node3D.new()
 	add_child(_rain_holder)
-	_rain = _make_rain_layer(1700, 42.0, 0.030, 0.8, 0.4)      # ближний: крупные штрихи
-	_rain_far = _make_rain_layer(2600, 130.0, 0.09, 2.4, 0.17) # дальний: длинные полупрозрачные
+	_streak_curtain_tex = _curtain_texture()
+	# три вложенных куртины: ближняя быстрая крупная, дальние плотнее и медленнее по UV
+	for cfg in [[7.0, 26.0, 3.0, 1.0, 1.35, 0.13], [16.0, 44.0, 5.0, 1.6, 0.8, 0.16], [36.0, 70.0, 8.0, 2.4, 0.5, 0.2]]:
+		var c := _make_curtain(cfg[0], cfg[1], cfg[2], cfg[3], cfg[4], cfg[5])
+		_rain_holder.add_child(c)
+		_curtains.append(c)
+	_rain = _make_rain_layer(1100, 26.0, 0.030, 0.8, 0.42)     # ближние крупные капли-штрихи
+	_rain_far = _make_rain_layer(1400, 90.0, 0.1, 2.6, 0.15)   # редкие дальние акценты
 	_rain_holder.add_child(_rain)
 	_rain_holder.add_child(_rain_far)
 	_splash = _make_splash()
@@ -290,6 +358,10 @@ func apply(i: int, instant: bool = false) -> void:
 	_rain.emitting = raining_now
 	_rain_far.emitting = raining_now
 	_splash.emitting = raining_now
+	var amt := 1.0 if float(p.rain) > 0.0 else 0.75   # шторм — полная стена, клавиша 7 — умереннее
+	for c: MeshInstance3D in _curtains:
+		c.visible = raining_now
+		(c.material_override as ShaderMaterial).set_shader_parameter("amount", amt)
 
 
 var _fog_extra := false
