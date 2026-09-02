@@ -55,6 +55,8 @@ const DRONES := {
 		"rate": 200.0, "yaw_rate": 120.0, "tau": 0.12, "expo": 0.2, "cam_tilt": 0.0, "gps_v": 20.0},
 	"mship": {"name": "матка-носитель (несёт FPV)", "mass": 7.5, "tw": 1.7, "drag": 0.030, "tilt": 22.0,
 		"rate": 130.0, "yaw_rate": 70.0, "tau": 0.22, "expo": 0.15, "cam_tilt": 8.0, "gps_v": 12.0},
+	"wing": {"name": "SHARK · разведчик-крыло", "mass": 5.0, "tw": 0.6, "drag": 0.02, "tilt": 45.0,
+		"rate": 90.0, "yaw_rate": 40.0, "tau": 0.3, "expo": 0.2, "cam_tilt": 0.0, "gps_v": 25.0},
 }
 var P: Dictionary = DRONES["fpv7"]
 
@@ -147,6 +149,9 @@ func set_drone(id: String) -> void:
 		P = DRONES[id]
 		if id == "mship" and main != null and main.get("targets") != null and main.targets != null:
 			main.targets.armed = false           # носитель не вооружён — взвод БЧ снимается
+		if id != "wing":
+			wing_zoom = 1.0                      # зум гимбала остаётся только у разведчика
+			_gim_yaw = 0.0
 
 
 func cycle_mode() -> void:
@@ -206,13 +211,27 @@ func _unhandled_input(event: InputEvent) -> void:
 					else:
 						main.targets.fire(self)
 			MOUSE_BUTTON_WHEEL_UP:
-				current_speed = clampf(current_speed * 1.15, SPEED_MIN, SPEED_MAX)
+				if drone_id == "wing":
+					wing_zoom = clampf(wing_zoom * 1.3, 1.0, 30.0)
+					if main != null and main.hud != null:
+						main.hud.toast("ЗУМ ×%.0f" % wing_zoom, "", Color(0.7, 0.9, 1.0), 0.8)
+				else:
+					current_speed = clampf(current_speed * 1.15, SPEED_MIN, SPEED_MAX)
 			MOUSE_BUTTON_WHEEL_DOWN:
-				current_speed = clampf(current_speed / 1.15, SPEED_MIN, SPEED_MAX)
+				if drone_id == "wing":
+					wing_zoom = clampf(wing_zoom / 1.3, 1.0, 30.0)
+					if main != null and main.hud != null:
+						main.hud.toast("ЗУМ ×%.0f" % wing_zoom, "", Color(0.7, 0.9, 1.0), 0.8)
+				else:
+					current_speed = clampf(current_speed / 1.15, SPEED_MIN, SPEED_MAX)
 	elif event is InputEventMouseMotion and mouse_captured:
 		if mode == MODE_GPS:
-			_yaw -= event.relative.x * MOUSE_SENS
-			_pitch = clampf(_pitch - event.relative.y * MOUSE_SENS, -1.5, 1.5)
+			var sens := MOUSE_SENS / (wing_zoom if drone_id == "wing" else 1.0)
+			if drone_id == "wing":
+				_gim_yaw = clampf(_gim_yaw - event.relative.x * sens, -2.4, 2.4)   # подвес, не курс
+			else:
+				_yaw -= event.relative.x * sens
+			_pitch = clampf(_pitch - event.relative.y * sens, -1.5, 1.5)
 		else:
 			_mouse_acc += event.relative
 	elif event.is_action_pressed("fly_mode"):
@@ -356,7 +375,9 @@ func _process(dt: float) -> void:
 	_acc += dt
 	while _acc >= H:
 		_acc -= H
-		if mode == MODE_GPS:
+		if drone_id == "wing":
+			_step_wing(H, s, wind)
+		elif mode == MODE_GPS:
 			_step_gps(H, s, wind)
 		else:
 			_step_physical(H, s, wind)
@@ -364,6 +385,45 @@ func _process(dt: float) -> void:
 		if main.crashed:
 			return
 	_apply_camera(dt, wind)
+
+
+# ======================= крыло (SHARK): самолётная модель =======================
+# Нет висения: скорость 17–33 м/с (газ E/Q), крен A/D → координированный вираж,
+# тангаж W/S → набор/снижение (кабрирование съедает скорость, пикирование добавляет),
+# сваливание ниже 15 м/с — нос сам опускается. Старт — «катапульта» с земли.
+var wing_zoom := 1.0                 # оптический зум гимбала ×1..×30 (колесо мыши)
+var _gim_yaw := 0.0                  # рыскание подвеса относительно курса (мышь X)
+var _wing_air := 22.0                # воздушная скорость, м/с
+var _wing_roll := 0.0
+var _wing_pitch := 0.0
+
+func _step_wing(dt: float, s: Dictionary, wind: Vector3) -> void:
+	if landed or (velocity.length() < 3.0 and position.y - main.height_at(position.x, position.z) < 2.0):
+		# катапультный старт
+		landed = false
+		_wing_air = 20.0
+		_wing_roll = 0.0; _wing_pitch = deg_to_rad(12.0)
+		position.y += 1.5
+		if main.hud != null and main.hud.has_method("toast"):
+			main.hud.toast("КАТАПУЛЬТА", "набор высоты · колесо мыши — зум гимбала", Color(0.7, 0.9, 1.0))
+	# управление ориентацией
+	_wing_roll = move_toward(_wing_roll, float(s.r) * deg_to_rad(50.0), dt * deg_to_rad(70.0))
+	_wing_pitch = move_toward(_wing_pitch, float(s.p) * deg_to_rad(26.0), dt * deg_to_rad(45.0))
+	# газ → целевая скорость; кабрирование тормозит, пикирование разгоняет
+	var thr_tgt := clampf(0.55 + float(s.get("thr_c", 0.0)) * 0.45, 0.0, 1.0)
+	throttle = move_toward(throttle, thr_tgt, dt * 0.8)
+	var v_tgt := lerpf(17.0, 33.0, throttle)
+	_wing_air = move_toward(_wing_air, v_tgt, dt * 2.2)
+	_wing_air -= sin(_wing_pitch) * G * dt * 0.55
+	_wing_air = clampf(_wing_air, 10.0, 42.0)
+	if _wing_air < 15.0:
+		_wing_pitch = move_toward(_wing_pitch, deg_to_rad(-14.0), dt * deg_to_rad(30.0))   # сваливание
+	# координированный вираж: скорость рыскания от крена
+	_yaw -= tan(_wing_roll) * G / maxf(_wing_air, 8.0) * dt
+	body = Basis.from_euler(Vector3(_wing_pitch, _yaw, -_wing_roll))
+	var fwd := -body.z
+	velocity = fwd * _wing_air + wind * 0.55 + _turbulence(wind) * 0.4
+	position += velocity * dt
 
 
 ## GPS-режим: команда скорости + удержание высоты (упрощённая, «как у потребительского дрона»).
@@ -560,9 +620,14 @@ func _apply_camera(dt: float, wind: Vector3) -> void:
 	var wob_r := cos(_t * 7.1) * amp * 1.3
 	var cam_b: Basis
 	if mode == MODE_GPS:
-		# подвес: горизонт стабилизирован, тангаж — мышью
-		cam_b = Basis.from_euler(Vector3(_pitch, _yaw, 0.0))
+		# подвес: горизонт стабилизирован, тангаж — мышью (у крыла мышь X — рыскание подвеса)
+		cam_b = Basis.from_euler(Vector3(_pitch, _yaw + (_gim_yaw if drone_id == "wing" else 0.0), 0.0))
 	else:
 		# камера жёстко на корпусе с наклоном вверх (FPV)
 		cam_b = body * Basis(Vector3.RIGHT, deg_to_rad(P["cam_tilt"]))
 	global_transform.basis = cam_b * Basis.from_euler(Vector3(wob_p, 0.0, wob_r))
+	# оптический зум гимбала разведчика (сужение FOV; чувствительность мыши падает с зумом)
+	if drone_id == "wing":
+		fov = clampf(75.0 / wing_zoom, 2.6, 75.0)
+	elif fov != 75.0:
+		fov = 75.0

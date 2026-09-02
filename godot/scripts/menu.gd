@@ -186,7 +186,8 @@ func _draw_panel() -> void:
 		"миссия": "%d · %s" % [mission_pick, str(main.mission.MISSIONS[mission_pick]["name"]).split("· ")[1] if main.mission != null else ""],
 		"реплей": (replay_files[replay_pick].trim_prefix("flight_").trim_suffix(".csv") if not replay_files.is_empty() else "нет записей"),
 		"регион": ("степь" if main.region == "steppe" else "Карпаты"),
-		"дрон": "%s · T/W %.1f" % [str(main.cam.drone_name()), float(main.cam.P["tw"])],
+		"дрон": ("%s · зум ×30" % str(main.cam.drone_name())) if str(main.cam.get("drone_id")) == "wing" \
+			else "%s · T/W %.1f" % [str(main.cam.drone_name()), float(main.cam.P["tw"])],
 		"скин": (str(main.droneview.skin_name()) if main.get("droneview") != null else "—"),
 		"оружие": (("%s ×%d" % [main.targets.WEAPONS[main.targets.weapon], main.targets.weapon_ammo()]) + (" · для FPV" if str(main.cam.get("drone_id")) == "mship" else "")) if main.targets != null else "—",
 		"камера": (main.hud.fpv_link.camera_name() if main.hud != null and main.hud.fpv_link != null else "—"),
