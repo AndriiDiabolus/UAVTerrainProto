@@ -261,19 +261,24 @@ func _add_marker(node: Node3D, color: Color, h: float) -> void:
 	cm.albedo_color = color
 	cap.mesh.surface_set_material(0, cm)
 	node.add_child(cap)
-	# рамка-квадрат вокруг самой цели (вблизи)
+
+## Красная рамка-квадрат вокруг цели — знак «отмечена разведчиком» (вешается из mark_at).
+func _add_mark_frame(t: Dictionary) -> void:
+	var node: Node3D = t.node
+	if node.get_node_or_null("MarkerFrame") != null:
+		return
 	var mi := MeshInstance3D.new()
-	mi.name = "Marker"
+	mi.name = "MarkerFrame"
 	var quad := QuadMesh.new()
-	var s := 9.0 if h > 60.0 else 4.5          # техника — рамка 9 м, пехота — 4.5 м
+	var s := 4.5 if t.kind == "soldier" else 9.0
 	quad.size = Vector2(s, s)
 	mi.mesh = quad
-	mi.position = Vector3(0, 2.2 if h > 60.0 else 1.4, 0)
+	mi.position = Vector3(0, 1.4 if t.kind == "soldier" else 2.2, 0)
 	var mat := StandardMaterial3D.new()
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	mat.albedo_texture = _frame_tex()
-	mat.albedo_color = Color(color.r, color.g, color.b, 0.85)
+	mat.albedo_color = Color(1.0, 0.2, 0.12, 0.9)
 	mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED   # рамка всегда развёрнута к камере
 	mat.no_depth_test = true                   # видна и когда цель за домом/деревом
 	mi.mesh.surface_set_material(0, mat)
@@ -586,8 +591,9 @@ func mark_at(cam: Camera3D, max_ang_deg: float) -> Dictionary:
 		if ang < best_ang:
 			best_ang = ang
 			best = t
-	if not best.is_empty():
+	if not best.is_empty() and not best.get("marked", false):
 		best.marked = true
+		_add_mark_frame(best)
 		if main.get("telemetry") != null:
 			main.telemetry.event("target_marked", {"kind": best.kind})
 	return best

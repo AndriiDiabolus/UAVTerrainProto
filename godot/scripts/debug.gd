@@ -184,6 +184,8 @@ func _schedule_screenshot() -> void:
 			var tp: Vector3 = pick.node.position
 			main.cam.global_position = tp + Vector3(8.0, 6.5, 8.5)
 			main.cam.look_at(tp + Vector3(0, 1.9, 0))
+			if "--markdebug" in OS.get_cmdline_user_args():
+				main.targets.mark_at(main.cam, 30.0)
 		await RenderingServer.frame_post_draw
 		await get_tree().process_frame
 	if _hold_cam != Vector3.INF:
