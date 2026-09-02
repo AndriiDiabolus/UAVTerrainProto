@@ -215,35 +215,43 @@ func _spawn_squad(road: Dictionary, d: float) -> void:
 			"marked": false, "hide_off": randf_range(9.0, 14.0) * (1.0 if randf() < 0.5 else -1.0)})
 
 
-## Яркий столб-маркер над целью + billboard-ромб на вершине (видно с воздуха).
+## Маркер цели: тонкая квадратная рамка-билборд вокруг цели (вместо прежнего столба).
+var _frame_tex_cache: ImageTexture = null
+
+func _frame_tex() -> ImageTexture:
+	if _frame_tex_cache == null:
+		var img := Image.create(64, 64, true, Image.FORMAT_RGBA8)
+		img.fill(Color(0, 0, 0, 0))
+		for i in 64:
+			for b in 3:                        # обводка 3 px (~0.4 м на рамке 9 м)
+				img.set_pixel(i, b, Color(1, 1, 1, 1))
+				img.set_pixel(i, 63 - b, Color(1, 1, 1, 1))
+				img.set_pixel(b, i, Color(1, 1, 1, 1))
+				img.set_pixel(63 - b, i, Color(1, 1, 1, 1))
+		img.generate_mipmaps()
+		_frame_tex_cache = ImageTexture.create_from_image(img)
+	return _frame_tex_cache
+
+
 func _add_marker(node: Node3D, color: Color, h: float) -> void:
 	if "--nomarkers" in OS.get_cmdline_user_args():
 		return
-	var beam := MeshInstance3D.new()
-	beam.name = "Marker"
-	var bm := BoxMesh.new()
-	bm.size = Vector3(0.55, h, 0.55)          # тонкая нить: толстый столб закрывал саму цель
-	beam.mesh = bm
-	beam.position = Vector3(0, h * 0.5 + 3.0, 0)
+	var mi := MeshInstance3D.new()
+	mi.name = "Marker"
+	var quad := QuadMesh.new()
+	var s := 9.0 if h > 60.0 else 4.5          # техника — рамка 9 м, пехота — 4.5 м
+	quad.size = Vector2(s, s)
+	mi.mesh = quad
+	mi.position = Vector3(0, 2.2 if h > 60.0 else 1.4, 0)
 	var mat := StandardMaterial3D.new()
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mat.albedo_color = Color(color.r, color.g, color.b, 0.38)
-	mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED   # столб всегда развёрнут к камере
-	mat.billboard_keep_scale = true
-	beam.mesh.surface_set_material(0, mat)
-	beam.set("no_depth_test", true)
-	node.add_child(beam)
-	var cap := MeshInstance3D.new()
-	cap.name = "MarkerCap"
-	var sph := SphereMesh.new(); sph.radius = 1.1; sph.height = 2.2
-	cap.mesh = sph
-	cap.position = Vector3(0, h + 4.0, 0)
-	var cm := StandardMaterial3D.new()
-	cm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	cm.albedo_color = color
-	cap.mesh.surface_set_material(0, cm)
-	node.add_child(cap)
+	mat.albedo_texture = _frame_tex()
+	mat.albedo_color = Color(color.r, color.g, color.b, 0.85)
+	mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED   # рамка всегда развёрнута к камере
+	mat.no_depth_test = true                   # видна и когда цель за домом/деревом
+	mi.mesh.surface_set_material(0, mat)
+	node.add_child(mi)
 
 
 func _process(dt: float) -> void:
