@@ -236,6 +236,32 @@ func _frame_tex() -> ImageTexture:
 func _add_marker(node: Node3D, color: Color, h: float) -> void:
 	if "--nomarkers" in OS.get_cmdline_user_args():
 		return
+	# тонкий столб-нить — навигация издалека (рамка на дистанции перспективно исчезает)
+	var beam := MeshInstance3D.new()
+	beam.name = "MarkerBeam"
+	var bm := BoxMesh.new()
+	bm.size = Vector3(0.55, h, 0.55)
+	beam.mesh = bm
+	beam.position = Vector3(0, h * 0.5 + 3.0, 0)
+	var bmat := StandardMaterial3D.new()
+	bmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	bmat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	bmat.albedo_color = Color(color.r, color.g, color.b, 0.38)
+	bmat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	bmat.billboard_keep_scale = true
+	beam.mesh.surface_set_material(0, bmat)
+	node.add_child(beam)
+	var cap := MeshInstance3D.new()
+	cap.name = "MarkerCap"
+	var sph := SphereMesh.new(); sph.radius = 1.1; sph.height = 2.2
+	cap.mesh = sph
+	cap.position = Vector3(0, h + 4.0, 0)
+	var cm := StandardMaterial3D.new()
+	cm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	cm.albedo_color = color
+	cap.mesh.surface_set_material(0, cm)
+	node.add_child(cap)
+	# рамка-квадрат вокруг самой цели (вблизи)
 	var mi := MeshInstance3D.new()
 	mi.name = "Marker"
 	var quad := QuadMesh.new()
