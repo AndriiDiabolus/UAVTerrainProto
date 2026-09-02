@@ -482,7 +482,8 @@ func _update_sun(dt: float) -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
-		match event.keycode:
+		var kc: int = event.physical_keycode if event.physical_keycode != 0 else event.keycode
+		match kc:
 			KEY_1: apply(0)
 			KEY_2: apply(1)
 			KEY_3: apply(2)

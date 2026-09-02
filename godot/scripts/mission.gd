@@ -1,4 +1,8 @@
 extends Node3D
+
+## Физический код клавиши — хоткеи не зависят от раскладки.
+func _kc(event: InputEventKey) -> int:
+	return event.physical_keycode if event.physical_keycode != 0 else event.keycode
 ## Миссии-упражнения тренажёра: ворота, посадка, разведка, удар. Скоринг + результат в файл.
 ##
 ## N — следующая миссия (нет → 1 → 2 → … → нет), --mission=N — стартовать сразу.
@@ -82,7 +86,7 @@ func setup(m: Node3D) -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
-		if event.keycode == KEY_N:
+		if _kc(event) == KEY_N:
 			var nxt := (mission_id + 1) % MISSIONS.size()
 			if nxt == 0:
 				stop()

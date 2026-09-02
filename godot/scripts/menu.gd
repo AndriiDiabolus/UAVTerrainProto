@@ -84,13 +84,17 @@ func _input(event: InputEvent) -> void:
 	if not open:
 		return
 	if event is InputEventKey and event.pressed and not event.echo:
-		match event.keycode:
+		var kc: int = event.physical_keycode if event.physical_keycode != 0 else event.keycode
+		match kc:
 			KEY_ESCAPE: _start_flight(false)
 			KEY_UP: sel = posmod(sel - 1, ITEMS.size())
 			KEY_DOWN: sel = posmod(sel + 1, ITEMS.size())
 			KEY_LEFT: _adjust(-1)
 			KEY_RIGHT: _adjust(1)
 			KEY_ENTER, KEY_KP_ENTER, KEY_SPACE: _activate()
+			KEY_M:
+				if main.hud != null:
+					main.hud._toggle_sound()     # звук можно глушить не выходя из меню
 		get_viewport().set_input_as_handled()
 	elif event is InputEventMouseMotion and (event.button_mask & MOUSE_BUTTON_MASK_LEFT) != 0:
 		# драг ЛКМ — вращение модели дрона на витрине по всем осям

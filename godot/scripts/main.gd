@@ -1185,36 +1185,41 @@ func _spawn_camera() -> void:
 	_home_pos = cam.position
 
 
+## Физический код клавиши: хоткеи работают на любой раскладке (кириллица и т.д.).
+func _kc(event: InputEventKey) -> int:
+	return event.physical_keycode if event.physical_keycode != 0 else event.keycode
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
-		if event.keycode == KEY_M:
+		if _kc(event) == KEY_M:
 			hud._toggle_sound()
-		elif event.keycode == KEY_F:
+		elif _kc(event) == KEY_F:
 			hud._toggle_fpv()
-		elif event.keycode == KEY_R and crashed:
+		elif _kc(event) == KEY_R and crashed:
 			_respawn()
-		elif event.keycode == KEY_G:
+		elif _kc(event) == KEY_G:
 			_quality_from_flag = false
 			apply_quality((quality + 1) % 3)
-		elif event.keycode == KEY_T or event.keycode == KEY_C:
+		elif _kc(event) == KEY_T or _kc(event) == KEY_C:
 			if hud.fpv_link != null:
 				if not hud.fpv_on:
 					hud._toggle_fpv()          # камеры — это FPV-картинка
-				if event.keycode == KEY_C:
+				if _kc(event) == KEY_C:
 					hud.fpv_link.set_camera(hud.fpv_link.camera + 1)
 				else:
 					hud.fpv_link.set_camera(3 if hud.fpv_link.camera != 3 else 0)
-		elif event.keycode == KEY_Y and thermal != null:
+		elif _kc(event) == KEY_Y and thermal != null:
 			thermal.cycle_palette()
-		elif event.keycode == KEY_V and targets != null:
+		elif _kc(event) == KEY_V and targets != null:
 			if str(cam.get("drone_id")) == "wing":
 				if hud != null:
 					hud.toast("РАЗВЕДЧИК НЕ ВООРУЖЁН", "ЛКМ — отметить цель для ударных дронов", Color(1.0, 0.78, 0.47))
 			else:
 				targets.cycle_weapon()
-		elif event.keycode == KEY_H:
+		elif _kc(event) == KEY_H:
 			toggle_relay()
-		elif event.keycode == KEY_J:
+		elif _kc(event) == KEY_J:
 			launch_from_mothership()
 
 

@@ -19,9 +19,26 @@ func setup(m: Node3D) -> void:
 
 	if "--rainshot" in OS.get_cmdline_user_args():
 		_rainshot()
+	if "--keytest" in OS.get_cmdline_user_args():
+		_keytest()
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--transshot="):
 			_transshot(a.substr(12))
+
+
+func _keytest() -> void:
+	await RenderingServer.frame_post_draw
+	for i in 60:
+		await get_tree().process_frame
+	var ev := InputEventKey.new()
+	ev.keycode = KEY_M
+	ev.physical_keycode = KEY_M
+	ev.pressed = true
+	Input.parse_input_event(ev)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	print("KEYTEST M: muted=", AudioServer.is_bus_mute(0))
+	get_tree().quit()
 
 
 ## --rainshot: серия кадров падающего дождя (шторм, точка groundshot, 6 кадров ~5 с).
