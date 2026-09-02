@@ -68,34 +68,116 @@ func setup(m: Node3D, s: DirectionalLight3D, e: Environment, sk: ShaderMaterial)
 	apply(start)
 
 
-func _build_rain() -> void:
-	_rain_holder = Node3D.new()
-	add_child(_rain_holder)
-	_rain = GPUParticles3D.new()
-	_rain.amount = 2400
-	_rain.lifetime = 1.7
-	_rain.local_coords = false
-	_rain.visibility_aabb = AABB(Vector3(-90, -90, -90), Vector3(180, 180, 180))
-	_rain.position = Vector3(0, 34, 0)
+# Дождь по игровому канону (AC4/Cyberpunk GDC): слои стриков-билбордов с мягкой текстурой
+# (ближний — крупные редкие, дальний — мелкие плотные), весь узел наклоняется по ветру
+# (штрих летит ВДОЛЬ траектории, а не «вертикальные пиксели»), у земли — брызги-кольца.
+var _rain_far: GPUParticles3D
+var _splash: GPUParticles3D
+var _streak_tex: ImageTexture
+
+func _streak_texture() -> ImageTexture:
+	if _streak_tex != null:
+		return _streak_tex
+	var img := Image.create(16, 128, true, Image.FORMAT_RGBA8)
+	for y in 128:
+		var fy := 1.0 - absf(y / 127.0 * 2.0 - 1.0)          # растворение к концам штриха
+		fy = pow(fy, 0.6)
+		for x in 16:
+			var fx := 1.0 - absf(x / 15.0 * 2.0 - 1.0)       # мягкий гауссов профиль поперёк
+			fx = pow(fx, 1.6)
+			img.set_pixel(x, y, Color(0.82, 0.87, 0.95, fx * fy))
+	img.generate_mipmaps()
+	_streak_tex = ImageTexture.create_from_image(img)
+	return _streak_tex
+
+
+func _make_rain_layer(amount: int, box: float, sw: float, sh: float, alpha: float) -> GPUParticles3D:
+	var gp := GPUParticles3D.new()
+	gp.amount = amount
+	gp.lifetime = 4.2
+	gp.local_coords = true                       # частицы в локале наклонённого узла — штрих вдоль падения
+	gp.visibility_aabb = AABB(Vector3(-box - 40, -80, -box - 40), Vector3(box * 2 + 80, 160, box * 2 + 80))
+	gp.position = Vector3(0, 26, 0)
 	var pm := ParticleProcessMaterial.new()
 	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
-	pm.emission_box_extents = Vector3(60, 1, 60)
+	pm.emission_box_extents = Vector3(box, 30, box)
 	pm.direction = Vector3(0, -1, 0)
 	pm.spread = 0.0
-	pm.initial_velocity_min = 16.0
-	pm.initial_velocity_max = 20.0
-	pm.gravity = Vector3(0, -12, 0)
-	_rain.process_material = pm
-	var streak := BoxMesh.new()
-	streak.size = Vector3(0.035, 0.55, 0.035)
+	pm.initial_velocity_min = 13.0
+	pm.initial_velocity_max = 18.0
+	pm.gravity = Vector3.ZERO                    # ветер — наклоном узла, не гравитацией
+	pm.scale_min = 0.7
+	pm.scale_max = 1.35
+	gp.process_material = pm
+	var quad := QuadMesh.new()
+	quad.size = Vector2(sw, sh)
 	var rmat := StandardMaterial3D.new()
 	rmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	rmat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	rmat.albedo_color = Color(0.72, 0.78, 0.88, 0.4)
-	streak.material = rmat
-	_rain.draw_pass_1 = streak
-	_rain.emitting = false
+	rmat.albedo_texture = _streak_texture()
+	rmat.albedo_color = Color(1, 1, 1, alpha)
+	rmat.billboard_mode = BaseMaterial3D.BILLBOARD_FIXED_Y   # крутится к камере вокруг оси падения
+	rmat.billboard_keep_scale = true
+	quad.material = rmat
+	gp.draw_pass_1 = quad
+	gp.emitting = false
+	return gp
+
+
+func _make_splash() -> GPUParticles3D:
+	var gp := GPUParticles3D.new()
+	gp.amount = 420
+	gp.lifetime = 0.34
+	gp.local_coords = false
+	gp.visibility_aabb = AABB(Vector3(-30, -4, -30), Vector3(60, 8, 60))
+	var pm := ParticleProcessMaterial.new()
+	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
+	pm.emission_box_extents = Vector3(24, 0.1, 24)
+	pm.gravity = Vector3.ZERO
+	pm.initial_velocity_min = 0.0
+	pm.initial_velocity_max = 0.0
+	var curve := Curve.new()                     # кольцо разрастается за жизнь
+	curve.add_point(Vector2(0, 0.25)); curve.add_point(Vector2(1, 1.0))
+	var ct := CurveTexture.new(); ct.curve = curve
+	pm.scale_curve = ct
+	var grad := Gradient.new()                   # и растворяется
+	grad.set_color(0, Color(0.85, 0.9, 1.0, 0.5)); grad.set_color(1, Color(0.85, 0.9, 1.0, 0.0))
+	var gt := GradientTexture1D.new(); gt.gradient = grad
+	pm.color_ramp = gt
+	gp.process_material = pm
+	var ring := PlaneMesh.new()
+	ring.size = Vector2(0.34, 0.34)
+	var rm := StandardMaterial3D.new()
+	rm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	rm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	rm.albedo_texture = _ring_texture()
+	rm.vertex_color_use_as_albedo = true
+	ring.material = rm
+	gp.draw_pass_1 = ring
+	gp.emitting = false
+	return gp
+
+
+func _ring_texture() -> ImageTexture:
+	var img := Image.create(32, 32, true, Image.FORMAT_RGBA8)
+	for y in 32:
+		for x in 32:
+			var d := Vector2(x - 15.5, y - 15.5).length() / 15.5
+			var a := clampf(1.0 - absf(d - 0.72) * 5.0, 0.0, 1.0)   # тонкое кольцо
+			img.set_pixel(x, y, Color(1, 1, 1, a * 0.8))
+	img.generate_mipmaps()
+	return ImageTexture.create_from_image(img)
+
+
+func _build_rain() -> void:
+	_rain_holder = Node3D.new()
+	add_child(_rain_holder)
+	_rain = _make_rain_layer(1700, 42.0, 0.030, 0.8, 0.4)      # ближний: крупные штрихи
+	_rain_far = _make_rain_layer(2600, 130.0, 0.09, 2.4, 0.17) # дальний: длинные полупрозрачные
 	_rain_holder.add_child(_rain)
+	_rain_holder.add_child(_rain_far)
+	_splash = _make_splash()
+	add_child(_splash)
 
 
 ## Непрерывные параметры пресета (интерполируются при смене погоды).
@@ -204,9 +286,10 @@ func apply(i: int, instant: bool = false) -> void:
 				main.valley_fog.set_enabled(true, true, idx in [1, 2, 5], float(auto[idx]))
 			else:
 				main.valley_fog.set_enabled(false)
-	_rain.emitting = (p.rain > 0.0) or _rain_extra
-	var pm := _rain.process_material as ParticleProcessMaterial
-	pm.gravity = Vector3(wind.x * 0.7, -12.0, wind.z * 0.7)
+	var raining_now: bool = (float(p.rain) > 0.0) or _rain_extra
+	_rain.emitting = raining_now
+	_rain_far.emitting = raining_now
+	_splash.emitting = raining_now
 
 
 var _fog_extra := false
@@ -356,7 +439,19 @@ func _process(dt: float) -> void:
 		_apply_cont(_mix_cont(_trans_from, _trans_to, tt))
 	_update_sun(dt)
 	if main != null and main.cam != null:
-		_rain_holder.global_position = main.cam.global_position
+		var cp: Vector3 = main.cam.global_position
+		_rain_holder.global_position = cp
+		# наклон дождя по ветру: штрихи летят вдоль реальной траектории капель
+		var wv := wind_vec()
+		var wh := Vector2(wv.x, wv.z)
+		var tilt := atan(wh.length() * 0.55 / 15.0)
+		var axis := Vector3(wh.y, 0, -wh.x).normalized() if wh.length() > 0.5 else Vector3.RIGHT
+		var tgt_b := Basis(axis, tilt) if wh.length() > 0.5 else Basis()
+		_rain_holder.global_transform.basis = _rain_holder.global_transform.basis.slerp(tgt_b, clampf(dt * 2.0, 0.0, 1.0))
+		# брызги — на земле под камерой, видны только на малой высоте
+		var gy: float = main.height_at(cp.x, cp.z)
+		_splash.global_position = Vector3(cp.x, gy + 0.12, cp.z)
+		_splash.visible = (cp.y - gy) < 50.0
 	# порывы ветра гуляют по направлению и силе
 	# молнии — только при включённом дожде (7)
 	if _rain_extra:
