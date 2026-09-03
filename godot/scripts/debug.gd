@@ -100,6 +100,9 @@ func _schedule_screenshot() -> void:
 	var preset := _preset_index()
 	if preset >= 0 and preset < SHOT_PRESETS.size():
 		_apply_preset(preset)
+		for i in 110:                    # дать чанкам травы/леса сгенериться вокруг новой точки (1/кадр)
+			await get_tree().process_frame
+			_apply_preset(preset)        # переприменять: дрон могло снести ветром/гравитацией
 		await RenderingServer.frame_post_draw
 		await get_tree().process_frame
 	# --unitshot=<tank1..4|apc1..3|sold1..3|civ1..3> — галерея юнитов: ставим у точки старта, камера в 3/4

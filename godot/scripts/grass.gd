@@ -37,26 +37,65 @@ func setup(m: Node3D) -> void:
 	_mat.shader = load("res://scripts/grass.gdshader")
 	# фото-атлас (magenta-key, tools/make_grass_atlas) — основной путь; процедурный — фоллбек
 	var photo: Image = main.load_image("res://assets/tex/grass_atlas.png")
+	var photo_top: Image = main.load_image("res://assets/tex/grass_atlas_top.png")
 	if photo != null:
 		photo.generate_mipmaps()
 		_mat.set_shader_parameter("tex", ImageTexture.create_from_image(photo))
 		_mat.set_shader_parameter("tint", Color(0.98, 0.96, 0.9))   # фото уже в реальном цвете
 		_mat.set_shader_parameter("alpha_cut", 0.14)
 		_mat.set_shader_parameter("alpha_boost", 1.6)
+		if photo_top != null:
+			photo_top.generate_mipmaps()
+			_mat.set_shader_parameter("tex_top", ImageTexture.create_from_image(photo_top))
 	else:
 		_mat.set_shader_parameter("tex", _grass_tex())
 	_mat.set_shader_parameter("sat_tex", main._load_albedo())
+	if photo != null:
+		radius = 82.0                             # фото-пучки с шапкой видны дальше — луг не «обрывается» с воздуха
 	_mat.set_shader_parameter("world_size", main.size_m)
-	_mat.set_shader_parameter("fade_start", radius * 0.55)
+	_mat.set_shader_parameter("fade_start", radius * 0.7)
 	_mat.set_shader_parameter("fade_end", radius)
 	_mesh = ArrayMesh.new()
-	_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, _clump_arrays(1.4, 0.85) if photo != null else _clump_arrays(1.5, 0.62))
+	var arrs: Array
+	if photo != null and photo_top != null:
+		arrs = _clump_arrays_vol(1.4, 0.85)      # объём: 3 плоскости + top-шапка
+	elif photo != null:
+		arrs = _clump_arrays(1.4, 0.85)
+	else:
+		arrs = _clump_arrays(1.5, 0.62)
+	_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrs)
 	_mesh.surface_set_material(0, _mat)
 	_rock_mesh = SphereMesh.new(); _rock_mesh.radius = 1.0; _rock_mesh.height = 2.0
 	_rock_mesh.radial_segments = 7; _rock_mesh.rings = 4
 	var rmat := StandardMaterial3D.new()
 	rmat.albedo_color = Color(0.42, 0.40, 0.36); rmat.roughness = 0.95
 	_rock_mesh.material = rmat
+
+
+## Объёмный пучок для фото-атласа: 3 плоскости под 60° + горизонтальная «шапка» на 60 % высоты.
+## Шапка размечена UV.y в [2..3] — шейдер сэмплит её из атласа вида СВЕРХУ (tex_top).
+func _clump_arrays_vol(w: float, h: float) -> Array:
+	var V := PackedVector3Array(); var N := PackedVector3Array()
+	var UVs := PackedVector2Array(); var I := PackedInt32Array()
+	for i in 3:
+		var a := PI / 3.0 * i + 0.4
+		var dx := Vector3(cos(a), 0, sin(a)) * (w * 0.5)
+		var base := V.size()
+		V.append_array([-dx, dx, dx + Vector3(0, h, 0), -dx + Vector3(0, h, 0)])
+		for k in 4: N.append(Vector3.UP)
+		UVs.append_array([Vector2(0, 1), Vector2(1, 1), Vector2(1, 0), Vector2(0, 0)])
+		I.append_array([base, base + 1, base + 2, base, base + 2, base + 3])
+	var base2 := V.size()
+	var r := w * 0.52
+	var hy := h * 0.6
+	V.append_array([Vector3(-r, hy, -r), Vector3(r, hy, -r), Vector3(r, hy, r), Vector3(-r, hy, r)])
+	for k in 4: N.append(Vector3.UP)
+	UVs.append_array([Vector2(0, 3), Vector2(1, 3), Vector2(1, 2), Vector2(0, 2)])
+	I.append_array([base2, base2 + 1, base2 + 2, base2, base2 + 2, base2 + 3])
+	var arr := []; arr.resize(Mesh.ARRAY_MAX)
+	arr[Mesh.ARRAY_VERTEX] = V; arr[Mesh.ARRAY_NORMAL] = N
+	arr[Mesh.ARRAY_TEX_UV] = UVs; arr[Mesh.ARRAY_INDEX] = I
+	return arr
 
 
 ## Два скрещённых квада, низ на y=0.
@@ -134,11 +173,15 @@ func _process(dt: float) -> void:
 	visible = show
 	if not show:
 		return
-	_mat.set_shader_parameter("fade_start", radius * 0.55)
-	_mat.set_shader_parameter("fade_end", radius)
+	# ночью траву не видно дальше пары десятков метров — радиус меньше, FPS целее
+	var r_eff := radius
+	if main.get("weather") != null and int(main.weather.idx) == 4:
+		r_eff = radius * 0.7
+	_mat.set_shader_parameter("fade_start", r_eff * 0.7)
+	_mat.set_shader_parameter("fade_end", r_eff)
 	_yards = main.get_node_or_null("Yards")
 	# нужные чанки: квадрат вокруг камеры с запасом (чанк по курсу готов до того, как войдёт в fade)
-	var reach := radius + CH * 1.5
+	var reach := r_eff + CH * 1.5
 	var c0 := Vector2i(int(floor((p.x - reach) / CH)), int(floor((p.z - reach) / CH)))
 	var c1 := Vector2i(int(floor((p.x + reach) / CH)), int(floor((p.z + reach) / CH)))
 	var missing: Array = []
@@ -153,7 +196,7 @@ func _process(dt: float) -> void:
 				_touch[c] = _tick
 				var n = _chunks[c]
 				if n != null:
-					n.visible = d <= radius + CH
+					n.visible = d <= r_eff + CH
 			else:
 				missing.append([d, c])
 	# генерируем ближайшие недостающие (по 2 за кадр)
