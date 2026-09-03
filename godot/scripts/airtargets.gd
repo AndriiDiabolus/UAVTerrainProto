@@ -17,12 +17,14 @@ var _rng := RandomNumberGenerator.new()
 var _acc := 0.0
 var _wing_mesh: ArrayMesh
 var _quad_mesh: ArrayMesh
+var _units: RefCounted            # units.gd: GLB-модели вражеских бортов
 var kills := 0
 
 
 func setup(m: Node3D) -> void:
 	main = m
 	_rng.seed = 9182
+	_units = load("res://scripts/units.gd").new()
 	_wing_mesh = _make_wing()
 	_quad_mesh = _make_quad()
 
@@ -62,8 +64,13 @@ func _try_spawn(cp: Vector3) -> void:
 		var px := c.x + cos(a) * r
 		var pz := c.y + sin(a) * r
 		wp.append(Vector3(px, main.height_at(px, pz) + alt, pz))
-	var mi := MeshInstance3D.new()
-	mi.mesh = _wing_mesh if kind == "wing" else _quad_mesh
+	# GLB-модели врагов: крыло — «Орлан», квадрик — тот же класс FPV, что у игрока
+	var mi: Node3D = _units.glb_unit("orlan", 3.1, PI, false, true) if kind == "wing" \
+		else _units.glb_unit("fpv7", 0.9, -PI * 0.5, false)
+	if mi == null:
+		var mmi := MeshInstance3D.new()
+		mmi.mesh = _wing_mesh if kind == "wing" else _quad_mesh
+		mi = mmi
 	mi.position = wp[0]
 	add_child(mi)
 	var mark := _add_marker(mi)

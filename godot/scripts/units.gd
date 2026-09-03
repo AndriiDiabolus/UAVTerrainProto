@@ -1056,6 +1056,41 @@ func _glb_drone(kind: String, max_dim: float, yaw_fix: float) -> Dictionary:
 	return {"root": root, "props": [], "half_h": aabb.size.y * 0.5 * s}
 
 
+## Наземный/воздушный юнит из GLB (Meshy): нормировка максимального габарита к max_dim,
+## разворот носом в +X, при ground — низ модели на y=0 (как у процедурных юнитов).
+func glb_unit(kind: String, max_dim: float, yaw_fix: float, ground: bool = true, span_to_z: bool = false) -> Node3D:
+	var path := "res://assets/models/%s.glb" % kind
+	if not ResourceLoader.exists(path):
+		return null
+	var glb: PackedScene = load(path)
+	if glb == null:
+		return null
+	var root := Node3D.new()
+	root.name = "Unit%sGLB" % kind.capitalize()
+	var inst: Node3D = glb.instantiate()
+	root.add_child(inst)
+	var aabb := _combined_aabb(inst)
+	var s := max_dim / maxf(aabb.size.x, maxf(aabb.size.y, aabb.size.z))
+	var rot := Basis(Vector3.UP, yaw_fix)
+	if span_to_z and aabb.size.x >= aabb.size.z:
+		rot = Basis(Vector3.UP, -PI * 0.5)     # крыло: длинная ось (размах) должна лечь на Z
+	var lift: float = (aabb.get_center().y - aabb.position.y) * s if ground else 0.0
+	inst.transform = Transform3D(rot * Basis.from_scale(Vector3.ONE * s),
+		Vector3(0, lift, 0) - rot * (aabb.get_center() * s))
+	return root
+
+
+## Пехотинец-узел: GLB (Meshy) или процедурный фоллбек. Ноги на y=0, лицом в +X.
+func soldier_node(variant: int = 2) -> Node3D:
+	var g := glb_unit("soldier", 1.8, PI * 0.5)   # Meshy отдал фронт фигурки в +Z
+	if g != null:
+		return g
+	var mi := _mi(soldier(variant), "Soldier")
+	var holder := Node3D.new()
+	holder.add_child(mi)
+	return holder
+
+
 ## Совокупный AABB всех MeshInstance3D поддерева (в координатах узла n).
 func _combined_aabb(n: Node3D, xf: Transform3D = Transform3D()) -> AABB:
 	var res := AABB()
@@ -1102,7 +1137,10 @@ func build_set(key: String) -> Array:
 	if key.begins_with("apc"):
 		return [[apc_node(variant).root, 0.0]]
 	if key.begins_with("sold"):
-		return [[soldier(variant), 0.0]]
+		return [[soldier_node(variant), 0.0]]
+	if key.begins_with("air"):
+		var w := glb_unit("orlan", 3.1, PI, true, true)
+		return [[w, 0.0]] if w != null else []
 	if key.begins_with("car"):
 		return [[car_sedan(), -6.0], [car_wagon(), -3.0], [car_van(), 0.0], [car_truck(), 3.5], [car_bus(), 7.5]]
 	if key.begins_with("drone"):
@@ -1225,6 +1263,12 @@ func _tank_gun_mesh() -> ArrayMesh:
 
 
 func tank_node(variant: int) -> Dictionary:
+	# GLB (Meshy, Т-90М с антидроновым «мангалом»): цельный корпус, башня/траки статичны —
+	# движение читается по пыли и рельефу; наводка орудия не анимируется (guard'ы в targets.gd).
+	var g := glb_unit("tank", 9.5, PI)
+	if g != null:
+		return {"root": g, "turret": null, "gun": null, "tracks": null,
+			"wheels": [], "wheel_r": 0.5, "cleat_step": 0.9}
 	var tex: ImageTexture
 	match variant:
 		3: tex = camo_multicam()
@@ -1284,6 +1328,11 @@ func _apc_gun_mesh() -> ArrayMesh:
 
 
 func apc_node(variant: int) -> Dictionary:
+	# GLB (Meshy, БТР-80): цельный корпус, колёса статичны (guard'ы в targets.gd).
+	var g := glb_unit("btr", 7.7, PI)
+	if g != null:
+		return {"root": g, "turret": null, "gun": null, "tracks": null,
+			"wheels": [], "wheel_r": 0.58}
 	var tex: ImageTexture = camo_pixel() if variant == 3 else camo_green()
 	var root := Node3D.new()
 	root.add_child(_mi(_apc_hull_mesh(tex), "Hull"))

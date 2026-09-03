@@ -203,8 +203,7 @@ func _spawn_vehicle(kind: String, road: Dictionary, d: float) -> void:
 func _spawn_squad(road: Dictionary, d: float) -> void:
 	var n := randi_range(3, 5)
 	for i in n:
-		var mi := MeshInstance3D.new()
-		mi.mesh = soldier_mesh
+		var mi: Node3D = _units.soldier_node(2)
 		if i == 0:
 			_add_marker(mi, Color(1.0, 0.9, 0.1), 50.0)   # маркер над командиром группы
 		add_child(mi)
