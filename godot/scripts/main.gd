@@ -222,9 +222,12 @@ func _build_terrain() -> void:
 	var sh := "res://scripts/terrain_unshaded.gdshader" if "--unshaded" in OS.get_cmdline_user_args() else "res://scripts/terrain.gdshader"
 	mat.shader = load(sh)
 	mat.set_shader_parameter("albedo_tex", _load_albedo())
-	for pair in [["grass", "grass"], ["dirt", "dirt"], ["rock", "rock"]]:
+	for pair in [["grass", "grass"], ["dirt", "dirt"], ["rock", "rock"], ["plow", "plow"], ["pebble", "pebble"]]:
 		mat.set_shader_parameter(pair[0] + "_tex", _load_tex(pair[1] + "_diff.jpg"))
 		mat.set_shader_parameter(pair[0] + "_n", _load_tex(pair[1] + "_norm.jpg"))
+	mat.set_shader_parameter("dry_tex", _load_tex("dry_diff.jpg"))
+	mat.set_shader_parameter("litter_tex", _load_tex("litter_diff.jpg"))
+	mat.set_shader_parameter("dry_bias", 1.0 if region == "steppe" else 0.0)
 	mat.set_shader_parameter("noise_tex", _make_detail_noise())
 	var mimg := load_image(asset_path("mask.png"))
 	if mimg != null:

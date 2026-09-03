@@ -13,6 +13,15 @@ uniform sampler2D dirt_tex  : source_color, filter_linear_mipmap_anisotropic, re
 uniform sampler2D dirt_n    : filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D rock_tex  : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D rock_n    : filter_linear_mipmap_anisotropic, repeat_enable;
+// доп. слои гиперреализма: сухостой (пятна выгорания/сенокос), борозды пашни,
+// лесная подстилка, галька русел; нормали — только там, где рельеф читается (пашня, галька)
+uniform sampler2D dry_tex    : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D plow_tex   : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D plow_n     : filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D litter_tex : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D pebble_tex : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D pebble_n   : filter_linear_mipmap_anisotropic, repeat_enable;
+uniform float dry_bias : hint_range(0.0, 1.0) = 0.0;   // степь суше Карпат
 uniform sampler2D noise_tex : filter_linear_mipmap, repeat_enable;   // бесшовный шум (main._make_detail_noise)
 uniform sampler2D mask_tex : filter_nearest;      // маска биомов (mask.png): 0 прочее 1 лес 2 дорога 3 застройка 4 пашня 5 луг 6 кустарник 7 вода 8 голая 9 болото
 uniform float mask_px = 4096.0;
@@ -98,11 +107,14 @@ void fragment() {
 		float slope = 1.0 - clamp(wnorm.y, 0.0, 1.0);
 		float rockW = smoothstep(0.28 + nB * 0.16, 0.62, slope);
 
-		vec3 gd = mix(t2(dirt_tex, p, k), t2(grass_tex, p, k), grassW);
+		// сухостой: крупные пятна выгорания (nA) + региональный сдвиг (степь суше)
+		float dryW = smoothstep(0.56, 0.74, nA + dry_bias * 0.35);
+		vec3 grassCol = mix(t2(grass_tex, p, k), t2(dry_tex, p, k), dryW);
+		vec3 gd = mix(t2(dirt_tex, p, k), grassCol, grassW);
 		vec3 detail = mix(gd, t2(rock_tex, p, k), rockW);
 
-		vec3 nd = normalize(mix(n2(dirt_tex, p, k), n2(grass_tex, p, k), grassW));
-		nd = normalize(mix(nd, n2(rock_tex, p, k), rockW));
+		vec3 nd = normalize(mix(n2(dirt_n, p, k), n2(grass_n, p, k), grassW));
+		nd = normalize(mix(nd, n2(rock_n, p, k), rockW));
 
 		// фото-фактура принимает крупный цвет спутника (реальная раскладка полей/леса)
 		vec3 chroma = macro / max(macro_lum, 0.001);
@@ -124,7 +136,7 @@ void fragment() {
 		vec2 par = parcel(p, 220.0);
 		float pv = par.x;
 		// лес: подстилка (хвоя/листва, бурая) вблизи; полог (тёмная «шуба» с кронами-шумом) вдали, где деревьев уже нет
-		vec3 litter = mix(vec3(0.16, 0.13, 0.08), vec3(0.10, 0.14, 0.06), nB) * (0.8 + 0.4 * nA);
+		vec3 litter = t2(litter_tex, p, k) * (0.72 + 0.36 * nA);   // фото-подстилка, темновата под пологом
 		float crowns = texture(noise_tex, p * 0.045).r;
 		// полог относительно спутника: темнее базы, кроны-шум даёт «шубу», лёгкий сдвиг в зелень
 		vec3 canopy = macro * (0.55 + 0.7 * crowns) * vec3(0.92, 1.06, 0.88) * (0.85 + 0.3 * nA);
@@ -133,8 +145,11 @@ void fragment() {
 		// пашня: парцеллы — часть полей зелёная (посев), часть стерня/чернозём; борозды как анизотропная фактура
 		float stub = step(0.5, pv);
 		vec3 cropGreen = ground * vec3(0.92, 1.0, 0.9) * (0.88 + 0.25 * hash21(vec2(pv, 1.0)));
-		vec3 cropDirt = t2(dirt_tex, p, k) * mix(vec3(1.0), chroma, 0.3) * (0.55 + 0.45 * hash21(vec2(pv, 2.0)));
-		float rows = 0.92 + 0.08 * sin(dot(p, vec2(cos(pv * 6.28), sin(pv * 6.28))) * 1.2);
+		// вспаханные парцеллы: фото-борозды, повёрнутые по «направлению вспашки» парцеллы
+		float pang = pv * 6.28;
+		vec2 plowP = vec2(p.x * cos(pang) - p.y * sin(pang), p.x * sin(pang) + p.y * cos(pang));
+		vec3 cropDirt = t2(plow_tex, plowP, k) * mix(vec3(1.0), chroma, 0.25) * (0.7 + 0.35 * hash21(vec2(pv, 2.0)));
+		float rows = 0.95 + 0.05 * sin(dot(p, vec2(cos(pang), sin(pang))) * 1.2);
 		vec3 cropCol = mix(cropGreen, cropDirt, stub) * rows;
 		// межа между парцеллями — тёмная полоска
 		float edgeP = smoothstep(0.46, 0.5, par.y) * 0.25;
@@ -143,7 +158,7 @@ void fragment() {
 		vec3 meadowCol = ground * (0.92 + 0.16 * hash21(vec2(pv, 3.0))) * mix(vec3(1.0), vec3(1.04, 1.0, 0.9), hash21(vec2(pv, 4.0)));
 		meadowCol *= 1.0 - edgeP * 0.5;
 		vec3 shrubCol = mix(ground, t2(dirt_tex, p, k) * 0.8, 0.35) * vec3(0.9, 0.95, 0.85);
-		vec3 bareCol = mix(t2(dirt_tex, p, k), t2(rock_tex, p, k), 0.5) * 0.9;
+		vec3 bareCol = mix(t2(pebble_tex, p, k), t2(rock_tex, p, k), 0.3) * 0.95;   // русла/осыпи — галька
 		vec3 builtCol = mix(ground, t2(dirt_tex, p, k) * 0.9, 0.5);
 		vec3 waterCol = vec3(0.12, 0.16, 0.14);
 		vec3 biome = ground;
@@ -160,6 +175,9 @@ void fragment() {
 		farCol = mix(farCol, mix(macro, cropCol, 0.35), crop);
 		vec3 base = mix(farCol, ground, near);
 
+		// рельефные нормали спец-слоёв: борозды пашни и галька русел читаются с дрона
+		nd = normalize(mix(nd, n2(plow_n, plowP, k), crop * stub * 0.85));
+		nd = normalize(mix(nd, n2(pebble_n, p, k), bare * 0.8));
 		// нормаль из карты (приближённо: земля ~ горизонтальна, T=+X, B=+Z)
 		vec3 wn = normalize(wnorm + (vec3(1,0,0) * nd.x + vec3(0,0,1) * nd.y) * (0.9 * near));
 		NORMAL = normalize((VIEW_MATRIX * vec4(wn, 0.0)).xyz);
