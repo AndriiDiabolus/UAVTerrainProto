@@ -627,6 +627,16 @@ func civ_set(variant: int) -> Array:
 const CARBON := Color(0.13, 0.13, 0.145)
 
 func drone_fpv7(variant: int, weapon: int = -1) -> Dictionary:
+	# Основной путь: Meshy-меш по фото Chimera7 (assets/models/fpv7.glb); обвес — поверх GLB.
+	var g := _glb_drone("fpv7", 0.45, -PI * 0.5)
+	if not g.is_empty():
+		if weapon >= 0:
+			var wm := ArrayMesh.new()
+			_append_mesh_keep(wm, weapon_pod(weapon), Transform3D())
+			var wi := _mi(wm, "WeaponPod")
+			wi.position = Vector3(0.0, -float(g.half_h) * 0.5, 0)
+			g.root.add_child(wi)
+		return g
 	# Референс: iFlight Chimera7 Pro V2 — DeadCat-геометрия (передние моторы шире и вперёд),
 	# база 327 мм, длинный корпус-балка с боковыми панелями, GoPro-маунт спереди сверху,
 	# TPU-бамперы под моторами, антенны-диполи назад. Фото: iflight.com.
@@ -825,6 +835,9 @@ func drone_fpv5(variant: int, weapon: int = -1) -> Dictionary:
 ## mavic — складной потребительский квадрокоптер класса DJI Mavic 3 (корпус-монокок 231×98×95,
 ## лучи из углов, 2-лопастные винты, гимбал-камера в рамке спереди). Скины: серый/олива/тёмный.
 func drone_mavic(variant: int) -> Dictionary:
+	var g := _glb_drone("mavic", 0.35, -PI * 0.5)
+	if not g.is_empty():
+		return g
 	# Референс: DJI Mavic 3 (фото Wikimedia) — вытянутый обтекаемый корпус (двухтоновый серый),
 	# КРУПНЫЙ прямоугольный камера-блок Hasselblad под носом, передние лучи низко от носа,
 	# задние — с «коленом» вверх и плавниками-ногами вниз; узкие 2-лопастные винты.
@@ -876,6 +889,9 @@ func drone_mavic(variant: int) -> Dictionary:
 
 ## mship — тяжёлая матка-носитель: гексакоптер ~1.1 м, батарейный блок, лыжи, подвес FPV снизу.
 func drone_mother(variant: int) -> Dictionary:
+	var g := _glb_drone("mship", 1.35, -PI * 0.5)
+	if not g.is_empty():
+		return g
 	# Референс: украинский тяжёлый гексакоптер «Вампир» (фото Wikimedia, UA Vampire UCAV) —
 	# круглая дисковая плита с «грибом»-обтекателем сверху, 6 тонких трубчатых лучей,
 	# длинные УЗКИЕ 2-лопастные винты, блоки электроники и подвес под брюхом,
@@ -984,6 +1000,27 @@ func drone_wing(variant: int) -> Dictionary:
 	var pn := _prop_node("PropPush", Vector3.ZERO, 2, 2.2, Color(0.12, 0.12, 0.13), 0.5)
 	holder.add_child(pn)
 	return {"root": root, "props": [pn]}
+
+
+## GLB-модель дрона из assets/models/<kind>.glb с автонормировкой: максимальный габарит
+## приводится к max_dim, модель центрируется, yaw_fix разворачивает нос в +X.
+## Возврат: {root, props: [], half_h} или {} если файла нет (тогда работает процедурный запасной).
+func _glb_drone(kind: String, max_dim: float, yaw_fix: float) -> Dictionary:
+	var path := "res://assets/models/%s.glb" % kind
+	if not ResourceLoader.exists(path):
+		return {}
+	var glb: PackedScene = load(path)
+	if glb == null:
+		return {}
+	var root := Node3D.new()
+	root.name = "Drone%sGLB" % kind.capitalize()
+	var inst: Node3D = glb.instantiate()
+	root.add_child(inst)
+	var aabb := _combined_aabb(inst)
+	var s := max_dim / maxf(aabb.size.x, maxf(aabb.size.y, aabb.size.z))
+	var rot := Basis(Vector3.UP, yaw_fix)
+	inst.transform = Transform3D(rot * Basis.from_scale(Vector3.ONE * s), -(rot * (aabb.get_center() * s)))
+	return {"root": root, "props": [], "half_h": aabb.size.y * 0.5 * s}
 
 
 ## Совокупный AABB всех MeshInstance3D поддерева (в координатах узла n).

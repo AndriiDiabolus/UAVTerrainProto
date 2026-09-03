@@ -41,7 +41,7 @@ const ACCEL := 65.0                  # GPS: отзывчивость, м/с²
 const DRAG_GPS := 2.3                # GPS: выбег
 const BOOST := 3.5
 const CLIMB_MAX := 28.0              # GPS: предел вертикали, м/с
-const DEADZONE := 0.06
+const DEADZONE := 0.09
 const CLEARANCE := 0.35              # высота «ног» над землёй, м
 
 ## Профили: масса, тяговооружённость, drag (F=-c·v|v|), макс. наклон (ANGLE), макс. угловые скорости,
