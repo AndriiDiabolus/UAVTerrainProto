@@ -10,7 +10,7 @@ var _fpv_osd: Control
 var fpv_on := false
 var target_marker: Label
 var _sound_btn: Button
-var _sound_muted := false
+var _sound_muted := true          # старт без звука; включается M (или --sound)
 var _wind_label: Label
 var _wind_flag: Control
 var _sticks: Control
@@ -57,6 +57,9 @@ func setup(m: Node3D) -> void:
 	main = m
 	if "--nohud" in OS.get_cmdline_user_args():
 		visible = false
+	if "--sound" in OS.get_cmdline_user_args():
+		_sound_muted = false
+	AudioServer.set_bus_mute(0, _sound_muted)     # по умолчанию тихо, M — включить
 	var layer := self
 	hud_label = Label.new()
 	hud_label.position = Vector2(16, 12)
