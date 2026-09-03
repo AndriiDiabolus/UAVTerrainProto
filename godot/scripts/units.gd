@@ -631,11 +631,9 @@ func drone_fpv7(variant: int, weapon: int = -1) -> Dictionary:
 	var g := _glb_drone("fpv7", 0.45, -PI * 0.5)
 	if not g.is_empty():
 		if weapon >= 0:
-			var wm := ArrayMesh.new()
-			_append_mesh_keep(wm, weapon_pod(weapon), Transform3D())
-			var wi := _mi(wm, "WeaponPod")
-			wi.position = Vector3(0.0, -float(g.half_h) * 0.5, 0)
-			g.root.add_child(wi)
+			var pod := weapon_pod_node(weapon)
+			pod.position = Vector3(0.0, -float(g.half_h) * 0.5, 0)
+			g.root.add_child(pod)
 		return g
 	# Референс: iFlight Chimera7 Pro V2 — DeadCat-геометрия (передние моторы шире и вперёд),
 	# база 327 мм, длинный корпус-балка с боковыми панелями, GoPro-маунт спереди сверху,
@@ -789,7 +787,42 @@ func _prop_node(nm: String, pos: Vector3, blades: int, s: float, col: Color, cho
 
 
 ## fpv5 — 5" фристайл/перехватчик (~225 мм): та же школа, что fpv7, компактнее, без БЧ/GPS.
+## Узел обвеса: кассета сбросов из GLB-болванок (assets/models/vog.glb), если меш есть;
+## иначе — процедурный weapon_pod. Крепления (рейка/скобы) всегда процедурные — точная стыковка.
+func weapon_pod_node(w: int) -> Node3D:
+	var root := Node3D.new()
+	root.name = "WeaponPod"
+	if w == 0 and ResourceLoader.exists("res://assets/models/vog.glb"):
+		var rail := ArrayMesh.new()
+		_append(rail, _box(0.112, 0.008, 0.052), Transform3D(Basis(), Vector3(0, -0.006, 0)), Color(0.09, 0.09, 0.09))
+		root.add_child(_mi(rail, "Rail"))
+		var glb: PackedScene = load("res://assets/models/vog.glb")
+		for i in 3:
+			for sz: float in [1.0, -1.0]:
+				var inst: Node3D = glb.instantiate()
+				var aabb := _combined_aabb(inst)
+				var s := 0.075 / maxf(aabb.size.x, maxf(aabb.size.y, aabb.size.z))
+				# болванка носиком вниз, подвешена под рейкой
+				var rot := Basis(Vector3(0, 0, 1), deg_to_rad(90.0))
+				inst.transform = Transform3D(rot * Basis.from_scale(Vector3.ONE * s),
+					Vector3(-0.038 + 0.038 * i, -0.038, sz * 0.015) - rot * (aabb.get_center() * s))
+				root.add_child(inst)
+		return root
+	var m := ArrayMesh.new()
+	_append_mesh_keep(m, weapon_pod(w), Transform3D())
+	root.add_child(_mi(m, "PodMesh"))
+	return root
+
+
 func drone_fpv5(variant: int, weapon: int = -1) -> Dictionary:
+	# Основной путь: Meshy-меш 5" фристайла (assets/models/fpv5.glb) + обвес поверх.
+	var g := _glb_drone("fpv5", 0.30, -PI * 0.5)
+	if not g.is_empty():
+		if weapon >= 0:
+			var pod := weapon_pod_node(weapon)
+			pod.position = Vector3(0.0, -float(g.half_h) * 0.5, 0)
+			g.root.add_child(pod)
+		return g
 	var root := Node3D.new()
 	root.name = "DroneFPV5v%d" % variant
 	var m := ArrayMesh.new()
