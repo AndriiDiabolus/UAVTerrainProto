@@ -35,13 +35,22 @@ func setup(m: Node3D) -> void:
 		_mask_bytes = mask.get_data()
 	_mat = ShaderMaterial.new()
 	_mat.shader = load("res://scripts/grass.gdshader")
-	_mat.set_shader_parameter("tex", _grass_tex())
+	# фото-атлас (magenta-key, tools/make_grass_atlas) — основной путь; процедурный — фоллбек
+	var photo: Image = main.load_image("res://assets/tex/grass_atlas.png")
+	if photo != null:
+		photo.generate_mipmaps()
+		_mat.set_shader_parameter("tex", ImageTexture.create_from_image(photo))
+		_mat.set_shader_parameter("tint", Color(0.98, 0.96, 0.9))   # фото уже в реальном цвете
+		_mat.set_shader_parameter("alpha_cut", 0.14)
+		_mat.set_shader_parameter("alpha_boost", 1.6)
+	else:
+		_mat.set_shader_parameter("tex", _grass_tex())
 	_mat.set_shader_parameter("sat_tex", main._load_albedo())
 	_mat.set_shader_parameter("world_size", main.size_m)
 	_mat.set_shader_parameter("fade_start", radius * 0.55)
 	_mat.set_shader_parameter("fade_end", radius)
 	_mesh = ArrayMesh.new()
-	_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, _clump_arrays(1.5, 0.62))
+	_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, _clump_arrays(1.4, 0.85) if photo != null else _clump_arrays(1.5, 0.62))
 	_mesh.surface_set_material(0, _mat)
 	_rock_mesh = SphereMesh.new(); _rock_mesh.radius = 1.0; _rock_mesh.height = 2.0
 	_rock_mesh.radial_segments = 7; _rock_mesh.rings = 4

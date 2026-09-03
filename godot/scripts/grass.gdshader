@@ -8,6 +8,8 @@ uniform sampler2D tex : source_color, filter_linear_mipmap_anisotropic;
 uniform vec2 wind_dir = vec2(1.0, 0.0);
 uniform float wind_strength : hint_range(0.0, 3.0) = 0.3;
 uniform vec3 tint : source_color = vec3(0.40, 0.42, 0.16);
+uniform float alpha_cut = 0.32;      // фото-атлас: ниже (тонкие стебли гибнут на мипах)
+uniform float alpha_boost = 1.0;     // фото-атлас: подкачка альфы против мип-усреднения
 uniform float fade_start = 40.0;
 uniform float fade_end = 70.0;
 uniform sampler2D sat_tex : source_color, filter_linear_mipmap;   // спутник — цвет травы в точке
@@ -52,8 +54,8 @@ void vertex() {
 void fragment() {
 	vec4 c = texture(tex, auv);
 	float fade = clamp((vdist - fade_start) / (fade_end - fade_start), 0.0, 1.0);
-	ALPHA = c.a;
-	ALPHA_SCISSOR_THRESHOLD = 0.32 + fade * 0.65 + 0.15 * fade * sin(wxz.x * 0.7 + wxz.y * 1.3);   // вдали пучки редеют, шумно
+	ALPHA = min(c.a * alpha_boost, 1.0);
+	ALPHA_SCISSOR_THRESHOLD = alpha_cut + fade * 0.65 + 0.15 * fade * sin(wxz.x * 0.7 + wxz.y * 1.3);   // вдали пучки редеют, шумно
 	ALBEDO = c.rgb * tint * COLOR.rgb * sat_tint * cloud_shadow(wxz);
 	vec3 up_v = normalize((VIEW_MATRIX * vec4(0.0, 1.0, 0.0, 0.0)).xyz);
 	NORMAL = up_v;
