@@ -16,6 +16,17 @@ var mpx: int
 var _mask_bytes := PackedByteArray()   # сырые байты маски (L8) — get_pixel слишком дорог для тысяч точек
 var _mesh: ArrayMesh
 var _mat: ShaderMaterial
+var _mat_det: ShaderMaterial            # материал детального LOD (атлас элементов)
+var _mesh_det_f: Array = []             # детальные меши: цветочная куртина (вариации)
+var _mesh_det_c: Array = []             # детальные меши: злаковый ковёр (вариации)
+var _mesh_det_d: Array = []             # детальные меши: сухостой (вариации)
+var _fnoise := FastNoiseLite.new()      # пятна цветения (~15 м куртины)
+var _mesh3d_f: ArrayMesh                # 3D-«герои» (Meshy GLB): цветущий/зелёный/сухой пучок
+var _mesh3d_c: ArrayMesh
+var _mesh3d_d: ArrayMesh
+var _mats3d: Array = []                 # их материалы (ветер обновляется в _process)
+const HERO_P := 0.11                    # доля 3D-пучков среди детальных точек
+const DETAIL_R := 34.0                  # радиус детального LOD, м
 var _rock_mesh: SphereMesh
 var _chunks := {}                   # Vector2i -> Node3D (или null, если пусто)
 var _touch := {}                    # Vector2i -> last-use tick (для LRU)
@@ -38,20 +49,23 @@ func setup(m: Node3D) -> void:
 	# фото-атлас (magenta-key, tools/make_grass_atlas) — основной путь; процедурный — фоллбек
 	var photo: Image = main.load_image("res://assets/tex/grass_atlas.png")
 	var photo_top: Image = main.load_image("res://assets/tex/grass_atlas_top.png")
+	var top_tex: ImageTexture = null
+	if photo_top != null:
+		photo_top.generate_mipmaps()
+		top_tex = ImageTexture.create_from_image(photo_top)
 	if photo != null:
 		photo.generate_mipmaps()
 		_mat.set_shader_parameter("tex", ImageTexture.create_from_image(photo))
 		_mat.set_shader_parameter("tint", Color(0.98, 0.96, 0.9))   # фото уже в реальном цвете
 		_mat.set_shader_parameter("alpha_cut", 0.14)
 		_mat.set_shader_parameter("alpha_boost", 1.6)
-		if photo_top != null:
-			photo_top.generate_mipmaps()
-			_mat.set_shader_parameter("tex_top", ImageTexture.create_from_image(photo_top))
+		if top_tex != null:
+			_mat.set_shader_parameter("tex_top", top_tex)
 	else:
 		_mat.set_shader_parameter("tex", _grass_tex())
 	_mat.set_shader_parameter("sat_tex", main._load_albedo())
 	if photo != null:
-		radius = 82.0                             # фото-пучки с шапкой видны дальше — луг не «обрывается» с воздуха
+		radius = 106.0                             # фото-пучки с шапкой видны дальше — луг не «обрывается» с воздуха
 	_mat.set_shader_parameter("world_size", main.size_m)
 	_mat.set_shader_parameter("fade_start", radius * 0.7)
 	_mat.set_shader_parameter("fade_end", radius)
@@ -64,12 +78,124 @@ func setup(m: Node3D) -> void:
 	else:
 		arrs = _clump_arrays(1.5, 0.62)
 	_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrs)
+	# детальный LOD: атлас отдельных элементов (стебель/лист/цветок на ячейку 4×2)
+	var elems: Image = main.load_image("res://assets/tex/grass_elements.png")
+	if elems != null:
+		elems.generate_mipmaps()
+		_mat_det = ShaderMaterial.new()
+		_mat_det.shader = _mat.shader
+		_mat_det.set_shader_parameter("tex", ImageTexture.create_from_image(elems))
+		_mat_det.set_shader_parameter("sat_tex", main._load_albedo())
+		_mat_det.set_shader_parameter("world_size", main.size_m)
+		_mat_det.set_shader_parameter("tint", Color(0.98, 0.96, 0.9))
+		_mat_det.set_shader_parameter("alpha_cut", 0.30)
+		_mat_det.set_shader_parameter("alpha_boost", 1.3)
+		_mat_det.set_shader_parameter("detail_mode", 1.0)
+		if top_tex != null:
+			_mat_det.set_shader_parameter("tex_top", top_tex)
+		_mat_det.set_shader_parameter("fade_start", DETAIL_R * 0.8)
+		_mat_det.set_shader_parameter("fade_end", DETAIL_R + CH * 0.5)
+		_fnoise.seed = 4217
+		_fnoise.frequency = 0.045            # куртины цветения ~15–25 м
+		_fnoise.noise_type = FastNoiseLite.TYPE_VALUE_CUBIC
+		# композиции пучков (реализм: даже в цветочной куртине основа — злаки)
+		for sv in 2:
+			var mf := ArrayMesh.new()        # цветочная куртина: цветы/листья + злаковая основа
+			mf.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,
+				_clump_arrays_detail([0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 15], 100 + sv))
+			mf.surface_set_material(0, _mat_det)
+			_mesh_det_f.append(mf)
+			var mc := ArrayMesh.new()        # злаковый ковёр: травинки/метёлки + редкий цветок
+			mc.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,
+				_clump_arrays_detail([8, 9, 10, 11, 12, 13, 14, 15, 8, 10, 13, 1], 300 + sv))
+			mc.surface_set_material(0, _mat_det)
+			_mesh_det_c.append(mc)
+			var md := ArrayMesh.new()        # сухостой + пара живых травинок
+			md.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,
+				_clump_arrays_detail([16, 17, 18, 19, 20, 21, 22, 23, 8], 200 + sv))
+			md.surface_set_material(0, _mat_det)
+			_mesh_det_d.append(md)
 	_mesh.surface_set_material(0, _mat)
+	# 3D-«герои» (Meshy): объёмные мешевые пучки, ~каждый десятый в детальной зоне
+	_mesh3d_f = _glb_clump("res://assets/models/grass_flower.glb", 0.62)
+	_mesh3d_c = _glb_clump("res://assets/models/grass_green.glb", 0.55)
+	_mesh3d_d = _glb_clump("res://assets/models/grass_dry.glb", 0.55)
 	_rock_mesh = SphereMesh.new(); _rock_mesh.radius = 1.0; _rock_mesh.height = 2.0
 	_rock_mesh.radial_segments = 7; _rock_mesh.rings = 4
 	var rmat := StandardMaterial3D.new()
 	rmat.albedo_color = Color(0.42, 0.40, 0.36); rmat.roughness = 0.95
 	_rock_mesh.material = rmat
+
+
+## 3D-пучок из Meshy GLB → ArrayMesh для MultiMesh: все сабмеши запекаются в один меш
+## (масштаб к max_dim, низ на y=0, центр в 0), поверх — grass3d-шейдер с ветром и текстурой GLB.
+func _glb_clump(path: String, max_dim: float) -> ArrayMesh:
+	if not ResourceLoader.exists(path):
+		return null
+	var ps: PackedScene = load(path)
+	if ps == null:
+		return null
+	var inst: Node = ps.instantiate()
+	var mis: Array = []                      # [MeshInstance3D, global_xf]
+	var stack: Array = [[inst, Transform3D()]]
+	while not stack.is_empty():
+		var it: Array = stack.pop_back()
+		var n: Node = it[0]
+		var xf: Transform3D = it[1]
+		if n is Node3D:
+			xf = xf * (n as Node3D).transform
+		if n is MeshInstance3D and (n as MeshInstance3D).mesh != null:
+			mis.append([n, xf])
+		for ch in n.get_children():
+			stack.append([ch, xf])
+	if mis.is_empty():
+		inst.free()
+		return null
+	# общий AABB в корневых координатах
+	var aabb := AABB()
+	var first := true
+	for it: Array in mis:
+		var a: AABB = (it[1] as Transform3D) * ((it[0] as MeshInstance3D).mesh.get_aabb())
+		aabb = a if first else aabb.merge(a)
+		first = false
+	var s := max_dim / maxf(aabb.size.x, maxf(aabb.size.y, aabb.size.z))
+	var c := aabb.get_center()
+	var norm := Transform3D(Basis.from_scale(Vector3.ONE * s),
+		Vector3(-c.x * s, -aabb.position.y * s, -c.z * s))
+	# текстура из первого материала GLB
+	var tex: Texture2D = null
+	var m0: Mesh = (mis[0][0] as MeshInstance3D).mesh
+	var bm := m0.surface_get_material(0)
+	if bm is BaseMaterial3D:
+		tex = (bm as BaseMaterial3D).albedo_texture
+	var smat := ShaderMaterial.new()
+	smat.shader = load("res://scripts/grass3d.gdshader")
+	if tex != null:
+		smat.set_shader_parameter("alb", tex)
+	smat.set_shader_parameter("sat_tex", main._load_albedo())
+	smat.set_shader_parameter("world_size", main.size_m)
+	smat.set_shader_parameter("clump_h", max_dim * 0.9)
+	_mats3d.append(smat)
+	var out := ArrayMesh.new()
+	for it: Array in mis:
+		var mi := it[0] as MeshInstance3D
+		var xf := norm * (it[1] as Transform3D)
+		for si in mi.mesh.get_surface_count():
+			var arr: Array = mi.mesh.surface_get_arrays(si)
+			var V: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+			for i in V.size():
+				V[i] = xf * V[i]
+			arr[Mesh.ARRAY_VERTEX] = V
+			var NN = arr[Mesh.ARRAY_NORMAL]
+			if NN != null:
+				var N2: PackedVector3Array = NN
+				for i in N2.size():
+					N2[i] = (xf.basis * N2[i]).normalized()
+				arr[Mesh.ARRAY_NORMAL] = N2
+			out.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+			out.surface_set_material(out.get_surface_count() - 1, smat)
+	inst.free()
+	return out
 
 
 ## Объёмный пучок для фото-атласа: 3 плоскости под 60° + горизонтальная «шапка» на 60 % высоты.
@@ -95,6 +221,58 @@ func _clump_arrays_vol(w: float, h: float) -> Array:
 	var arr := []; arr.resize(Mesh.ARRAY_MAX)
 	arr[Mesh.ARRAY_VERTEX] = V; arr[Mesh.ARRAY_NORMAL] = N
 	arr[Mesh.ARRAY_TEX_UV] = UVs; arr[Mesh.ARRAY_INDEX] = I
+	return arr
+
+
+## ДЕТАЛЬНЫЙ пучок (LOD-0, вблизи): 14–16 карточек-элементов из атласа 4×2 (каждая — ОДИН
+## стебель/лист/цветок), розеткой со случайным наклоном; карточка вертикально разбита на
+## 3 ряда (гнётся дугой). UV2 = (фаза ветра, амплитуда) — каждый элемент шевелится сам по себе.
+## cells — какие ячейки атласа сеять (зелёный луг или сухостой), seed — вариация композиции.
+func _clump_arrays_detail(cells: Array, seed_v: int) -> Array:
+	var V := PackedVector3Array(); var N := PackedVector3Array()
+	var UVs := PackedVector2Array(); var UV2s := PackedVector2Array(); var I := PackedInt32Array()
+	var rng := RandomNumberGenerator.new(); rng.seed = seed_v
+	var n_cards := 15
+	for c in n_cards:
+		var cell: int = cells[rng.randi() % cells.size()]     # атлас 4×6: 0..7 цветы, 8..15 злаки, 16..23 сухостой
+		var cu := float(cell % 4) * 0.25; var cv := float(cell / 4) / 6.0
+		var yaw := rng.randf() * TAU
+		var rad := rng.randf_range(0.02, 0.34)                    # смещение от центра розетки
+		var tilt := rng.randf_range(0.06, 0.42) + rad * 0.5       # наружу сильнее с краю
+		var w := rng.randf_range(0.13, 0.22)                      # ширина карточки элемента
+		var h := rng.randf_range(0.30, 0.60)                      # растение заполняет ячейку целиком
+		var ph := rng.randf()                                     # фаза ветра элемента
+		var amp := rng.randf_range(0.6, 1.3)                      # амплитуда элемента
+		var fwd := Vector3(cos(yaw), 0, sin(yaw))
+		var side := Vector3(-sin(yaw), 0, cos(yaw)) * (w * 0.5)
+		var base_p := fwd * rad
+		var lean := fwd * tilt                                    # наклон наружу (на высоту)
+		var base := V.size()
+		for row in 3:                                             # 3 ряда вершин: низ/середина/верх
+			var t := row / 2.0
+			var bow := lean * (t * t) + Vector3(0, h * t, 0)      # дуга: изгиб растёт к верхушке
+			V.append(base_p - side + bow); V.append(base_p + side + bow)
+			N.append(Vector3.UP); N.append(Vector3.UP)
+			var vy := cv + (1.0 - t) / 6.0
+			UVs.append(Vector2(cu, vy)); UVs.append(Vector2(cu + 0.25, vy))
+			UV2s.append(Vector2(ph, amp * t)); UV2s.append(Vector2(ph, amp * t))
+		for row in 2:
+			var b := base + row * 2
+			I.append_array([b, b + 1, b + 3, b, b + 3, b + 2])
+	# top-«шапка» (иначе злаковые пучки с воздуха невидимы): UV.y+2 → tex_top, ячейка по INSTANCE_CUSTOM
+	var bc := V.size()
+	var cr := 0.52
+	var chy := 0.30
+	V.append_array([Vector3(-cr, chy, -cr), Vector3(cr, chy, -cr), Vector3(cr, chy, cr), Vector3(-cr, chy, cr)])
+	for k in 4: N.append(Vector3.UP)
+	UVs.append_array([Vector2(0, 3), Vector2(1, 3), Vector2(1, 2), Vector2(0, 2)])
+	var cph := rng.randf()
+	for k in 4: UV2s.append(Vector2(cph, 0.45))
+	I.append_array([bc, bc + 1, bc + 2, bc, bc + 2, bc + 3])
+
+	var arr := []; arr.resize(Mesh.ARRAY_MAX)
+	arr[Mesh.ARRAY_VERTEX] = V; arr[Mesh.ARRAY_NORMAL] = N
+	arr[Mesh.ARRAY_TEX_UV] = UVs; arr[Mesh.ARRAY_TEX_UV2] = UV2s; arr[Mesh.ARRAY_INDEX] = I
 	return arr
 
 
@@ -167,16 +345,24 @@ func _process(dt: float) -> void:
 			_cur_dir = _cur_dir.lerp(Vector2(w.x, w.z).normalized(), clampf(dt * 1.2, 0.0, 1.0)).normalized()
 		_mat.set_shader_parameter("wind_dir", _cur_dir)
 		_mat.set_shader_parameter("wind_strength", _cur_str)
+		if _mat_det != null:
+			_mat_det.set_shader_parameter("wind_dir", _cur_dir)
+			_mat_det.set_shader_parameter("wind_strength", _cur_str)
+		for m3: ShaderMaterial in _mats3d:
+			m3.set_shader_parameter("wind_dir", _cur_dir)
+			m3.set_shader_parameter("wind_strength", _cur_str)
 	var p: Vector3 = main.cam.global_position
 	var agl: float = p.y - main.height_at(p.x, p.z)
 	var show := enabled and agl < 160.0
 	visible = show
 	if not show:
 		return
-	# ночью траву не видно дальше пары десятков метров — радиус меньше, FPS целее
+	# ночью траву не видно дальше пары десятков метров — радиусы меньше, FPS целее
 	var r_eff := radius
+	var det_r := DETAIL_R
 	if main.get("weather") != null and int(main.weather.idx) == 4:
-		r_eff = radius * 0.7
+		r_eff = radius * 0.55
+		det_r = DETAIL_R * 0.55
 	_mat.set_shader_parameter("fade_start", r_eff * 0.7)
 	_mat.set_shader_parameter("fade_end", r_eff)
 	_yards = main.get_node_or_null("Yards")
@@ -197,6 +383,12 @@ func _process(dt: float) -> void:
 				var n = _chunks[c]
 				if n != null:
 					n.visible = d <= r_eff + CH
+					# LOD: близкие чанки — детальные пучки из независимых элементов, дальние — дешёвые
+					if n.visible and n.has_meta("mi_d"):
+						var near := d < det_r + CH * 0.5
+						(n.get_meta("mi_s") as Node3D).visible = not near
+						for dn: Node3D in n.get_meta("mi_d"):
+							dn.visible = near
 			else:
 				missing.append([d, c])
 	# генерируем ближайшие недостающие (по 2 за кадр)
@@ -217,6 +409,12 @@ func _process(dt: float) -> void:
 func _gen_chunk(c: Vector2i) -> void:
 	var half: float = main.size_m * 0.5
 	var buf := PackedFloat32Array()
+	var buf_f := PackedFloat32Array()   # детальный LOD: цветочные куртины (transform+color)
+	var buf_c := PackedFloat32Array()   # детальный LOD: злаковый ковёр
+	var buf_d := PackedFloat32Array()   # детальный LOD: сухостой
+	var buf3_f := PackedFloat32Array()  # 3D-«герои» (Meshy-меши, transform-only)
+	var buf3_c := PackedFloat32Array()
+	var buf3_d := PackedFloat32Array()
 	var count := 0
 	var rocks: Array[Transform3D] = []
 	var n := int(CH / SPACING) + 1
@@ -301,6 +499,18 @@ func _gen_chunk(c: Vector2i) -> void:
 					continue
 			var s := 0.75 + r3 * 0.6
 			var ca := cos(r1 * TAU) * s; var sa := sin(r1 * TAU) * s
+			# зональность луга: злаковая основа, цветочные куртины ~15–25 м, кромка — смешение;
+			# вариант дальнего LOD согласуется с зоной (в куртине — «цветущий» пучок)
+			var zone := 0
+			if variant != 2:
+				var fn := _fnoise.get_noise_2d(wx, wz)
+				if fn > 0.34:
+					zone = 2
+					variant = 3
+				elif fn > 0.16:
+					zone = 1
+				elif variant == 3:
+					variant = 0
 			buf.append_array(PackedFloat32Array([
 				ca, 0.0, sa, wx,
 				0.0, s, 0.0, gy - 0.02,
@@ -308,6 +518,35 @@ func _gen_chunk(c: Vector2i) -> void:
 				0.9 + r2 * 0.25, 0.85 + r3 * 0.2, 0.75 + r1 * 0.3, 1.0,
 				float(variant), 0.0, 0.0, 0.0]))
 			count += 1
+			if _mat_det != null:
+				# ~каждый десятый детальный пучок — объёмный 3D-«герой» из Meshy-меша
+				if _mesh3d_c != null and fmod(r3 * 9.71, 1.0) < HERO_P:
+					var h := PackedFloat32Array([
+						ca, 0.0, sa, wx,
+						0.0, s, 0.0, gy - 0.02,
+						-sa, 0.0, ca, wz])
+					if variant == 2:
+						buf3_d.append_array(h)
+					elif zone == 2 or (zone == 1 and r1 < 0.5):
+						buf3_f.append_array(h)
+					else:
+						buf3_c.append_array(h)
+				else:
+					var det := PackedFloat32Array([
+						ca, 0.0, sa, wx,
+						0.0, s, 0.0, gy - 0.02,
+						-sa, 0.0, ca, wz,
+						0.9 + r2 * 0.25, 0.85 + r3 * 0.2, 0.75 + r1 * 0.3, 1.0,
+						0.0, 0.0, 0.0, 0.0])
+					if variant == 2:
+						det[16] = 2.0            # ячейка top-атласа: сухостой
+						buf_d.append_array(det)
+					elif zone == 2 or (zone == 1 and r1 < 0.5):
+						det[16] = 3.0            # цветущий верх
+						buf_f.append_array(det)
+					else:
+						det[16] = 0.0            # злаковый верх
+						buf_c.append_array(det)
 			var rock_p := 0.012 if mv == 5 else (0.05 if mv == 8 else 0.004)
 			if r1 * 0.37 + r2 * 0.63 < rock_p:
 				var rs := 0.12 + r3 * 0.35
@@ -329,6 +568,45 @@ func _gen_chunk(c: Vector2i) -> void:
 		mi.multimesh = mm
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		holder.add_child(mi)
+		holder.set_meta("mi_s", mi)
+		# детальный LOD (вблизи): те же точки, но пучки из независимых элементов
+		if _mat_det != null:
+			var mvar := (absi(c.x) * 31 + absi(c.y) * 17) % _mesh_det_c.size()
+			var dets: Array = []
+			for pair: Array in [[buf_f, _mesh_det_f[mvar]], [buf_c, _mesh_det_c[mvar]], [buf_d, _mesh_det_d[mvar]]]:
+				var b: PackedFloat32Array = pair[0]
+				if b.is_empty():
+					continue
+				var dm := MultiMesh.new()
+				dm.transform_format = MultiMesh.TRANSFORM_3D
+				dm.use_colors = true
+				dm.use_custom_data = true      # custom.x — ячейка top-атласа для шапки
+				dm.mesh = pair[1]
+				dm.instance_count = b.size() / 20
+				dm.buffer = b
+				var dmi := MultiMeshInstance3D.new()
+				dmi.multimesh = dm
+				dmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+				dmi.visible = false
+				holder.add_child(dmi)
+				dets.append(dmi)
+			# 3D-«герои»: транформ-only мультимеши на Meshy-мешах
+			for pair: Array in [[buf3_f, _mesh3d_f], [buf3_c, _mesh3d_c], [buf3_d, _mesh3d_d]]:
+				var b3: PackedFloat32Array = pair[0]
+				if b3.is_empty() or pair[1] == null:
+					continue
+				var hm := MultiMesh.new()
+				hm.transform_format = MultiMesh.TRANSFORM_3D
+				hm.mesh = pair[1]
+				hm.instance_count = b3.size() / 12
+				hm.buffer = b3
+				var hmi := MultiMeshInstance3D.new()
+				hmi.multimesh = hm
+				hmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+				hmi.visible = false
+				holder.add_child(hmi)
+				dets.append(hmi)
+			holder.set_meta("mi_d", dets)
 	if not rocks.is_empty():
 		var rm := MultiMesh.new()
 		rm.transform_format = MultiMesh.TRANSFORM_3D

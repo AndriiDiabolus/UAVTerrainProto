@@ -11,6 +11,7 @@ uniform float wind_strength : hint_range(0.0, 3.0) = 0.3;
 uniform vec3 tint : source_color = vec3(0.40, 0.42, 0.16);
 uniform float alpha_cut = 0.32;      // фото-атлас: ниже (тонкие стебли гибнут на мипах)
 uniform float alpha_boost = 1.0;     // фото-атлас: подкачка альфы против мип-усреднения
+uniform float detail_mode = 0.0;     // 1: меш-элементы (UV уже в атласе, UV2=(фаза,ампл·высота) — независимый ветер)
 uniform float fade_start = 40.0;
 uniform float fade_end = 70.0;
 uniform sampler2D sat_tex : source_color, filter_linear_mipmap;   // спутник — цвет травы в точке
@@ -33,34 +34,53 @@ float cloud_shadow(vec2 pxz) {
 
 varying float vdist;
 varying vec2 wxz;
+varying float vcos;   // косинус угла взгляда к вертикали: шапка видна сверху, гаснет на скользящем
 
 void vertex() {
 	vec3 o = MODEL_MATRIX[3].xyz;
-	v_top = step(1.5, UV.y);                      // шапка размечена сдвигом UV.y на +2
+	v_top = step(1.5, UV.y);                      // шапка размечена сдвигом UV.y на +2 (в обоих режимах)
 	vec2 uvl = vec2(UV.x, UV.y - v_top * 2.0);
-	float top = mix(1.0 - uvl.y, 0.75, v_top);    // 1 у верхушки, 0 у корня; шапка качается вся
 	float rnd = fract(sin(o.x * 12.9898 + o.z * 78.233) * 43758.5453) * 6.2831;
-	float t = TIME * 2.2 + rnd;
-	float sway = (0.5 + 0.5 * sin(t - dot(o.xz, wind_dir) * 0.3)) * wind_strength;
-	VERTEX.xz += wind_dir * (0.06 + 0.22 * sway) * top * top;
-	VERTEX.x += sin(t * 1.7) * 0.02 * top;
+	if (detail_mode > 0.5) {
+		// каждый элемент пучка гнётся сам: фаза UV2.x, амплитуда·высота UV2.y
+		float ph = UV2.x * 6.2831 + rnd;
+		float amp = UV2.y;
+		float s1 = 0.5 + 0.5 * sin(TIME * (1.7 + UV2.x * 1.4) + ph - dot(o.xz, wind_dir) * 0.3);
+		VERTEX.xz += wind_dir * (0.04 + 0.26 * s1 * wind_strength) * amp;
+		VERTEX.x += sin(TIME * 2.6 + ph * 2.1) * 0.03 * amp;   // индивидуальный трепет
+		VERTEX.z += cos(TIME * 2.2 + ph * 3.3) * 0.025 * amp;
+	} else {
+		float top = mix(1.0 - uvl.y, 0.75, v_top);  // 1 у верхушки, 0 у корня; шапка качается вся
+		float t = TIME * 2.2 + rnd;
+		float sway = (0.5 + 0.5 * sin(t - dot(o.xz, wind_dir) * 0.3)) * wind_strength;
+		VERTEX.xz += wind_dir * (0.06 + 0.22 * sway) * top * top;
+		VERTEX.x += sin(t * 1.7) * 0.02 * top;
+	}
 	vdist = length((MODELVIEW_MATRIX * vec4(VERTEX, 1.0)).xyz);
-	wxz = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xz;
+	vec3 wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	wxz = wp.xz;
+	vcos = clamp(normalize(CAMERA_POSITION_WORLD - wp).y, 0.0, 1.0);
 	// цвет спутника в точке (нормированная хрома + яркость) — трава принимает цвет луга/поля
 	vec3 sc = textureLod(sat_tex, o.xz / world_size + 0.5, 2.0).rgb;
 	float sl = dot(sc, vec3(0.299, 0.587, 0.114));
 	sat_tint = mix(vec3(1.0), sc / max(sl, 0.002), 0.45) * clamp(0.7 + sl * 4.0, 0.7, 1.3);
-	// вариант атласа 2×2 из INSTANCE_CUSTOM.x
+	// вариант атласа 2×2 из INSTANCE_CUSTOM.x; в detail-режиме тело пучка — UV меша (атлас элементов),
+	// а шапка всегда мапится в 2×2 top-атлас по варианту инстанса
 	float v = INSTANCE_CUSTOM.x;
-	auv = uvl * 0.5 + vec2(mod(v, 2.0), floor(v / 2.0)) * 0.5;
+	vec2 cellofs = vec2(mod(v, 2.0), floor(v / 2.0)) * 0.5;
+	auv = mix(mix(uvl * 0.5 + cellofs, UV, detail_mode), uvl * 0.5 + cellofs, v_top);
 }
 
 void fragment() {
 	vec4 c = mix(texture(tex, auv), texture(tex_top, auv), v_top);
 	float fade = clamp((vdist - fade_start) / (fade_end - fade_start), 0.0, 1.0);
-	ALPHA = min(c.a * alpha_boost, 1.0);
-	ALPHA_SCISSOR_THRESHOLD = alpha_cut + fade * 0.65 + 0.15 * fade * sin(wxz.x * 0.7 + wxz.y * 1.3);   // вдали пучки редеют, шумно
-	ALBEDO = c.rgb * tint * COLOR.rgb * sat_tint * cloud_shadow(wxz) * mix(1.0, 0.8, v_top);   // шапка чуть темнее — садится в тон земли
+	// шапке — мягкий порог/сильный буст (розетка из тонких лепестков гибнет на жёстком);
+	// на скользящем взгляде (с земли) шапка растворяется — объём несут стебли
+	ALPHA = min(c.a * mix(alpha_boost, 1.6, v_top), 1.0);
+	// шапка не «полупрозрачнеет» (мутное пятно), а жёстко отсекается на скользящем взгляде
+	ALPHA_SCISSOR_THRESHOLD = mix(alpha_cut, 0.14, v_top) + fade * 0.65 + 0.15 * fade * sin(wxz.x * 0.7 + wxz.y * 1.3)
+		+ v_top * (1.0 - smoothstep(0.34, 0.52, vcos)) * 2.0;
+	ALBEDO = c.rgb * tint * COLOR.rgb * sat_tint * cloud_shadow(wxz) * mix(1.0, 1.12, v_top);   // шапка чуть темнее — садится в тон земли
 	vec3 up_v = normalize((VIEW_MATRIX * vec4(0.0, 1.0, 0.0, 0.0)).xyz);
 	NORMAL = up_v;
 	ROUGHNESS = 0.95;
