@@ -6,6 +6,8 @@ extends Control
 ## Полная телеметрия — пока удерживается I (hud_label).
 
 var main: Node3D
+var _sh_prev_alt := 0.0          # для вертикальной скорости на панели SHARK
+var _sh_vs := 0.0
 var toast_text := ""
 var toast_sub := ""
 var toast_col := Color(1, 1, 1)
@@ -28,6 +30,11 @@ func toast(text: String, sub: String = "", col: Color = Color(1, 1, 1), dur: flo
 func _process(dt: float) -> void:
 	if _toast_t > 0.0:
 		_toast_t -= dt
+	# вертикальная скорость для панели SHARK (сглаженная)
+	if main != null and main.cam != null and dt > 0.0:
+		var y: float = main.cam.global_position.y
+		_sh_vs = lerpf(_sh_vs, (y - _sh_prev_alt) / dt, clampf(dt * 4.0, 0.0, 1.0))
+		_sh_prev_alt = y
 	queue_redraw()
 
 
@@ -114,6 +121,10 @@ func _draw() -> void:
 			_txt(f, Vector2(x, y + 21), sg[0], fs, sg[1])
 		x += widths[i] + 10.0
 
+	# --- панель НСУ разведчика SHARK (право-низ): авиагоризонт, скорость, высота, курс ---
+	if str(cam.get("drone_id")) == "wing" and main.get("menu_open") != true:
+		_draw_shark_panel(f, vp, cam, agl)
+
 	# --- контекст: батарея ---
 	if bat < 0.4:
 		var col := Color(1.0, 0.55, 0.5) if bat < 0.2 else Color(1.0, 0.78, 0.55)
@@ -149,6 +160,116 @@ func _draw() -> void:
 		if w3.length() >= 5.0:
 			_panel(Rect2(10, vp.y - 64, 176, 36), 0.35, Color(0.78, 0.86, 1.0, 0.35))
 			_txt(f, Vector2(20, vp.y - 40), "ветер %d м/с %s" % [int(w3.length()), main.hud._wind_arrow(w3)], 14, Color(0.8, 0.88, 1.0))
+	_draw_toast(f, vp)
+
+
+## Панель наземной станции SHARK: круглый авиагоризонт (крен/тангаж), лента скорости и
+## вертикальной, высота AGL/MSL, компас курса с меткой подвеса, зум/метки, режим и сваливание.
+func _draw_shark_panel(f: Font, vp: Vector2, cam: Camera3D, agl: float) -> void:
+	var PW := 336.0; var PH := 208.0
+	var px := vp.x - PW - 14.0
+	var py := vp.y - PH - 92.0
+	var acc := Color(0.55, 0.85, 1.0)
+	var org := Color(1.0, 0.62, 0.2)
+	_panel(Rect2(px, py, PW, PH), 0.5, Color(acc.r, acc.g, acc.b, 0.35))
+	_txt(f, Vector2(px + 12, py + 20), "НСУ · SHARK", 13, acc)
+
+	var roll := float(cam.get("_wing_roll"))
+	var pitch := float(cam.get("_wing_pitch"))
+	var air := float(cam.get("_wing_air"))
+	var auto_c: bool = cam.get("_wing_auto") == true
+	var zoom := float(cam.get("wing_zoom"))
+	var gyaw := float(cam.get("_gim_yaw"))
+
+	# --- авиагоризонт (центр панели): весь круг — небо, земля — сегмент ниже линии горизонта ---
+	var c := Vector2(px + PW * 0.5, py + 106.0)
+	var R := 62.0
+	draw_circle(c, R + 3.0, Color(0, 0, 0, 0.55))
+	draw_circle(c, R, Color(0.30, 0.52, 0.78, 0.9))
+	var ppx := clampf(rad_to_deg(pitch) * 3.2, -R * 0.72, R * 0.72)   # сдвиг горизонта по тангажу
+	var rot := Transform2D(-roll, Vector2.ZERO)
+	var half_w := sqrt(maxf(R * R - ppx * ppx, 1.0))
+	var hl := rot * Vector2(-half_w, ppx)
+	var hr := rot * Vector2(half_w, ppx)
+	var start := hr.angle()
+	var endv := hl.angle()
+	if endv < start: endv += TAU
+	var gpoly := PackedVector2Array([c + hl, c + hr])
+	for i in 21:
+		var a := start + (endv - start) * (i / 20.0)
+		gpoly.append(c + Vector2(cos(a), sin(a)) * R)
+	draw_colored_polygon(gpoly, Color(0.42, 0.30, 0.17, 0.95))
+	draw_line(c + hl, c + hr, Color(1, 1, 1, 0.9), 2.0)
+	# шкала тангажа ±20° (линии через 10°)
+	for pd in [-20, -10, 10, 20]:
+		var off := rot * Vector2(0, ppx - pd * 3.2)
+		if off.length() < R - 8.0:
+			var half := 14.0 if pd % 20 == 0 else 9.0
+			var l1 := rot * Vector2(-half, ppx - pd * 3.2)
+			var l2 := rot * Vector2(half, ppx - pd * 3.2)
+			draw_line(c + l1, c + l2, Color(1, 1, 1, 0.6), 1.0)
+	# маркер самолёта (неподвижный)
+	draw_line(c + Vector2(-22, 0), c + Vector2(-7, 0), org, 3.0)
+	draw_line(c + Vector2(22, 0), c + Vector2(7, 0), org, 3.0)
+	draw_circle(c, 2.5, org)
+	# индекс крена сверху
+	var rmk := c + Vector2(sin(-roll), -cos(-roll)) * (R - 5.0)
+	draw_circle(rmk, 3.0, Color(1, 1, 1, 0.9))
+
+	# --- лента скорости (слева) ---
+	var sx := px + 14.0
+	_panel(Rect2(sx, py + 62, 64, 88), 0.45)
+	_txt(f, Vector2(sx + 6, py + 78), "ВОЗД", 10, DIM)
+	var scol := TXT if air >= 16.0 else Color(1.0, 0.5, 0.45)
+	_txt(f, Vector2(sx + 6, py + 102), "%d" % int(air), 24, scol)
+	_txt(f, Vector2(sx + 34, py + 102), "м/с", 10, DIM)
+	_txt(f, Vector2(sx + 6, py + 122), "ВЕРТ", 10, DIM)
+	var vcol := TXT if absf(_sh_vs) < 6.0 else Color(1.0, 0.78, 0.45)
+	_txt(f, Vector2(sx + 6, py + 142), "%+.1f" % _sh_vs, 15, vcol)
+
+	# --- высота (справа) ---
+	var hx := px + PW - 78.0
+	_panel(Rect2(hx, py + 62, 64, 88), 0.45)
+	_txt(f, Vector2(hx + 6, py + 78), "AGL", 10, DIM)
+	_txt(f, Vector2(hx + 6, py + 102), "%d" % int(agl), 24, TXT)
+	_txt(f, Vector2(hx + 6, py + 122), "MSL", 10, DIM)
+	_txt(f, Vector2(hx + 6, py + 142), "%d" % int(cam.global_position.y), 15, DIM)
+
+	# --- компас-лента (верх панели) ---
+	var fwd := -cam.global_transform.basis.z
+	var hdg := fposmod(rad_to_deg(atan2(fwd.x, -fwd.z)), 360.0)
+	var cy := py + 34.0
+	_panel(Rect2(px + 70, py + 26, PW - 140, 18), 0.45)
+	var names := ["С", "СВ", "В", "ЮВ", "Ю", "ЮЗ", "З", "СЗ"]
+	for hh in range(0, 360, 15):
+		var d := fposmod(float(hh) - hdg + 180.0, 360.0) - 180.0   # смещение отметки от курса, °
+		if absf(d) > 55.0:
+			continue
+		var xx: float = px + PW * 0.5 + d * ((PW - 150.0) / 120.0)
+		if hh % 45 == 0:
+			_txt(f, Vector2(xx - 5, cy + 6), names[hh / 45], 11, TXT)
+		else:
+			draw_line(Vector2(xx, cy - 4), Vector2(xx, cy + 2), DIM, 1.0)
+	draw_line(Vector2(px + PW * 0.5, py + 26), Vector2(px + PW * 0.5, py + 44), org, 2.0)
+	_txt(f, Vector2(px + PW * 0.5 + 6, py + 40), "%03d°" % int(hdg), 11, org)
+	# метка направления подвеса относительно курса
+	if absf(gyaw) > 0.05:
+		var gx: float = px + PW * 0.5 + clampf(rad_to_deg(gyaw), -58.0, 58.0) * ((PW - 150.0) / 120.0)
+		draw_circle(Vector2(gx, cy + 8), 3.0, Color(0.55, 0.85, 1.0))
+
+	# --- низ: зум, метки, режим ---
+	var by := py + PH - 16.0
+	_txt(f, Vector2(px + 14, by), "ЗУМ ×%.0f" % zoom, 13, acc if zoom > 1.0 else DIM)
+	var mk: int = main.targets.marked_list().size() if main.targets != null else 0
+	_txt(f, Vector2(px + 96, by), "МЕТКИ %d" % mk, 13, org if mk > 0 else DIM)
+	var mode_txt := "АВТО-НАБОР" if auto_c else "РУЧНОЕ"
+	_txt(f, Vector2(px + 186, by), mode_txt, 13, Color(0.55, 1.0, 0.59) if auto_c else TXT)
+	if air < 15.0 and cam.get("landed") != true:
+		if fmod(Time.get_ticks_msec() / 250.0, 2.0) < 1.0:      # мигание
+			_txt(f, Vector2(px + 268, by), "СВАЛ!", 13, Color(1.0, 0.4, 0.35))
+
+
+func _draw_toast(f: Font, vp: Vector2) -> void:
 	# --- тост ---
 	if _toast_t > 0.0:
 		var a := clampf(_toast_t / 0.5, 0.0, 1.0)
