@@ -36,11 +36,10 @@ func _process(dt: float) -> void:
 		var y: float = main.cam.global_position.y
 		_sh_vs = lerpf(_sh_vs, (y - _sh_prev_alt) / dt, clampf(dt * 4.0, 0.0, 1.0))
 		_sh_prev_alt = y
-		if str(main.cam.get("drone_id")) == "wing":
-			if main.cam.get("landed") == true:
-				_sh_flt = 0.0
-			elif main.get("menu_open") != true:
-				_sh_flt += dt
+		if main.cam.get("landed") == true:
+			_sh_flt = 0.0
+		elif main.get("menu_open") != true:
+			_sh_flt += dt
 	queue_redraw()
 
 
@@ -127,8 +126,8 @@ func _draw() -> void:
 			_txt(f, Vector2(x, y + 21), sg[0], fs, sg[1])
 		x += widths[i] + 10.0
 
-	# --- панель НСУ разведчика SHARK (право-низ): авиагоризонт, скорость, высота, курс ---
-	if str(cam.get("drone_id")) == "wing" and main.get("menu_open") != true:
+	# --- панель НСУ (все дроны): авиагоризонт, скорость, высота, курс, строка станции ---
+	if main.get("menu_open") != true:
 		_draw_shark_panel(f, vp, cam, agl)
 
 	# --- контекст: батарея ---
@@ -181,11 +180,24 @@ func _draw_shark_panel(f: Font, vp: Vector2, cam: Camera3D, agl: float) -> void:
 	var acc := Color(0.55, 0.85, 1.0)
 	var org := Color(1.0, 0.62, 0.2)
 	_panel(Rect2(px, py, PW, PH), 0.5, Color(acc.r, acc.g, acc.b, 0.35))
-	_txt(f, Vector2(px + 12 * k, py + 20 * k), "НСУ · SHARK", int(13 * k), acc)
+	var is_wing := str(cam.get("drone_id")) == "wing"
+	var dname := str(cam.drone_name()) if cam.has_method("drone_name") else "ДРОН"
+	_txt(f, Vector2(px + 12 * k, py + 20 * k), "НСУ · %s" % dname.to_upper(), int(13 * k), acc)
 
-	var roll := float(cam.get("_wing_roll"))
-	var pitch := float(cam.get("_wing_pitch"))
-	var air := float(cam.get("_wing_air"))
+	var roll: float
+	var pitch: float
+	var air: float
+	if is_wing:
+		roll = float(cam.get("_wing_roll"))
+		pitch = float(cam.get("_wing_pitch"))
+		air = float(cam.get("_wing_air"))
+	else:
+		# ориентация корпуса коптера: крен/тангаж из базиса body
+		var b: Basis = cam.get("body") if cam.get("body") != null else cam.global_transform.basis
+		var fwdv: Vector3 = -b.z
+		pitch = asin(clampf(fwdv.y, -1.0, 1.0))
+		roll = asin(clampf(b.x.y, -1.0, 1.0))
+		air = float(cam.speed()) if cam.has_method("speed") else 0.0
 	var auto_c: bool = cam.get("_wing_auto") == true
 	var zoom := float(cam.get("wing_zoom"))
 	var gyaw := float(cam.get("_gim_yaw"))
@@ -226,8 +238,8 @@ func _draw_shark_panel(f: Font, vp: Vector2, cam: Camera3D, agl: float) -> void:
 	# --- лента скорости (слева) ---
 	var sx := px + 14.0 * k
 	_panel(Rect2(sx, py + 62 * k, 64 * k, 88 * k), 0.45)
-	_txt(f, Vector2(sx + 6 * k, py + 78 * k), "ВОЗД", int(10 * k), DIM)
-	var scol := TXT if air >= 16.0 else Color(1.0, 0.5, 0.45)
+	_txt(f, Vector2(sx + 6 * k, py + 78 * k), "ВОЗД" if is_wing else "СКОР", int(10 * k), DIM)
+	var scol := TXT if (not is_wing or air >= 16.0) else Color(1.0, 0.5, 0.45)
 	_txt(f, Vector2(sx + 6 * k, py + 102 * k), "%d" % int(air), int(24 * k), scol)
 	_txt(f, Vector2(sx + 40 * k, py + 102 * k), "м/с", int(10 * k), DIM)
 	_txt(f, Vector2(sx + 6 * k, py + 122 * k), "ВЕРТ", int(10 * k), DIM)
@@ -266,12 +278,30 @@ func _draw_shark_panel(f: Font, vp: Vector2, cam: Camera3D, agl: float) -> void:
 
 	# --- строка 1: зум, метки, режим, сваливание ---
 	var by := py + 168.0 * k
-	_txt(f, Vector2(px + 14 * k, by), "ЗУМ ×%.0f" % zoom, int(13 * k), acc if zoom > 1.0 else DIM)
+	if is_wing:
+		_txt(f, Vector2(px + 14 * k, by), "ЗУМ ×%.0f" % zoom, int(13 * k), acc if zoom > 1.0 else DIM)
+	elif str(cam.get("drone_id")) == "mship":
+		_txt(f, Vector2(px + 14 * k, by), "НОСИТЕЛЬ", int(13 * k), DIM)
+	elif main.targets != null:
+		var wshort: Array = ["ОСК", "КУМ", "БЧ", "ДРОБ"]
+		var wi: int = main.targets.weapon
+		if wi == 2:
+			var armed: bool = main.targets.armed
+			_txt(f, Vector2(px + 14 * k, by), "БЧ ВЗВЕДЕНА" if armed else "БЧ снята", int(13 * k),
+				Color(1.0, 0.45, 0.35) if armed else DIM)
+		else:
+			_txt(f, Vector2(px + 14 * k, by), "%s ×%d" % [wshort[clampi(wi, 0, 3)], main.targets.weapon_ammo()], int(13 * k), TXT)
 	var mk: int = main.targets.marked_list().size() if main.targets != null else 0
-	_txt(f, Vector2(px + 96 * k, by), "МЕТКИ %d" % mk, int(13 * k), org if mk > 0 else DIM)
-	var mode_txt := "АВТО-НАБОР" if auto_c else "РУЧНОЕ"
-	_txt(f, Vector2(px + 186 * k, by), mode_txt, int(13 * k), Color(0.55, 1.0, 0.59) if auto_c else TXT)
-	if air < 15.0 and cam.get("landed") != true:
+	_txt(f, Vector2(px + 116 * k, by), "МЕТКИ %d" % mk, int(13 * k), org if mk > 0 else DIM)
+	var mode_txt: String
+	var mcol := TXT
+	if is_wing:
+		mode_txt = "АВТО-НАБОР" if auto_c else "РУЧНОЕ"
+		if auto_c: mcol = Color(0.55, 1.0, 0.59)
+	else:
+		mode_txt = str(cam.mode_name()).split(" ")[0] if cam.has_method("mode_name") else "—"
+	_txt(f, Vector2(px + 196 * k, by), mode_txt, int(13 * k), mcol)
+	if is_wing and air < 15.0 and cam.get("landed") != true:
 		if fmod(Time.get_ticks_msec() / 250.0, 2.0) < 1.0:
 			_txt(f, Vector2(px + 276 * k, by), "СВАЛ!", int(13 * k), Color(1.0, 0.4, 0.35))
 
