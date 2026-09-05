@@ -371,6 +371,46 @@ var _rain_extra := false
 ## Идёт ли дождь (пресет шторма или клавиша 7) — для звука, мокрости, капель на линзе.
 func raining() -> bool:
 	return _rain_extra or float(PRESETS[idx].get("rain", 0.0)) > 0.0
+
+
+# ---------------- атмосфера: температура · влажность · точка росы ----------------
+# Базовая температура пресета — У ТОЧКИ СТАРТА (долина); выше — стандартный градиент −0.65°/100 м.
+const TEMPS := [22.0, 16.0, 11.0, 15.0, 7.0, 13.0]      # ясный/облачно/шторм/закат/ночь/пасмурно
+const HUMS := [0.55, 0.72, 0.96, 0.62, 0.82, 0.80]
+
+
+## Температура воздуха, °C, на абсолютной высоте alt (МСА-градиент от долины).
+func air_temp(alt: float) -> float:
+	var base: float = TEMPS[clampi(idx, 0, TEMPS.size() - 1)]
+	var ref: float = float(main._home_pos.y) if main != null else 800.0
+	return base - 0.0065 * (alt - ref)
+
+
+## Относительная влажность 0..1 (дождь/туман поднимают до насыщения).
+func humidity() -> float:
+	var h: float = HUMS[clampi(idx, 0, HUMS.size() - 1)]
+	if raining():
+		h = maxf(h, 0.95)
+	if _fog_extra:
+		h = maxf(h, 0.98)
+	return h
+
+
+## Точка росы, °C (приближение Магнуса: DP ≈ T − (100 − RH%)/5).
+func dew_point(t: float) -> float:
+	return t - (1.0 - humidity()) * 100.0 / 5.0
+
+
+## «Мокрый» воздух для обледенения: осадки, туман или полёт в слое облаков.
+func in_precip(alt: float) -> bool:
+	if raining() or _fog_extra:
+		return true
+	# слой облаков: при покрытии > 0.6 — примерно 1100–1600 м над долиной
+	var cov: float = float(PRESETS[idx].get("cov", 0.0))
+	if cov > 0.6 and main != null:
+		var rel: float = alt - float(main._home_pos.y)
+		return rel > 1100.0 and rel < 1600.0
+	return false
 var wetness := 0.0       # мокрая земля: растёт в дождь (~45 с), сохнет (~4 мин)
 var _wet_applied := -1.0
 

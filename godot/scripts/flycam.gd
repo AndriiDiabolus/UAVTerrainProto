@@ -379,6 +379,7 @@ func _process(dt: float) -> void:
 	var wind := Vector3.ZERO
 	if main.get("weather") != null:
 		wind = main.weather.wind_vec()
+		_step_atmo(dt)
 
 	# фиксированный шаг — устойчивые контуры угловых скоростей и повторяемость
 	_acc += dt
@@ -406,6 +407,35 @@ var _wing_air := 22.0                # воздушная скорость, м/�
 var _wing_auto := false              # авто-набор высоты после катапульты
 var _wing_roll := 0.0
 var _wing_pitch := 0.0
+
+# --- атмосфера: обледенение и запотевание линзы ---
+var ice := 0.0                    # намерзание 0..1: тяга/подъёмная сила падают
+var lens_fog := 0.0               # конденсат на линзе 0..1 (пробой точки росы)
+var _lens_t := 15.0               # температура стекла (тянется к воздуху с задержкой)
+var _ice_warned := false
+
+
+## Обледенение: T≤0° во влажном воздухе (осадки/туман/облачный слой) — лёд нарастает,
+## в тёплом воздухе тает. Линза: стекло остывает медленно; тёплый влажный воздух на
+## холодном стекле (ниже точки росы) — конденсат.
+func _step_atmo(dt: float) -> void:
+	var t_air: float = main.weather.air_temp(position.y)
+	var wet: bool = main.weather.in_precip(position.y)
+	if t_air <= 0.0 and wet and not landed:
+		ice = minf(ice + dt / 45.0, 1.0)
+		if ice > 0.03 and not _ice_warned:
+			_ice_warned = true
+			if main.hud != null and main.hud.has_method("toast"):
+				main.hud.toast("ОБЛЕДЕНЕНИЕ", "снижайся в тёплый воздух — падает тяга", Color(0.7, 0.85, 1.0), 3.0)
+	elif t_air > 2.0:
+		ice = maxf(ice - dt / 20.0, 0.0)
+		if ice < 0.01:
+			_ice_warned = false
+	_lens_t = lerpf(_lens_t, t_air, clampf(dt / 15.0, 0.0, 1.0))
+	var dp: float = main.weather.dew_point(t_air)
+	var fogging := _lens_t < dp - 0.2 and not landed
+	lens_fog = clampf(lens_fog + (1.1 if fogging else -0.45) * dt * 0.5, 0.0, 1.0)
+
 
 func _step_wing(dt: float, s: Dictionary, wind: Vector3) -> void:
 	if landed or (velocity.length() < 3.0 and position.y - main.height_at(position.x, position.z) < 2.0):
@@ -439,11 +469,12 @@ func _step_wing(dt: float, s: Dictionary, wind: Vector3) -> void:
 	# газ → целевая скорость; кабрирование тормозит, пикирование разгоняет
 	var thr_tgt := clampf(0.55 + float(s.get("thr_c", 0.0)) * 0.45, 0.0, 1.0)
 	throttle = move_toward(throttle, thr_tgt, dt * 0.8)
-	var v_tgt := lerpf(17.0, 33.0, throttle)
+	var v_tgt := lerpf(17.0, 33.0, throttle) * (1.0 - 0.22 * ice)   # лёд портит аэродинамику
 	_wing_air = move_toward(_wing_air, v_tgt, dt * 2.2)
 	_wing_air -= sin(_wing_pitch) * G * dt * 0.55
+	_wing_air -= dt * 1.4 * ice                                     # намерзание тормозит планер
 	_wing_air = clampf(_wing_air, 10.0, 42.0)
-	if _wing_air < 15.0:
+	if _wing_air < 15.0 + 5.0 * ice:                                # обледеневшее крыло сваливается раньше
 		_wing_pitch = move_toward(_wing_pitch, deg_to_rad(-14.0), dt * deg_to_rad(30.0))   # сваливание
 	# координированный вираж: скорость рыскания от крена
 	_yaw -= tan(_wing_roll) * G / maxf(_wing_air, 8.0) * dt
@@ -469,7 +500,9 @@ func _step_gps(dt: float, s: Dictionary, wind: Vector3) -> void:
 	vh = vh.limit_length(vmax)
 	velocity.x = vh.x; velocity.z = vh.z
 	# вертикаль: стик = вертикальная скорость, отпустил — держим высоту
-	var vz_cmd: float = float(s.thr_c) * CLIMB_MAX
+	var vz_cmd: float = float(s.thr_c) * CLIMB_MAX * (1.0 - 0.45 * ice)   # обледеневший борт хуже набирает
+	if ice > 0.6:
+		vz_cmd -= (ice - 0.6) * 4.0                                       # тяжёлый лёд тянет вниз
 	velocity.y = lerpf(velocity.y, vz_cmd, clampf(dt * 4.0, 0.0, 1.0))
 	# ветер: GPS держит позицию, но не идеально — часть сноса + буфтинг
 	velocity += wind * dt * 0.35
@@ -542,6 +575,7 @@ func _step_physical(dt: float, s: Dictionary, wind: Vector3) -> void:
 
 	# --- силы ---
 	var v_air := velocity - wind
+	thrust *= (1.0 - 0.35 * ice)                     # лёд на винтах срезает тягу
 	var f := body.y * thrust
 	f += Vector3(0.0, -m * G, 0.0)
 	f -= v_air * v_air.length() * float(P["drag"])

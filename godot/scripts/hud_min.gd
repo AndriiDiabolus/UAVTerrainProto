@@ -70,6 +70,27 @@ func _draw() -> void:
 		fps_s += " ·%d%%" % int(cur_scale * 100.0)     # авто-скейл понизил внутреннее разрешение
 	_panel(Rect2(14, 14, 30 + f.get_string_size(fps_s, HORIZONTAL_ALIGNMENT_LEFT, -1, 14).x, 26), 0.35)
 	_txt(f, Vector2(24, 33), fps_s, 14, fcol)
+	# --- атмосфера на линзе: конденсат (пробой точки росы) и морозная кромка (обледенение) ---
+	var lfog := float(main.cam.get("lens_fog")) if main.cam.get("lens_fog") != null else 0.0
+	var licv := float(main.cam.get("ice")) if main.cam.get("ice") != null else 0.0
+	if lfog > 0.02:
+		draw_rect(Rect2(Vector2.ZERO, vp), Color(0.86, 0.89, 0.92, 0.30 * lfog))
+		for bi in 3:                                   # к краям гуще — как настоящий конденсат
+			var bw := vp.x * (0.06 + bi * 0.05)
+			var ba := 0.10 * lfog
+			draw_rect(Rect2(0, 0, bw, vp.y), Color(0.88, 0.91, 0.94, ba))
+			draw_rect(Rect2(vp.x - bw, 0, bw, vp.y), Color(0.88, 0.91, 0.94, ba))
+			draw_rect(Rect2(0, 0, vp.x, bw * 0.6), Color(0.88, 0.91, 0.94, ba))
+			draw_rect(Rect2(0, vp.y - bw * 0.6, vp.x, bw * 0.6), Color(0.88, 0.91, 0.94, ba))
+	if licv > 0.02:
+		for bi in 4:                                   # изморозь наползает с краёв кадра
+			var iw := (26.0 + bi * 22.0) * licv
+			var ia := (0.16 - bi * 0.03) * licv
+			var icc := Color(0.82, 0.90, 1.0, ia)
+			draw_rect(Rect2(0, 0, iw, vp.y), icc)
+			draw_rect(Rect2(vp.x - iw, 0, iw, vp.y), icc)
+			draw_rect(Rect2(0, 0, vp.x, iw * 0.7), icc)
+			draw_rect(Rect2(0, vp.y - iw * 0.7, vp.x, iw * 0.7), icc)
 	if main.hud != null and main.hud.get("fpv_on") == true:
 		return          # в FPV остальным владеет OSD видеотракта
 
@@ -174,7 +195,7 @@ func _draw() -> void:
 func _draw_shark_panel(f: Font, vp: Vector2, cam: Camera3D, agl: float) -> void:
 	var k := 2.0
 	var PW := 336.0 * k
-	var PH := 234.0 * k
+	var PH := 252.0 * k
 	var px := vp.x * 0.5 - PW * 0.5
 	var py := vp.y - 60.0 - PH
 	var acc := Color(0.55, 0.85, 1.0)
@@ -314,7 +335,8 @@ func _draw_shark_panel(f: Font, vp: Vector2, cam: Camera3D, agl: float) -> void:
 	var rel := fposmod(brg - hdg + 180.0, 360.0) - 180.0               # относительно носа
 	var arrows := ["↑", "↗", "→", "↘", "↓", "↙", "←", "↖"]
 	var arrow: String = arrows[int(round(fposmod(rel + 360.0, 360.0) / 45.0)) % 8]
-	var dist_s := ("%.1f км" % (dh.length() / 1000.0)) if dh.length() > 1000.0 else ("%d м" % int(dh.length()))
+	var dl := dh.length()
+	var dist_s := ("%d км" % int(dl / 1000.0)) if dl > 9500.0 else (("%.1f км" % (dl / 1000.0)) if dl > 1000.0 else ("%d м" % int(dl)))
 	_txt(f, Vector2(px + 14 * k, by2), "ДОМ %s %s" % [dist_s, arrow], int(12 * k), TXT)
 	if main.weather != null:
 		var w3: Vector3 = main.weather.wind_vec()
@@ -326,6 +348,24 @@ func _draw_shark_panel(f: Font, vp: Vector2, cam: Camera3D, agl: float) -> void:
 		bat = float(main._fpv_osd.battery)
 	var bcol := TXT if bat > 0.4 else (Color(1.0, 0.78, 0.55) if bat > 0.2 else Color(1.0, 0.5, 0.45))
 	_txt(f, Vector2(px + 274 * k, by2), "БАТ %d%%" % int(bat * 100.0), int(12 * k), bcol)
+
+	# --- строка 3 (атмосфера): T воздуха · точка росы · лёд · линза ---
+	var by3 := py + 220.0 * k
+	if main.weather != null and main.weather.has_method("air_temp"):
+		var ta: float = main.weather.air_temp(cam.global_position.y)
+		var dp: float = main.weather.dew_point(ta)
+		var tcol := TXT if ta > 2.0 else Color(0.7, 0.85, 1.0)
+		_txt(f, Vector2(px + 14 * k, by3), "T %+.0f°" % ta, int(12 * k), tcol)
+		_txt(f, Vector2(px + 78 * k, by3), "РОСА %+.0f°" % dp, int(12 * k), DIM)
+		var icev := float(cam.get("ice")) if cam.get("ice") != null else 0.0
+		if icev > 0.01:
+			var blink := fmod(Time.get_ticks_msec() / 350.0, 2.0) < 1.2
+			if blink or icev < 0.3:
+				_txt(f, Vector2(px + 168 * k, by3), "ЛЁД %d%%" % int(icev * 100.0), int(12 * k),
+					Color(1.0, 0.5, 0.45) if icev > 0.5 else Color(0.75, 0.88, 1.0))
+		var lfv := float(cam.get("lens_fog")) if cam.get("lens_fog") != null else 0.0
+		if lfv > 0.1:
+			_txt(f, Vector2(px + 246 * k, by3), "ЛИНЗА ✻", int(12 * k), Color(0.85, 0.9, 0.95))
 
 
 func _draw_toast(f: Font, vp: Vector2) -> void:
