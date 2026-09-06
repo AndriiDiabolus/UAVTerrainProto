@@ -1106,10 +1106,12 @@ func soldier_anim_scene() -> Dictionary:
 	if lib == null:
 		lib = AnimationLibrary.new()
 		ap.add_animation_library("", lib)
+	# имя для play(): у безымянной библиотеки ("") префикс НЕ пишется — "/имя" молча не играет!
+	var lib_name := String(ap.get_animation_library_list()[0]) if not ap.get_animation_library_list().is_empty() else ""
 	var clips := {}
 	var base_names := lib.get_animation_list()
 	if not base_names.is_empty():
-		clips["walk"] = String(ap.get_animation_library_list()[0]) + "/" + String(base_names[0])
+		clips["walk"] = String(base_names[0]) if lib_name == "" else lib_name + "/" + String(base_names[0])
 		lib.get_animation(base_names[0]).loop_mode = Animation.LOOP_LINEAR
 	for cname in SOLD_CLIPS:
 		if cname == "walk":
@@ -1131,7 +1133,7 @@ func soldier_anim_scene() -> Dictionary:
 					if cname in ["run", "aim", "crouch"]:
 						anim.loop_mode = Animation.LOOP_LINEAR
 					lib.add_animation(cname, anim)
-					clips[cname] = String(ap.get_animation_library_list()[0]) + "/" + cname
+					clips[cname] = cname if lib_name == "" else lib_name + "/" + cname
 					break
 		tmp.free()
 	return {"root": root, "player": ap, "clips": clips}
