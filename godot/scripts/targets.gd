@@ -203,7 +203,14 @@ func _spawn_vehicle(kind: String, road: Dictionary, d: float) -> void:
 func _spawn_squad(road: Dictionary, d: float) -> void:
 	var n := randi_range(3, 5)
 	for i in n:
-		var mi: Node3D = _units.soldier_node(2)
+		# анимированный боец (риг Meshy + библиотека клипов); статичный — фоллбек
+		var anim: Dictionary = _units.soldier_anim_scene()
+		var mi: Node3D
+		if not anim.is_empty():
+			mi = anim.root
+			(anim.player as AnimationPlayer).play(String((anim.clips as Dictionary).get("walk", "")))
+		else:
+			mi = _units.soldier_node(2)
 		if i == 0:
 			_add_marker(mi, Color(1.0, 0.9, 0.1), 50.0)   # маркер над командиром группы
 		add_child(mi)
@@ -211,7 +218,8 @@ func _spawn_squad(road: Dictionary, d: float) -> void:
 			"d": d - i * 4.0, "dir": 1.0, "speed": randf_range(1.2, 1.7),
 			"radius": 2.0, "alive": true, "leader": i == 0, "wreck_t": 0.0,
 			"offset": randf_range(-2.5, 2.5), "alert": false, "aa_t": randf_range(0.0, 2.0),
-			"marked": false, "hide_off": randf_range(9.0, 14.0) * (1.0 if randf() < 0.5 else -1.0)})
+			"marked": false, "hide_off": randf_range(9.0, 14.0) * (1.0 if randf() < 0.5 else -1.0),
+			"anim": anim, "stance": randf() < 0.5, "cur_anim": "walk"})
 
 
 ## Маркер цели: тонкая квадратная рамка-билборд вокруг цели (вместо прежнего столба).
@@ -363,10 +371,28 @@ func _process(dt: float) -> void:
 			wz = p.y + side.y
 		var y: float = main.height_at(wx, wz)
 		if t.kind == "soldier":
-			# лёгкое покачивание при ходьбе + мелкая рысканье
-			var bob := sin(t.d * 3.2) * 0.05
-			var yaw := atan2(-dir3.y, dir3.x) + sin(t.d * 1.6) * 0.06
+			var animd: Dictionary = t.get("anim", {})
+			var bob := 0.0
+			if animd.is_empty():
+				bob = sin(t.d * 3.2) * 0.05          # фоллбек-фигурка «ходит» покачиванием
+			var yaw := atan2(-dir3.y, dir3.x) + (sin(t.d * 1.6) * 0.06 if animd.is_empty() else 0.0)
 			t.node.transform = Transform3D(Basis(Vector3.UP, yaw), Vector3(wx, y + bob, wz))
+			# автомат анимаций: патруль → перебежка в укрытие → прицел стоя/с колена
+			if not animd.is_empty():
+				var ap2 := animd.player as AnimationPlayer
+				var want := "walk"
+				if t.alert:
+					if absf(float(t.offset) - float(t.hide_off)) > 1.2:
+						want = "run"
+					else:
+						want = "crouch" if bool(t.get("stance", false)) else "aim"
+				if str(t.get("cur_anim", "")) == "react" and ap2.is_playing():
+					pass                          # шарахание доигрывает, потом автомат вернёт состояние
+				elif str(t.get("cur_anim", "")) != want:
+					t.cur_anim = want
+					var clip := String((animd.clips as Dictionary).get(want, ""))
+					if clip != "":
+						ap2.play(clip, 0.25)
 		else:
 			# техника прижимается к рельефу, но крен ограничен (иначе тонет на кручах)
 			var up := _terrain_normal(wx, wz)
@@ -464,9 +490,18 @@ func detonate(pos: Vector3) -> void:
 		if not t.alive:
 			continue
 		var r := KAMI_R * (1.3 if t.kind == "soldier" else 1.0)
-		if pos.distance_to(t.node.position) < r + t.radius * 0.5:
+		var dd := pos.distance_to(t.node.position)
+		if dd < r + t.radius * 0.5:
 			_kill(t, t.node.position)
 			any = true
+		elif t.kind == "soldier" and dd < r * 2.2:
+			# близкий разрыв: выживший шарахается (react), потом вернётся к своему состоянию
+			var ra: Dictionary = t.get("anim", {}) if t.get("anim") != null else {}
+			if not ra.is_empty():
+				var clip := String((ra.clips as Dictionary).get("react", ""))
+				if clip != "":
+					(ra.player as AnimationPlayer).play(clip, 0.1)
+					t.cur_anim = "react"        # авто-возврат: автомат сменит на нужное состояние
 	if main.get("sound") != null:
 		main.sound.boom(pos)
 	if main.get("fx") != null:
@@ -613,15 +648,33 @@ func _aa_burst(t: Dictionary, origin: Vector3, drone: Vector3, dist: float, rng_
 	var p := base * (1.0 - dist / rng_max) * (0.35 + 0.65 * (1.0 - clampf(spd / 22.0, 0.0, 1.0)))
 	if agl > 120.0: p *= 0.4
 	var hit := randf() < p
-	# трассер: линия к дрону (при промахе — мимо на 3–9 м)
-	var miss := Vector3.ZERO if hit else Vector3(randf_range(-1, 1), randf_range(-0.6, 0.6), randf_range(-1, 1)).normalized() * randf_range(3.0, 9.0)
-	_tracer(origin, drone + miss)
+	var what: String = {"tank": "ЗПУ танка", "apc": "автопушка БТР", "soldier": "стрелковое"}.get(t.kind, "огонь")
+	# очередь болидов через fx: каждый выстрел со своей точкой прилёта (промахи — мимо на 2–9 м)
+	if main.get("fx") != null:
+		var prof: Dictionary = main.fx.GUN_PROFILES.get(t.kind, main.fx.GUN_PROFILES["soldier"])
+		var n := int(prof.rounds)
+		var hit_i := randi_range(n / 2, n - 1) if hit else -1
+		var pts: Array = []
+		for i in n:
+			if i == hit_i:
+				pts.append(drone)
+			else:
+				var miss := Vector3(randf_range(-1, 1), randf_range(-0.6, 0.6), randf_range(-1, 1)).normalized() * randf_range(2.0, 9.0)
+				pts.append(drone + miss)
+		main.fx.gun_burst(origin, pts, t.kind)
+		if hit and not main.crashed:
+			# урон в момент прилёта пули; стрелковое повреждает, 12.7/14.5 сносит
+			var dmg := 0.5 if t.kind == "soldier" else 1.0
+			var delay := float(hit_i) * float(prof.rate) + dist / float(prof.speed)
+			get_tree().create_timer(delay).timeout.connect(func() -> void:
+				if is_instance_valid(main) and not main.crashed:
+					main.damage_drone(dmg, what))
+	elif hit and not main.crashed:
+		main.crash("зенитный огонь (%s)" % what)
 	if main.get("sound") != null:
 		main.sound.shot()
 	if main.get("telemetry") != null:
 		main.telemetry.event("aa_fire", {"kind": t.kind, "dist": int(dist), "hit": hit})
-	if hit and not main.crashed:
-		main.crash("зенитный огонь (%s)" % {"tank": "ЗПУ танка", "apc": "автопушка БТР", "soldier": "стрелковое"}.get(t.kind, "огонь"))
 
 
 func _tracer(a: Vector3, b: Vector3) -> void:
@@ -660,8 +713,16 @@ func _kill(t: Dictionary, pos: Vector3) -> void:
 	target_killed.emit(t.kind, pos)
 	if main.get("sound") != null:
 		main.sound.boom(pos)
-	for g: MeshInstance3D in _geo_list(t.node):
-		g.material_override = wreck_mat
+	var kanim: Dictionary = t.get("anim", {}) if t.get("anim") != null else {}
+	if t.kind == "soldier" and not kanim.is_empty():
+		# анимированный боец падает (навзничь/ничком), без перекраски в гарь — труп реалистичнее
+		var dn := "death_a" if randf() < 0.5 else "death_b"
+		var clip := String((kanim.clips as Dictionary).get(dn, ""))
+		if clip != "":
+			(kanim.player as AnimationPlayer).play(clip, 0.1)
+	else:
+		for g: MeshInstance3D in _geo_list(t.node):
+			g.material_override = wreck_mat
 	for c in t.node.get_children():   # погасить маркер над подбитой целью (риг-узлы не трогаем)
 		if str(c.name).begins_with("Marker"):
 			c.queue_free()

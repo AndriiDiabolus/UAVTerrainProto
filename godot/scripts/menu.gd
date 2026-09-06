@@ -12,7 +12,7 @@ var replay_pick := 0
 var replay_files: PackedStringArray = []
 var _orbit_t := 0.0
 var _panel: Control
-const ITEMS := ["полёт", "миссия", "реплей", "регион", "дрон", "скин", "оружие", "камера", "погода", "качество", "выход"]
+const ITEMS := ["полёт", "миссия", "реплей", "регион", "деревья", "дрон", "скин", "оружие", "камера", "погода", "качество", "выход"]
 const ACC := Color(1.0, 0.78, 0.35)
 const TXT := Color(0.92, 0.92, 0.9)
 const DIM := Color(0.78, 0.78, 0.76, 0.8)
@@ -29,7 +29,7 @@ func setup(m: Node3D) -> void:
 	var args := OS.get_cmdline_user_args()
 	var auto := true
 	for a in args:
-		for f in ["--screenshot", "--bench", "--selftest", "--flytest", "--missiontest", "--coltest", "--replay", "--mission", "--targetreport", "--nomenu"]:
+		for f in ["--screenshot", "--bench", "--selftest", "--flytest", "--missiontest", "--coltest", "--replay", "--mission", "--targetreport", "--nomenu", "--fxshot", "--animshot"]:
 			if a.begins_with(f):
 				auto = false
 	if "--menushot" in args:
@@ -113,6 +113,8 @@ func _adjust(dir: int) -> void:
 				replay_pick = posmod(replay_pick + dir, replay_files.size())
 		"регион":
 			_switch_region()
+		"деревья":
+			_switch_trees()
 		"дрон": main.cam.cycle_drone()
 		"скин":
 			if main.get("droneview") != null:
@@ -140,6 +142,7 @@ func _activate() -> void:
 				set_open(false)
 				main.telemetry.start_replay("user://flights/" + replay_files[replay_pick])
 		"регион": _switch_region()
+		"деревья": _switch_trees()
 		"дрон": main.cam.cycle_drone()
 		"скин":
 			if main.get("droneview") != null:
@@ -163,8 +166,19 @@ func _start_flight(reset: bool) -> void:
 		main.telemetry.stop_replay()
 	if reset and main.cam.has_method("reset"):
 		main.crashed = false
+		main.drone_dmg = 0.0
 		main.cam.global_position = main._home_pos + Vector3(0, 0.1, 0)
 		main.cam.reset()
+
+
+## Переключение версии деревьев: 1 — процедурные, 2 — Meshy-герои + фото-кроны. Перезагружает сцену.
+func _switch_trees() -> void:
+	var next := 1 if int(main.trees_ver) == 2 else 2
+	var cfg := ConfigFile.new()
+	cfg.load("user://settings.cfg")
+	cfg.set_value("game", "trees", next)
+	cfg.save("user://settings.cfg")
+	main.get_tree().reload_current_scene()
 
 
 func _switch_region() -> void:
@@ -190,6 +204,7 @@ func _draw_panel() -> void:
 		"миссия": "%d · %s" % [mission_pick, str(main.mission.MISSIONS[mission_pick]["name"]).split("· ")[1] if main.mission != null else ""],
 		"реплей": (replay_files[replay_pick].trim_prefix("flight_").trim_suffix(".csv") if not replay_files.is_empty() else "нет записей"),
 		"регион": ("степь" if main.region == "steppe" else "Карпаты"),
+		"деревья": ("версия 2 · Meshy" if int(main.trees_ver) == 2 else "версия 1 · классика"),
 		"дрон": ("%s · зум ×30" % str(main.cam.drone_name())) if str(main.cam.get("drone_id")) == "wing" \
 			else "%s · T/W %.1f" % [str(main.cam.drone_name()), float(main.cam.P["tw"])],
 		"скин": (str(main.droneview.skin_name()) if main.get("droneview") != null else "—"),
@@ -199,7 +214,7 @@ func _draw_panel() -> void:
 		"качество": main.QUALITY_NAMES[main.quality],
 		"выход": "",
 	}
-	var icons := {"полёт": "▶", "миссия": "◎", "реплей": "↺", "регион": "🗺", "дрон": "🛠", "скин": "🎨", "оружие": "✚", "камера": "📷", "погода": "☀", "качество": "⚙", "выход": "⏻"}
+	var icons := {"полёт": "▶", "миссия": "◎", "реплей": "↺", "регион": "🗺", "деревья": "🌳", "дрон": "🛠", "скин": "🎨", "оружие": "✚", "камера": "📷", "погода": "☀", "качество": "⚙", "выход": "⏻"}
 	var y := 170.0
 	for i in ITEMS.size():
 		var it: String = ITEMS[i]

@@ -18,6 +18,10 @@ var _queue: Array[Vector2i] = []
 var _tree_mats: Array[ShaderMaterial] = []
 var _cur_str := 0.2
 var _cur_dir := Vector2(1, 0)
+# 3D-«герои» (Meshy GLB): ~15 % деревьев типов 0..3; ближе HERO_R — меш, дальше — карточный дублёр
+var hero_meshes: Array = []            # ArrayMesh или null по типам
+const HERO_P := 0.15
+const HERO_R := 700.0
 
 
 func setup(m: Node3D) -> void:
@@ -31,6 +35,78 @@ func setup(m: Node3D) -> void:
 		mask.convert(Image.FORMAT_L8)
 	_mask_bytes = mask.get_data()
 	tree_meshes = _make_trees()
+	# 3D-«герои» Meshy (ель/сосна/лиственное/берёза) — только «деревья v2»; куст остаётся карточным
+	if int(main.get("trees_ver")) == 2:
+		for spec: Array in [["tree_spruce", 14.0], ["tree_pine", 18.0], ["tree_beech", 12.0], ["tree_birch", 13.0]]:
+			hero_meshes.append(_glb_tree("res://assets/models/%s.glb" % spec[0], float(spec[1])))
+
+
+## Meshy GLB → запечённый ArrayMesh дерева: высота → h, низ на y=0, центр в 0;
+## материал — grass3d.gdshader (ветер по высоте, спутниковый тон, тепловизор).
+func _glb_tree(path: String, h: float) -> ArrayMesh:
+	if not ResourceLoader.exists(path):
+		return null
+	var ps: PackedScene = load(path)
+	if ps == null:
+		return null
+	var inst: Node = ps.instantiate()
+	var mis: Array = []
+	var stack: Array = [[inst, Transform3D()]]
+	while not stack.is_empty():
+		var it: Array = stack.pop_back()
+		var n: Node = it[0]
+		var xf: Transform3D = it[1]
+		if n is Node3D:
+			xf = xf * (n as Node3D).transform
+		if n is MeshInstance3D and (n as MeshInstance3D).mesh != null:
+			mis.append([n, xf])
+		for ch in n.get_children():
+			stack.append([ch, xf])
+	if mis.is_empty():
+		inst.free()
+		return null
+	var aabb := AABB()
+	var first := true
+	for it: Array in mis:
+		var a: AABB = (it[1] as Transform3D) * ((it[0] as MeshInstance3D).mesh.get_aabb())
+		aabb = a if first else aabb.merge(a)
+		first = false
+	var s := h / maxf(aabb.size.y, 0.01)              # нормируем по ВЫСОТЕ вида
+	var cen := aabb.get_center()
+	var norm := Transform3D(Basis.from_scale(Vector3.ONE * s),
+		Vector3(-cen.x * s, -aabb.position.y * s, -cen.z * s))
+	var tex: Texture2D = null
+	var bm := ((mis[0][0] as MeshInstance3D).mesh as Mesh).surface_get_material(0)
+	if bm is BaseMaterial3D:
+		tex = (bm as BaseMaterial3D).albedo_texture
+	var smat := ShaderMaterial.new()
+	smat.shader = load("res://scripts/grass3d.gdshader")
+	if tex != null:
+		smat.set_shader_parameter("alb", tex)
+	smat.set_shader_parameter("sat_tex", main._load_albedo())
+	smat.set_shader_parameter("world_size", main.size_m)
+	smat.set_shader_parameter("clump_h", h)
+	_tree_mats.append(smat)                            # ветер обновляется общим циклом
+	var out := ArrayMesh.new()
+	for it: Array in mis:
+		var mi := it[0] as MeshInstance3D
+		var xf := norm * (it[1] as Transform3D)
+		for si in mi.mesh.get_surface_count():
+			var arr: Array = mi.mesh.surface_get_arrays(si)
+			var V: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+			for i in V.size():
+				V[i] = xf * V[i]
+			arr[Mesh.ARRAY_VERTEX] = V
+			var NN = arr[Mesh.ARRAY_NORMAL]
+			if NN != null:
+				var N2: PackedVector3Array = NN
+				for i in N2.size():
+					N2[i] = (xf.basis * N2[i]).normalized()
+				arr[Mesh.ARRAY_NORMAL] = N2
+			out.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+			out.surface_set_material(out.get_surface_count() - 1, smat)
+	inst.free()
+	return out
 
 
 func _process(dt: float) -> void:
@@ -69,15 +145,24 @@ func _update_wanted() -> void:
 			var center := Vector2((cx + 0.5) * CHUNK, (cy + 0.5) * CHUNK)
 			if center.distance_to(Vector2(p.x, p.z)) <= radius:
 				_queue.append(c)
-	# тени деревьев — только вблизи (4 каскада × все чанки слишком дорого)
+	# тени деревьев — только вблизи (4 каскада × все чанки слишком дорого); ночью — ещё уже
+	var night_sh: bool = main.get("weather") != null and int(main.weather.idx) == 4
 	for c: Vector2i in chunks:
 		var h = chunks[c]
 		if h == null: continue
 		var center := Vector2((c.x + 0.5) * CHUNK, (c.y + 0.5) * CHUNK)
-		var near := center.distance_to(Vector2(p.x, p.z)) < 1200.0
+		var near := center.distance_to(Vector2(p.x, p.z)) < (450.0 if night_sh else 1200.0)
 		for mmi in h.get_children():
 			if mmi is GeometryInstance3D:
 				mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if near else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		# 3D-«герои» ближе HERO_R, дальше — карточные дублёры; ночью героев не видно — экономим кадры
+		if h.has_meta("hero"):
+			var night: bool = main.get("weather") != null and int(main.weather.idx) == 4
+			var hnear := not night and center.distance_to(Vector2(p.x, p.z)) < HERO_R
+			for n: Node3D in h.get_meta("hero"):
+				n.visible = hnear
+			for n: Node3D in h.get_meta("fb"):
+				n.visible = not hnear
 	# выгрузка дальних
 	var to_free: Array[Vector2i] = []
 	for c: Vector2i in chunks:
@@ -108,6 +193,7 @@ var _cg_i := 0
 var _cg_attempts := 0
 var _cg_xf: Array = []
 var _cg_cl: Array = []
+var _cg_hxf: Array = []            # посадки 3D-«героев» по типам
 var _cg_tcol: Array[Dictionary] = []
 const COL_R := [1.4, 1.2, 2.8, 1.6, 1.4, 1.7]
 const COL_H := [14.0, 18.0, 12.0, 13.0, 3.0, 2.8]
@@ -135,8 +221,10 @@ func _gen_step() -> void:
 		_cg_i = 0
 		_cg_attempts = [420, 800, 1300][clampi(int(main.quality), 0, 2)]
 		_cg_xf = []; _cg_cl = []
+		_cg_hxf = []
 		for k in tree_meshes.size():
 			_cg_xf.append([] as Array[Transform3D]); _cg_cl.append([] as Array[Color])
+			_cg_hxf.append([] as Array[Transform3D])
 		_cg_tcol = []
 		_cg_active = true
 	var rng := _cg_rng
@@ -186,9 +274,12 @@ func _gen_step() -> void:
 				ti = k; break
 		var sc := rng.randf_range(0.65, 1.4) * scale_k
 		var basis := Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(sc, sc * rng.randf_range(0.85, 1.2), sc))
-		_cg_xf[ti].append(Transform3D(basis, Vector3(wx, gy, wz)))
-		var g := rng.randf_range(0.72, 1.18)
-		_cg_cl[ti].append(Color(g * rng.randf_range(0.88, 1.0), g, g * rng.randf_range(0.75, 0.96)))
+		if ti < hero_meshes.size() and hero_meshes[ti] != null and rng.randf() < HERO_P:
+			_cg_hxf[ti].append(Transform3D(basis, Vector3(wx, gy, wz)))   # герой (+карточный дублёр вдали)
+		else:
+			_cg_xf[ti].append(Transform3D(basis, Vector3(wx, gy, wz)))
+			var g := rng.randf_range(0.72, 1.18)
+			_cg_cl[ti].append(Color(g * rng.randf_range(0.88, 1.0), g, g * rng.randf_range(0.75, 0.96)))
 		_cg_tcol.append({"pos": Vector3(wx, gy, wz), "r": COL_R[ti] * sc * 0.6, "top": COL_H[ti] * sc})
 	_cg_i = end
 	if _cg_i < _cg_attempts:
@@ -224,6 +315,44 @@ func _gen_step() -> void:
 		var mmi := MultiMeshInstance3D.new()
 		mmi.multimesh = mm
 		holder.add_child(mmi)
+	# 3D-«герои» + их карточные дублёры для дальних чанков (переключение в _update_wanted)
+	var hero_list: Array = []
+	var fb_list: Array = []
+	for k in hero_meshes.size():
+		var hx: Array = _cg_hxf[k]
+		if hx.is_empty():
+			continue
+		var hm := MultiMesh.new()
+		hm.transform_format = MultiMesh.TRANSFORM_3D
+		hm.mesh = hero_meshes[k]
+		hm.instance_count = hx.size()
+		var hbuf := PackedFloat32Array(); hbuf.resize(hx.size() * 12)
+		var fm := MultiMesh.new()
+		fm.transform_format = MultiMesh.TRANSFORM_3D
+		fm.use_colors = true
+		fm.mesh = tree_meshes[k]
+		fm.instance_count = hx.size()
+		var fbuf := PackedFloat32Array(); fbuf.resize(hx.size() * 16)
+		for i in hx.size():
+			var tf: Transform3D = hx[i]
+			var o := i * 12
+			hbuf[o] = tf.basis.x.x; hbuf[o + 1] = tf.basis.y.x; hbuf[o + 2] = tf.basis.z.x; hbuf[o + 3] = tf.origin.x
+			hbuf[o + 4] = tf.basis.x.y; hbuf[o + 5] = tf.basis.y.y; hbuf[o + 6] = tf.basis.z.y; hbuf[o + 7] = tf.origin.y
+			hbuf[o + 8] = tf.basis.x.z; hbuf[o + 9] = tf.basis.y.z; hbuf[o + 10] = tf.basis.z.z; hbuf[o + 11] = tf.origin.z
+			var o2 := i * 16
+			fbuf[o2] = tf.basis.x.x; fbuf[o2 + 1] = tf.basis.y.x; fbuf[o2 + 2] = tf.basis.z.x; fbuf[o2 + 3] = tf.origin.x
+			fbuf[o2 + 4] = tf.basis.x.y; fbuf[o2 + 5] = tf.basis.y.y; fbuf[o2 + 6] = tf.basis.z.y; fbuf[o2 + 7] = tf.origin.y
+			fbuf[o2 + 8] = tf.basis.x.z; fbuf[o2 + 9] = tf.basis.y.z; fbuf[o2 + 10] = tf.basis.z.z; fbuf[o2 + 11] = tf.origin.z
+			fbuf[o2 + 12] = 0.95; fbuf[o2 + 13] = 0.95; fbuf[o2 + 14] = 0.9; fbuf[o2 + 15] = 1.0
+		hm.buffer = hbuf
+		fm.buffer = fbuf
+		var hmi := MultiMeshInstance3D.new(); hmi.multimesh = hm; hmi.visible = false
+		var fmi := MultiMeshInstance3D.new(); fmi.multimesh = fm
+		holder.add_child(hmi); holder.add_child(fmi)
+		hero_list.append(hmi); fb_list.append(fmi)
+	if not hero_list.is_empty():
+		holder.set_meta("hero", hero_list)
+		holder.set_meta("fb", fb_list)
 	chunks[c] = holder
 
 
@@ -392,28 +521,47 @@ func _cyl(topr: float, botr: float, hgt: float) -> CylinderMesh:
 
 
 ## 5 видов: ель, сосна, лиственное, берёза, куст. Кроны — кросс-карты с процедурной листвой.
+## Текстура кроны: фото-ветки (magenta-key, assets/tex/foliage_<kind>.png) или процедурный фоллбек.
+## Возвращает [ImageTexture, is_photo] — с фото base_color кроны почти белый (цвет уже в текстуре).
+func _crown_tex(kind: String, seed_v: int) -> Array:
+	if int(main.get("trees_ver")) != 2:
+		return [_foliage_tex(kind, seed_v), false]      # «деревья v1» — процедурные кроны
+	var fname: String = {"conifer": "foliage_conifer", "leaf": "foliage_leaf",
+		"birch": "foliage_birch", "bush": "foliage_leaf"}.get(kind, "foliage_leaf")
+	var photo: Image = main.load_image("res://assets/tex/%s.png" % fname)
+	if photo != null:
+		photo.generate_mipmaps()
+		return [ImageTexture.create_from_image(photo), true]
+	return [_foliage_tex(kind, seed_v), false]
+
+
 func _make_trees() -> Array[ArrayMesh]:
 	var brown := Color(0.30, 0.21, 0.13)
 	var birch_bark := Color(0.84, 0.84, 0.78)
-	var conif := _foliage_tex("conifer", 11)
-	var leaf := _foliage_tex("leaf", 22)
-	var birch := _foliage_tex("birch", 33)
-	var bush := _foliage_tex("bush", 44)
+	var conif: Array = _crown_tex("conifer", 11)
+	var leaf: Array = _crown_tex("leaf", 22)
+	var birch: Array = _crown_tex("birch", 33)
+	var bush: Array = _crown_tex("bush", 44)
 	var out: Array[ArrayMesh] = []
 	# ель — узкий высокий треугольник, хвоя тёмная
 	out.append(_tree([[_cyl(0.30, 0.48, 3.0), 1.5, brown]],
-		{"tex": conif, "w": 5.6, "h": 13.0, "y0": 1.2, "color": Color(0.16, 0.30, 0.14), "flutter": 0.4, "cl": 3, "cone": true}))
+		{"tex": conif[0], "w": 5.6, "h": 13.0, "y0": 1.2,
+		"color": Color(0.44, 0.52, 0.44) if conif[1] else Color(0.16, 0.30, 0.14), "flutter": 0.4, "cl": 3, "cone": true}))
 	# сосна — крона выше на голом стволе
 	out.append(_tree([[_cyl(0.26, 0.40, 8.0), 4.0, brown]],
-		{"tex": conif, "w": 6.4, "h": 8.5, "y0": 7.5, "color": Color(0.20, 0.34, 0.16), "flutter": 0.5, "cl": 3}))
+		{"tex": conif[0], "w": 6.4, "h": 8.5, "y0": 7.5,
+		"color": Color(0.55, 0.64, 0.52) if conif[1] else Color(0.20, 0.34, 0.16), "flutter": 0.5, "cl": 3}))
 	# лиственное — широкая круглая крона
 	out.append(_tree([[_cyl(0.48, 0.72, 4.5), 2.2, brown]],
-		{"tex": leaf, "w": 9.5, "h": 9.0, "y0": 3.2, "color": Color(0.30, 0.46, 0.18), "flutter": 1.0, "cl": 5}))
+		{"tex": leaf[0], "w": 9.5, "h": 9.0, "y0": 3.2,
+		"color": Color(0.58, 0.66, 0.5) if leaf[1] else Color(0.30, 0.46, 0.18), "flutter": 1.0, "cl": 5}))
 	# берёза — тонкий светлый ствол, лёгкая крона
 	out.append(_tree([[_cyl(0.18, 0.28, 8.0), 4.0, birch_bark]],
-		{"tex": birch, "w": 6.0, "h": 7.5, "y0": 5.0, "color": Color(0.46, 0.58, 0.24), "flutter": 1.4, "cl": 4}))
+		{"tex": birch[0], "w": 6.0, "h": 7.5, "y0": 5.0,
+		"color": Color(0.72, 0.76, 0.55) if birch[1] else Color(0.46, 0.58, 0.24), "flutter": 1.4, "cl": 4}))
 	# куст
-	out.append(_tree([], {"tex": bush, "w": 3.2, "h": 2.6, "y0": 0.0, "color": Color(0.30, 0.44, 0.18), "flutter": 1.0, "cl": 2}))
+	out.append(_tree([], {"tex": bush[0], "w": 3.2, "h": 2.6, "y0": 0.0,
+		"color": Color(0.55, 0.66, 0.5) if bush[1] else Color(0.30, 0.44, 0.18), "flutter": 1.0, "cl": 2}))
 	# стог сена (цилиндр + купол), соломенный
 	var straw := Color(0.62, 0.52, 0.30)
 	var dome := SphereMesh.new(); dome.radius = 1.7; dome.height = 2.2; dome.radial_segments = 10; dome.rings = 5

@@ -1080,6 +1080,63 @@ func glb_unit(kind: String, max_dim: float, yaw_fix: float, ground: bool = true,
 	return root
 
 
+## Анимированный пехотинец: базовая сцена sold_walk.glb + AnimationPlayer, в библиотеку
+## которого добавлены клипы из остальных sold_*.glb (риг у всех один — треки совместимы).
+## Возврат: {root, player, clips: {имя: строка-анимация}} или {} без файлов.
+const SOLD_CLIPS := ["walk", "run", "aim", "crouch", "react", "death_a", "death_b"]
+func soldier_anim_scene() -> Dictionary:
+	if not ResourceLoader.exists("res://assets/models/sold_walk.glb"):
+		return {}
+	var base: PackedScene = load("res://assets/models/sold_walk.glb")
+	if base == null:
+		return {}
+	var inst: Node3D = base.instantiate()
+	var ap: AnimationPlayer = inst.find_child("AnimationPlayer", true, false)
+	if ap == null:
+		inst.free()
+		return {}
+	# риг Meshy уже в метрах (~1.7 м); AABB скиннед-меша лежит в bind-space и ВРЁТ —
+	# не нормируем, только разворачиваем носом в +X (фронт рига — +Z)
+	inst.transform = Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3.ZERO)
+	var root := Node3D.new()
+	root.name = "SoldierAnim"
+	root.add_child(inst)
+	# библиотека клипов: у каждого GLB своя анимация под своим именем — переносим под наши имена
+	var lib := ap.get_animation_library(ap.get_animation_library_list()[0]) if not ap.get_animation_library_list().is_empty() else null
+	if lib == null:
+		lib = AnimationLibrary.new()
+		ap.add_animation_library("", lib)
+	var clips := {}
+	var base_names := lib.get_animation_list()
+	if not base_names.is_empty():
+		clips["walk"] = String(ap.get_animation_library_list()[0]) + "/" + String(base_names[0])
+		lib.get_animation(base_names[0]).loop_mode = Animation.LOOP_LINEAR
+	for cname in SOLD_CLIPS:
+		if cname == "walk":
+			continue
+		var path := "res://assets/models/sold_%s.glb" % cname
+		if not ResourceLoader.exists(path):
+			continue
+		var ps: PackedScene = load(path)
+		if ps == null:
+			continue
+		var tmp: Node3D = ps.instantiate()
+		var tap: AnimationPlayer = tmp.find_child("AnimationPlayer", true, false)
+		if tap != null:
+			for ln in tap.get_animation_library_list():
+				var tl := tap.get_animation_library(ln)
+				var names := tl.get_animation_list()
+				if not names.is_empty():
+					var anim: Animation = tl.get_animation(names[0]).duplicate()
+					if cname in ["run", "aim", "crouch"]:
+						anim.loop_mode = Animation.LOOP_LINEAR
+					lib.add_animation(cname, anim)
+					clips[cname] = String(ap.get_animation_library_list()[0]) + "/" + cname
+					break
+		tmp.free()
+	return {"root": root, "player": ap, "clips": clips}
+
+
 ## Пехотинец-узел: GLB (Meshy) или процедурный фоллбек. Ноги на y=0, лицом в +X.
 func soldier_node(variant: int = 2) -> Node3D:
 	var g := glb_unit("soldier", 1.8, PI * 0.5)   # Meshy отдал фронт фигурки в +Z

@@ -4,6 +4,7 @@ extends Node3D
 
 const MESH_RES := 1024         # вершин по стороне
 var region := ""               # "" = базовый регион (Карпаты) в res://assets/, иначе res://assets/regions/<name>/
+var trees_ver := 2             # деревья: 1 — процедурные (v1), 2 — Meshy-герои + фото-кроны (v2)
 var asset_dir := "res://assets/"
 
 
@@ -51,9 +52,12 @@ func _ready() -> void:
 	var rcfg := ConfigFile.new()
 	if rcfg.load("user://settings.cfg") == OK:
 		region = str(rcfg.get_value("game", "region", ""))
+		trees_ver = int(rcfg.get_value("game", "trees", 2))
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--region="):
 			region = a.substr(9)
+		elif a.begins_with("--trees="):
+			trees_ver = clampi(int(a.substr(8)), 1, 2)
 	if region != "":
 		asset_dir = "res://assets/regions/%s/" % region
 		if not FileAccess.file_exists(ProjectSettings.globalize_path(asset_dir + "meta.json")) and not ResourceLoader.exists(asset_dir + "meta.json"):
@@ -862,10 +866,33 @@ func link_los(home: Vector3, drone: Vector3) -> Dictionary:
 
 
 ## Столкновение → краш дрона (падает, ждёт перезапуска R).
+var drone_dmg := 0.0                       # накопленный урон стрелковым (0.5 — дымит, 1.0 — крах)
+var _dmg_trail: GPUParticles3D = null
+
+
+## Частичный урон дрона: искры по корпусу; с половины здоровья — дымный шлейф; добитый — крах.
+func damage_drone(amount: float, what: String) -> void:
+	if crashed:
+		return
+	drone_dmg += amount
+	if fx != null:
+		fx.drone_hit(cam.global_position)
+	if drone_dmg >= 1.0:
+		crash(what)
+		return
+	if hud != null:
+		hud.toast("ПОПАДАНИЕ: %s" % what, "дрон повреждён", Color(1.0, 0.5, 0.3), 1.4)
+	if drone_dmg >= 0.5 and _dmg_trail == null and fx != null:
+		_dmg_trail = fx.damage_trail(cam)
+
+
 func crash(what: String) -> void:
 	if crashed:
 		return
 	crashed = true
+	# уникальная гибель по типу дрона: БЧ/LiPo-пожар/удар планера
+	if fx != null:
+		fx.drone_explosion(cam.global_position, str(cam.get("drone_id")))
 	# взведённая БЧ камикадзе подрывается при любом столкновении
 	if targets != null and targets.weapon == 2 and targets.armed:
 		targets.detonate(cam.global_position)
@@ -882,6 +909,11 @@ func crash(what: String) -> void:
 
 func _respawn() -> void:
 	crashed = false
+	drone_dmg = 0.0
+	if _dmg_trail != null:
+		if is_instance_valid(_dmg_trail):
+			_dmg_trail.queue_free()
+		_dmg_trail = null
 	if relay_node != null:
 		relay_node.queue_free(); relay_node = null
 	if targets != null:

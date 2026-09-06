@@ -14,6 +14,11 @@ func setup(m: Node3D) -> void:
 		_debug_report_targets()
 	if "--screenshot" in OS.get_cmdline_user_args():
 		_schedule_screenshot()
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--fxshot="):
+			_fx_shot(a.substr(9))
+		elif a.begins_with("--animshot="):
+			_anim_shot(a.substr(11))
 	if "--mapdump" in OS.get_cmdline_user_args():
 		_mapdump()
 
@@ -285,6 +290,106 @@ func _transshot(spec: String) -> void:
 		t += 3.0
 		await _save_shot("trans_%dto%d_t%02d" % [wa, wb, int(t)])
 	get_tree().quit()
+
+
+## --fxshot=<fpv7|fpv5|mavic|mship|wing|burst_tank|burst_apc|burst_soldier|hit> —
+## серия кадров боевого эффекта у точки старта: 3 снимка по ходу анимации, затем выход.
+func _fx_shot(kind: String) -> void:
+	await RenderingServer.frame_post_draw
+	for i in 60:
+		await get_tree().process_frame
+	main.replaying = true
+	var base: Vector3 = main._home_pos
+	var gy: float = main.height_at(base.x, base.z)
+	# сцена в воздухе, выше крон: взрыв дрона на 22 м — реалистичный контекст
+	var tgt := Vector3(base.x, gy + 22.0, base.z)
+	var cpos := Vector3(base.x + 14.0, gy + 24.0, base.z + 6.0)
+	var clook := tgt
+	var times: Array = []
+	if kind.begins_with("burst_"):
+		var gk := kind.substr(6)
+		tgt = Vector3(base.x, gy + 42.0, base.z)          # превью: вся трасса против неба
+		var muz := Vector3(base.x - 42.0, gy + 26.0, base.z - 16.0)
+		var pts: Array = []
+		for i in 7:
+			pts.append(tgt + Vector3(randf_range(-1, 1), randf_range(-0.5, 0.5), randf_range(-1, 1)).normalized() * (0.0 if i == 4 else randf_range(2.0, 7.0)))
+		# камера сбоку и чуть ниже середины траектории: болиды идут по небу, вспышка в кадре
+		var mid := (muz + tgt) * 0.5
+		cpos = mid + Vector3(8.0, -3.0, 26.0)
+		clook = mid
+		_apply_fx_cam(cpos, clook)
+		await get_tree().process_frame
+		main.fx.gun_burst(muz, pts, gk)
+		times = [0.12, 0.35, 0.7]
+	elif kind == "hit":
+		_apply_fx_cam(cpos, clook)
+		await get_tree().process_frame
+		main.fx.drone_hit(tgt)
+		times = [0.05, 0.18, 0.4]
+	else:
+		_apply_fx_cam(cpos, clook)
+		await get_tree().process_frame
+		main.fx.drone_explosion(tgt, kind)
+		times = [0.07, 0.35, 1.1]
+	var t0 := Time.get_ticks_msec()
+	for si in times.size():
+		while (Time.get_ticks_msec() - t0) / 1000.0 < float(times[si]):
+			_apply_fx_cam(cpos, clook)         # держим камеру: дрон сносит физикой/ветром
+			await get_tree().process_frame
+		_apply_fx_cam(cpos, clook)
+		await RenderingServer.frame_post_draw
+		var img := main.get_viewport().get_texture().get_image()
+		var out := ProjectSettings.globalize_path("res://../fx_%s_%d.png" % [kind, si])
+		img.save_png(out)
+		print("FXSHOT saved: ", out)
+	get_tree().quit()
+
+
+## --animshot=<walk|run|aim|crouch|react|death_a|death_b> — солдат у точки старта играет клип,
+## 3 кадра по ходу анимации, затем выход.
+func _anim_shot(clip: String) -> void:
+	await RenderingServer.frame_post_draw
+	for i in 60:
+		await get_tree().process_frame
+	main.replaying = true
+	var U = load("res://scripts/units.gd").new()
+	var ad: Dictionary = U.soldier_anim_scene()
+	if ad.is_empty():
+		print("ANIMSHOT: sold_*.glb не найдены")
+		get_tree().quit()
+		return
+	var base: Vector3 = main._home_pos + Vector3(10, 0, 0)
+	var gy: float = main.height_at(base.x, base.z)
+	(ad.root as Node3D).position = Vector3(base.x, gy, base.z)
+	main.add_child(ad.root)
+	var cpos := Vector3(base.x + 4.5, gy + 1.7, base.z + 3.0)
+	var clook := Vector3(base.x, gy + 1.0, base.z)
+	_apply_fx_cam(cpos, clook)
+	await get_tree().process_frame
+	var cname := String((ad.clips as Dictionary).get(clip, ""))
+	print("ANIMSHOT клипы: ", ad.clips.keys(), " → играю: ", cname)
+	if cname != "":
+		(ad.player as AnimationPlayer).play(cname)
+	var t0 := Time.get_ticks_msec()
+	for si in 3:
+		var tgt_t: float = [0.25, 0.9, 1.6][si]
+		while (Time.get_ticks_msec() - t0) / 1000.0 < tgt_t:
+			_apply_fx_cam(cpos, clook)
+			await get_tree().process_frame
+		_apply_fx_cam(cpos, clook)
+		await RenderingServer.frame_post_draw
+		var img := main.get_viewport().get_texture().get_image()
+		var out := ProjectSettings.globalize_path("res://../anim_%s_%d.png" % [clip, si])
+		img.save_png(out)
+		print("ANIMSHOT saved: ", out)
+	get_tree().quit()
+
+
+func _apply_fx_cam(cpos: Vector3, clook: Vector3) -> void:
+	main.cam.global_position = cpos
+	main.cam.look_at(clook)
+	if main.cam.get("body") != null:
+		main.cam.body = main.cam.global_transform.basis
 
 
 func _save_shot(shot_name: String) -> void:
