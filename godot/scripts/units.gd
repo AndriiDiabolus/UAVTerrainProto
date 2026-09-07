@@ -1131,12 +1131,24 @@ func soldier_anim_scene() -> Dictionary:
 				var names := tl.get_animation_list()
 				if not names.is_empty():
 					var anim: Animation = tl.get_animation(names[0]).duplicate()
-					if cname in ["run", "aim", "crouch"]:
+					if cname in ["run", "aim"]:   # crouch — переходный: замирает в позе прицела
 						anim.loop_mode = Animation.LOOP_LINEAR
 					lib.add_animation(cname, anim)
 					clips[cname] = cname if lib_name == "" else lib_name + "/" + cname
 					break
 		tmp.free()
+	# деглянец: материалы риг-экспорта глянцевые — форма/ткань должны быть матовыми
+	for ch in inst.find_children("*", "MeshInstance3D", true, false):
+		var mi3 := ch as MeshInstance3D
+		if mi3.mesh == null:
+			continue
+		for si in mi3.mesh.get_surface_count():
+			var mat := mi3.mesh.surface_get_material(si)
+			if mat is BaseMaterial3D:
+				var bm3 := mat as BaseMaterial3D
+				bm3.roughness = 0.93
+				bm3.metallic = 0.0
+				bm3.metallic_specular = 0.15
 	# автомат в правую кисть: BoneAttachment3D едет со всеми клипами
 	var sk := inst.find_child("Skeleton3D", true, false) as Skeleton3D
 	if sk == null:

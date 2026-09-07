@@ -322,7 +322,15 @@ func _process(dt: float) -> void:
 				if main.get("telemetry") != null:
 					main.telemetry.event("target_alert", {"kind": t.kind})
 		if t.alert and t.kind == "soldier":
-			# пехота сходит с дороги в укрытие и залегает
+			# пехота сходит с дороги в укрытие и залегает; в дом не забегаем — зеркалим сторону
+			if not t.get("hide_ck", false):
+				t.hide_ck = true
+				var hp := _road_pos(t.road, t.d)
+				var p2 := _road_pos(t.road, t.d + 5.0)
+				var dv := Vector2(p2.x - hp.x, p2.y - hp.y).normalized()
+				var sd := Vector2(-dv.y, dv.x) * float(t.hide_off)
+				if main.collision != null and main.collision.in_building(hp.x + sd.x, hp.y + sd.y, 1.5):
+					t.hide_off = -float(t.hide_off)
 			t.offset = lerpf(t.offset, t.hide_off, clampf(dt * 0.6, 0.0, 1.0))
 			t.speed = lerpf(t.speed, 0.15, clampf(dt * 0.8, 0.0, 1.0))
 		# --- ответный огонь (БТР — автопушка, танк — ЗПУ, пехота — стрелковое) ---
@@ -376,6 +384,11 @@ func _process(dt: float) -> void:
 			if animd.is_empty():
 				bob = sin(t.d * 3.2) * 0.05          # фоллбек-фигурка «ходит» покачиванием
 			var yaw := atan2(-dir3.y, dir3.x) + (sin(t.d * 1.6) * 0.06 if animd.is_empty() else 0.0)
+			if t.alert and str(t.get("cur_anim", "")) in ["aim", "crouch"]:
+				yaw = atan2(-(cam_pos.z - wz), cam_pos.x - wx)          # в бою корпус держит дрон
+			var prev_y: float = t.get("yaw_s", yaw)
+			yaw = lerp_angle(prev_y, yaw, clampf(dt * 5.0, 0.0, 1.0))
+			t.yaw_s = yaw
 			t.node.transform = Transform3D(Basis(Vector3.UP, yaw), Vector3(wx, y + bob, wz))
 			# автомат анимаций: патруль → перебежка в укрытие → прицел стоя/с колена
 			if not animd.is_empty():
@@ -393,6 +406,11 @@ func _process(dt: float) -> void:
 					if clip != "":
 						t.cur_anim = want         # фиксируем состояние ТОЛЬКО сыграв клип
 						ap2.play(clip, 0.25)
+						if want == "crouch":
+							# клип переходный («подобрал-навёл») — в бою начинаем с фазы прицела
+							var ca := ap2.get_animation(clip)
+							if ca != null:
+								ap2.seek(ca.length * 0.55, true)
 					elif ap2.current_animation == "":
 						# клипа нет и плеер молчит — не стоим в бинд-позе, играем走 walk
 						var wclip := String((animd.clips as Dictionary).get("walk", ""))
