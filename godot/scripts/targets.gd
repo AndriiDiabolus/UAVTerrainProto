@@ -271,8 +271,10 @@ func _process(dt: float) -> void:
 			continue
 		# --- обнаружение дрона и реакция ---
 		var dist_d: float = cam_pos.distance_to(t.node.position)
-		# в главном меню дрон «невидим»; высотный разведчик-крыло цели не замечают и не обстреливают
-		var can_see: bool = not main.get("menu_open") and str(main.cam.get("drone_id")) != "wing"
+		# в главном меню дрон «невидим». Разведчик-крыло малозаметен только НА ВЫСОТЕ:
+		# ниже 500 м AGL его видно и слышно — пехота прячется, техника уходит (реальный резон держать эшелон)
+		var can_see: bool = not main.get("menu_open") \
+			and (str(main.cam.get("drone_id")) != "wing" or agl < 500.0)
 		if not t.alert and can_see:
 			var det := 250.0 if t.kind == "soldier" else 420.0
 			if dist_d < det and agl < 220.0:

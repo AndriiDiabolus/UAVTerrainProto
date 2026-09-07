@@ -465,12 +465,12 @@ func _step_wing(dt: float, s: Dictionary, wind: Vector3) -> void:
 		_wing_auto = true
 		position.y += 1.5
 		if main.hud != null and main.hud.has_method("toast"):
-			main.hud.toast("КАТАПУЛЬТА", "авто-набір до 350 м · колесо миші — зум · ЛКМ — відмітити ціль", Color(0.7, 0.9, 1.0))
+			main.hud.toast("КАТАПУЛЬТА", "авто-набір до 800 м (малопомітна висота) · зум — колесо/−= · ЛКМ — мітка", Color(0.7, 0.9, 1.0))
 	if absf(float(s.p)) > 0.15 or absf(float(s.r)) > 0.3:
 		_wing_auto = false                       # пилот взял управление
 	if _wing_auto:
 		var agl: float = position.y - main.height_at(position.x, position.z)
-		if agl < 350.0:
+		if agl < 800.0:
 			throttle = move_toward(throttle, 1.0, dt * 0.8)
 			_wing_air = move_toward(_wing_air, 33.0, dt * 2.2)
 			_wing_pitch = move_toward(_wing_pitch, deg_to_rad(11.0), dt * deg_to_rad(30.0))
