@@ -12,7 +12,7 @@ var replay_pick := 0
 var replay_files: PackedStringArray = []
 var _orbit_t := 0.0
 var _panel: Control
-const ITEMS := ["полёт", "миссия", "реплей", "регион", "деревья", "дрон", "скин", "оружие", "камера", "погода", "качество", "выход"]
+const ITEMS := ["полёт", "миссия", "реплей", "регион", "деревья", "дрон", "скин", "оружие", "камера", "пульт", "рейты", "погода", "качество", "выход"]
 const ACC := Color(1.0, 0.78, 0.35)
 const TXT := Color(0.92, 0.92, 0.9)
 const DIM := Color(0.78, 0.78, 0.76, 0.8)
@@ -85,6 +85,11 @@ func _input(event: InputEvent) -> void:
 		return
 	if event is InputEventKey and event.pressed and not event.echo:
 		var kc: int = event.physical_keycode if event.physical_keycode != 0 else event.keycode
+		if main.rc != null and main.rc.wizard_active:
+			if kc == KEY_ESCAPE:
+				main.rc.wizard_cancel()
+			get_viewport().set_input_as_handled()
+			return
 		match kc:
 			KEY_ESCAPE: _start_flight(false)
 			KEY_UP: sel = posmod(sel - 1, ITEMS.size())
@@ -125,6 +130,10 @@ func _adjust(dir: int) -> void:
 		"камера":
 			if main.hud.fpv_link != null:
 				main.hud.fpv_link.set_camera(main.hud.fpv_link.camera + dir)
+		"пульт":
+			main.rc.wizard_start()
+		"рейты":
+			main.rc.cycle_preset(dir)
 		"погода": main.weather.apply(int(main.weather.idx) + dir)
 		"качество":
 			main._quality_from_flag = false
@@ -153,6 +162,10 @@ func _activate() -> void:
 		"камера":
 			if main.hud.fpv_link != null:
 				main.hud.fpv_link.set_camera(main.hud.fpv_link.camera + 1)
+		"пульт":
+			main.rc.wizard_start()
+		"рейты":
+			main.rc.cycle_preset(1)
 		"погода": main.weather.apply(int(main.weather.idx) + 1)
 		"качество":
 			main._quality_from_flag = false
@@ -210,11 +223,14 @@ func _draw_panel() -> void:
 		"скин": (str(main.droneview.skin_name()) if main.get("droneview") != null else "—"),
 		"оружие": ("— разведчик" if str(main.cam.get("drone_id")) == "wing" else ("%s ×%d" % [main.targets.WEAPONS[main.targets.weapon], main.targets.weapon_ammo()]) + (" · для FPV" if str(main.cam.get("drone_id")) == "mship" else "")) if main.targets != null else "—",
 		"камера": (main.hud.fpv_link.camera_name() if main.hud != null and main.hud.fpv_link != null else "—"),
+		"пульт": (("настроен · " + str(main.rc.joy_name()).left(18)) if main.rc.configured else
+			(("найден: " + str(main.rc.joy_name()).left(14) + " — Enter") if main.rc.joy_name() != "" else "не подключен")),
+		"рейты": str(main.rc.rates_label()),
 		"погода": str(main.weather.label) if main.weather != null else "—",
 		"качество": main.QUALITY_NAMES[main.quality],
 		"выход": "",
 	}
-	var icons := {"полёт": "▶", "миссия": "◎", "реплей": "↺", "регион": "🗺", "деревья": "🌳", "дрон": "🛠", "скин": "🎨", "оружие": "✚", "камера": "📷", "погода": "☀", "качество": "⚙", "выход": "⏻"}
+	var icons := {"полёт": "▶", "миссия": "◎", "реплей": "↺", "регион": "🗺", "деревья": "🌳", "дрон": "🛠", "скин": "🎨", "оружие": "✚", "камера": "📷", "пульт": "🎛", "рейты": "📈", "погода": "☀", "качество": "⚙", "выход": "⏻"}
 	var y := 170.0
 	for i in ITEMS.size():
 		var it: String = ITEMS[i]
@@ -230,6 +246,15 @@ func _draw_panel() -> void:
 			d.draw_string(f, Vector2(408 - f.get_string_size(arrows, HORIZONTAL_ALIGNMENT_LEFT, -1, 14).x, y), arrows, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, ACC if selc else DIM)
 		y += 50.0
 	d.draw_string(f, Vector2(40, y + 6), "↑↓ пункт · ◂▸ значение · Enter — выбрать · Esc — продолжить", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, DIM)
+	# оверлей мастера калибровки пульта
+	if main.rc != null and main.rc.wizard_active:
+		var cw := 640.0; var chh := 130.0
+		var cx := (vp.x - cw) * 0.5; var cyy := (vp.y - chh) * 0.5
+		d.draw_rect(Rect2(cx, cyy, cw, chh), Color(0.03, 0.05, 0.08, 0.94))
+		d.draw_rect(Rect2(cx, cyy, cw, chh), Color(0.55, 0.85, 1.0, 0.8), false, 2.0)
+		d.draw_string(f, Vector2(cx + 24, cyy + 36), "НАСТРОЙКА ПУЛЬТА  ·  шаг %d/4" % maxi(main.rc.wizard_step + 1, 1), HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color(0.55, 0.85, 1.0))
+		d.draw_string(f, Vector2(cx + 24, cyy + 72), str(main.rc.wizard_hint), HORIZONTAL_ALIGNMENT_LEFT, -1, 18, TXT)
+		d.draw_string(f, Vector2(cx + 24, cyy + 104), "Esc — отмена", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, DIM)
 	# памятка справа внизу
 	var px := vp.x - 560.0; var py := vp.y - 324.0
 	d.draw_rect(Rect2(px, py, 520, 286), Color(0.03, 0.04, 0.055, 0.72))

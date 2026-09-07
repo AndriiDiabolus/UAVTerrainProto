@@ -93,7 +93,18 @@ func _ready() -> void:
 	_build_selftest()
 	_build_debug()
 	_build_droneview()
+	_build_rc()
 	_build_menu()
+
+
+var rc: Node                       # пилотский модуль: RC-пульт + rates (rc.gd)
+
+func _build_rc() -> void:
+	rc = Node.new()
+	rc.name = "RC"
+	rc.set_script(load("res://scripts/rc.gd"))
+	add_child(rc)
+	rc.setup(self)
 
 
 var droneview: Node3D

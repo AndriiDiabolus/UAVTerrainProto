@@ -293,15 +293,21 @@ func _read_sticks(dt: float) -> Dictionary:
 		link_q = float(main._fpv_osd.signal_q)
 	if not pads.is_empty():
 		var id: int = pads[0]
-		var raw := []
-		for i in 4:
-			var v := Input.get_joy_axis(id, _axes[i])
-			raw.append(-v if _inv[i] else v)
+		var jt: float; var jy: float; var jp: float; var jr: float
+		if main != null and main.get("rc") != null and main.rc.configured:
+			# откалиброванный пульт: маппинг и малая мёртвая зона из rc.gd (без грубого _dz)
+			var st: Dictionary = main.rc.read(id)
+			jt = st.t; jy = st.y; jp = st.p; jr = st.r
+		else:
+			var raw := []
+			for i in 4:
+				var v := Input.get_joy_axis(id, _axes[i])
+				raw.append(-v if _inv[i] else v)
+			jt = _dz(raw[0]); jy = _dz(raw[1]); jp = _dz(raw[2]); jr = _dz(raw[3])
 		if _joydebug:
 			var all := []
 			for ax in 6: all.append("%.2f" % Input.get_joy_axis(id, ax))
-			print("JOY axes: ", all, "  → T=%.2f Y=%.2f P=%.2f R=%.2f" % [raw[0], raw[1], raw[2], raw[3]])
-		var jt := _dz(raw[0]); var jy := _dz(raw[1]); var jp := _dz(raw[2]); var jr := _dz(raw[3])
+			print("JOY axes: ", all, "  → T=%.2f Y=%.2f P=%.2f R=%.2f" % [jt, jy, jp, jr])
 		# джойстик перекрывает клавиатуру, если стик отклонён
 		if absf(jp) > 0.0 or absf(jr) > 0.0 or absf(jy) > 0.0 or absf(jt) > 0.0:
 			out.joy = true
@@ -542,10 +548,18 @@ func _step_physical(dt: float, s: Dictionary, wind: Vector3) -> void:
 	var rate := deg_to_rad(P["rate"])
 	var yaw_rate := deg_to_rad(P["yaw_rate"])
 	var w_d := Vector3.ZERO
+	var pilot_rates: bool = bool(s.joy) and main != null and main.get("rc") != null \
+		and main.rc.configured and main.rc.rates_on
 	if mode == MODE_ACRO:
-		w_d.x = -_expo(s.p, expo) * rate
-		w_d.z = -_expo(s.r, expo) * rate
-		w_d.y = -_expo(s.y, expo) * yaw_rate
+		if pilot_rates:
+			# Betaflight Actual Rates пилота — мышечная память переносится 1:1 с реального дрона
+			w_d.x = -main.rc.actual_rate(s.p)
+			w_d.z = -main.rc.actual_rate(s.r)
+			w_d.y = -main.rc.actual_rate(s.y, true)
+		else:
+			w_d.x = -_expo(s.p, expo) * rate
+			w_d.z = -_expo(s.r, expo) * rate
+			w_d.y = -_expo(s.y, expo) * yaw_rate
 	else:
 		var e := body.get_euler()                        # (pitch, yaw, roll), порядок YXZ
 		var tilt := deg_to_rad(P["tilt"])
@@ -554,7 +568,7 @@ func _step_physical(dt: float, s: Dictionary, wind: Vector3) -> void:
 		var kp := 6.0
 		w_d.x = clampf((p_d - e.x) * kp, -rate, rate)
 		w_d.z = clampf((r_d - e.z) * kp, -rate, rate)
-		w_d.y = -_expo(s.y, expo) * yaw_rate
+		w_d.y = -main.rc.actual_rate(s.y, true) if pilot_rates else -_expo(s.y, expo) * yaw_rate
 	# буфтинг ветром — небольшие возмущения по крену/тангажу
 	var wf := wind.length()
 	w_d.x += _turb[0].get_noise_1d(_t * 1.7) * wf * 0.03
