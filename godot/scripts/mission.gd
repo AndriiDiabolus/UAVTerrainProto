@@ -91,25 +91,21 @@ const MISSIONS := [
 		{"kind": "recon", "dx": 0, "dz": -1800, "agl": 80, "hold": 4.0, "r": 120.0},   # БДА
 	 ],
 	 "quest": [
-		{"who": "SHARK · розвідка", "step": 0, "subs": [
-			{"t": "перемкнись на крило SHARK (B)", "k": "drone", "id": "wing"},
+		{"who": "SHARK · розвідка", "step": 0, "drone": "wing", "subs": [
 			{"t": "катапультний старт — набери хід", "k": "agl", "v": 15.0},
 			{"t": "займи безпечну висоту 300 м (поза ППО)", "k": "agl", "v": 300.0},
 			{"t": "вийди в район цілей", "k": "reach", "v": 700.0},
 			{"t": "відміть цілі %d/%d (зум −/=, ЛКМ)", "k": "marks"},
 		]},
-		{"who": "МАТКА · ретранслятор", "step": 1, "subs": [
-			{"t": "перемкнись на матку-носій (B)", "k": "drone", "id": "mship"},
+		{"who": "МАТКА · ретранслятор", "step": 1, "drone": "mship", "subs": [
 			{"t": "дійди до рубежу звʼязку", "k": "reach", "v": 160.0},
 			{"t": "розгорни ретранслятор (H) чи відділи FPV (J)", "k": "step"},
 		]},
-		{"who": "FPV · удар", "step": 2, "subs": [
-			{"t": "перемкнись на FPV (B)", "k": "drone", "id": "fpv"},
+		{"who": "FPV · удар", "step": 2, "drone": "fpv7", "subs": [
 			{"t": "дістанься відміток", "k": "near_mark", "v": 400.0},
 			{"t": "знищ відмічені цілі %d/%d", "k": "kills"},
 		]},
-		{"who": "SHARK · БДА", "step": 3, "subs": [
-			{"t": "повернись на крило (B)", "k": "drone", "id": "wing"},
+		{"who": "SHARK · БДА", "step": 3, "drone": "wing", "subs": [
 			{"t": "вийди над точку удару", "k": "reach", "v": 130.0},
 			{"t": "утримуйся 4 с — підтвердь ураження", "k": "step"},
 		]},
@@ -121,20 +117,17 @@ const MISSIONS := [
 		{"kind": "strike_marked", "n": 2},
 	 ],
 	 "quest": [
-		{"who": "SHARK · нічна розвідка", "step": 0, "subs": [
-			{"t": "перемкнись на крило SHARK (B)", "k": "drone", "id": "wing"},
+		{"who": "SHARK · нічна розвідка", "step": 0, "drone": "wing", "subs": [
 			{"t": "увімкни тепловізор (T)", "k": "cam", "v": 3},
 			{"t": "займи висоту 250 м", "k": "agl", "v": 250.0},
 			{"t": "вийди в район засідки", "k": "reach", "v": 600.0},
 			{"t": "відміть теплі цілі %d/%d (зум, ЛКМ)", "k": "marks"},
 		]},
-		{"who": "МАТКА · ретранслятор", "step": 1, "subs": [
-			{"t": "перемкнись на матку-носій (B)", "k": "drone", "id": "mship"},
+		{"who": "МАТКА · ретранслятор", "step": 1, "drone": "mship", "subs": [
 			{"t": "дійди до рубежу впотемки", "k": "reach", "v": 130.0},
 			{"t": "розгорни ретранслятор (H) чи відділи FPV (J)", "k": "step"},
 		]},
-		{"who": "FPV · удар", "step": 2, "subs": [
-			{"t": "перемкнись на FPV (B)", "k": "drone", "id": "fpv"},
+		{"who": "FPV · удар", "step": 2, "drone": "fpv7", "subs": [
 			{"t": "тепловізор або нічна камера (T/C)", "k": "cam_any", "v": 2},
 			{"t": "дістанься відміток", "k": "near_mark", "v": 350.0},
 			{"t": "знищ цілі %d/%d", "k": "kills"},
@@ -222,6 +215,7 @@ func start(id: int) -> void:
 		for sub: Dictionary in pc["subs"]:
 			sub["done"] = false
 		_quest.append(pc)
+	_apply_phase_drone(false)
 	# погода місії: комбіновані вильоти самі ставлять умови (вітер, ніч)
 	if m.has("weather") and main.weather != null:
 		main.weather.apply(int(m["weather"]), true)
@@ -470,6 +464,7 @@ func _process(dt: float) -> void:
 		if main.get("telemetry") != null: main.telemetry.event("step_done", {"step": step, "kind": s["kind"], "t": t})
 		step += 1
 		_hold_t = 0.0
+		_apply_phase_drone(true)
 		_refresh_colors()
 		if step >= _steps.size():
 			_finish(true)
@@ -656,6 +651,21 @@ func _quest_tick(pos: Vector3, agl: float) -> void:
 				sub["done"] = true
 
 
+## Місія сама подає потрібний борт фази (як зміна оператора за НСУ): SHARK → матка → FPV → SHARK.
+func _apply_phase_drone(with_toast: bool) -> void:
+	for ph: Dictionary in _quest:
+		if int(ph["step"]) != step or not ph.has("drone"):
+			continue
+		var want_d := str(ph["drone"])
+		var cur_d := str(main.cam.get("drone_id"))
+		var fpv_fam := ["fpv7", "fpv5", "mavic"]
+		if cur_d != want_d and not (cur_d in fpv_fam and want_d in fpv_fam):
+			main.cam.set_drone(want_d)
+			if with_toast and main.hud != null:
+				main.hud.toast("БОРТ · %s" % str(main.cam.drone_name()), "фаза: %s" % str(ph["who"]), Color(0.7, 0.9, 1.0))
+		return
+
+
 ## Рядки для панелі квесту: {h: заголовок фази} або {t: текст, st: 0 попереду / 1 поточна / 2 готово}.
 func quest_lines() -> Array:
 	var out: Array = []
@@ -671,6 +681,8 @@ func quest_lines() -> Array:
 		var pstep := int(ph["step"])
 		var phase_state := 2 if pstep < step else (1 if pstep == step else 0)
 		out.append({"h": ph["who"], "st": phase_state})
+		if phase_state != 1:
+			continue                     # розгорнута лише поточна фаза; інші — тільки заголовок
 		var first_active := true
 		for sub: Dictionary in ph["subs"]:
 			var txt := str(sub["t"])

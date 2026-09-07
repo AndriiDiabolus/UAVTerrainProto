@@ -52,10 +52,11 @@ func _draw_quest(f: Font, vp: Vector2) -> void:
 	var lines: Array = main.mission.quest_lines()
 	if lines.is_empty():
 		return
-	var fs := 11
-	var lh := 16.0
+	var fs := 13
+	var lh := 19.0
 	var x := 14.0
-	var y := 60.0                                     # верх-ліво, одразу під плашкою FPS
+	var h := (lines.size() + 1.5) * lh
+	var y := clampf(vp.y * 0.5 - h * 0.5, 96.0, vp.y - h - 130.0)   # вертикально по центру зліва
 	# без підкладки: текст тримається на контурі _txt; жовтий — попереду, зелений — поточна, червоний — виконано
 	var yy := y + 16.0
 	_txt(f, Vector2(x + 10, yy), "ЗАВДАННЯ", fs, DIM)
@@ -65,7 +66,8 @@ func _draw_quest(f: Font, vp: Vector2) -> void:
 		var st := int(ln.st)
 		var c := Color(1.0, 0.85, 0.3) if st == 0 else (Color(0.5, 1.0, 0.55) if st == 1 else Color(1.0, 0.38, 0.3, 0.85))
 		if ln.has("h"):
-			_txt(f, Vector2(x + 10, yy), str(ln.h).to_upper(), fs, c)
+			var hpre := "✓ " if st == 2 else ""
+			_txt(f, Vector2(x + 10, yy), hpre + str(ln.h).to_upper(), fs, c)
 		else:
 			var pre := "✓ " if st == 2 else ("▸ " if st == 1 else "·  ")
 			_txt(f, Vector2(x + 18, yy), pre + str(ln.t), fs, c)
