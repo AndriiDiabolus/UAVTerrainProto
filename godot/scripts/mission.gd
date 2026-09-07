@@ -187,6 +187,8 @@ func start(id: int) -> void:
 		main.cam.reset()
 	if main.targets != null:
 		main.targets.reset_ammo()
+	if main._fpv_osd != null:
+		main._fpv_osd.battery = 1.0          # новий виліт — заряджений борт (інакше миттєвий ПРОВАЛ по батареї)
 	# рекомендованный режим: с пультом ставим сразу; на клавиатуре из GPS — не ломаем привычное управление,
 	# только подсказываем (Tab). В любом случае показываем шпаргалку по управлению на 8 с.
 	var want: String = str(m.get("mode", "angle"))
@@ -679,6 +681,8 @@ func _apply_phase_drone(with_toast: bool) -> void:
 		var fpv_fam := ["fpv7", "fpv5", "mavic"]
 		if cur_d != want_d and not (cur_d in fpv_fam and want_d in fpv_fam):
 			main.cam.set_drone(want_d)
+			if main._fpv_osd != null:
+				main._fpv_osd.battery = 1.0  # інший фізичний борт — своя свіжа батарея
 			if with_toast and main.hud != null:
 				main.hud.toast("БОРТ · %s" % str(main.cam.drone_name()), "фаза: %s" % str(ph["who"]), Color(0.7, 0.9, 1.0))
 		return

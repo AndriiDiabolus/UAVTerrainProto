@@ -921,11 +921,14 @@ func crash(what: String) -> void:
 func _respawn() -> void:
 	crashed = false
 	drone_dmg = 0.0
+	if _fpv_osd != null:
+		_fpv_osd.battery = 1.0               # рестарт = новий борт зі свіжою батареєю
 	if _dmg_trail != null:
 		if is_instance_valid(_dmg_trail):
 			_dmg_trail.queue_free()
 		_dmg_trail = null
-	if relay_node != null:
+	# в активній місії ретранслятор/матка лишається на позиції: розбитий FPV не забирає канал
+	if relay_node != null and not (mission != null and mission.active):
 		relay_node.queue_free(); relay_node = null
 	if targets != null:
 		targets.reset_ammo()
