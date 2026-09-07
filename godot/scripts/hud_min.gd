@@ -65,12 +65,19 @@ func _draw_quest(f: Font, vp: Vector2) -> void:
 		yy += lh
 		var st := int(ln.st)
 		var c := Color(1.0, 0.85, 0.3) if st == 0 else (Color(0.5, 1.0, 0.55) if st == 1 else Color(1.0, 0.38, 0.3, 0.85))
+		var fsz := fs
+		if st == 2:
+			# спалах виконання: 1.4 с яскраво-білим із збільшенням, далі гасне в червоне «виконано»
+			var age := clampf(float(ln.get("age", 99.0)) / 1.4, 0.0, 1.0)
+			if age < 1.0:
+				c = Color(1.0, 1.0, 0.95).lerp(Color(1.0, 0.38, 0.3, 0.85), age)
+				fsz = fs + int(round((1.0 - age) * 3.0))
 		if ln.has("h"):
 			var hpre := "✓ " if st == 2 else ""
-			_txt(f, Vector2(x + 10, yy), hpre + str(ln.h).to_upper(), fs, c)
+			_txt(f, Vector2(x + 10, yy), hpre + str(ln.h).to_upper(), fsz, c)
 		else:
 			var pre := "✓ " if st == 2 else ("▸ " if st == 1 else "·  ")
-			_txt(f, Vector2(x + 18, yy), pre + str(ln.t), fs, c)
+			_txt(f, Vector2(x + 18, yy), pre + str(ln.t), fsz, c)
 
 ## Закріплені цілі: маленький червоний квадратик сталого екранного розміру (бачать усі дрони).
 func _draw_marked_squares(f: Font, cam: Camera3D) -> void:

@@ -638,7 +638,11 @@ func _quest_tick(pos: Vector3, agl: float) -> void:
 		var pstep := int(ph["step"])
 		if pstep < step:
 			for sub: Dictionary in ph["subs"]:
-				sub["done"] = true
+				if not bool(sub.get("done", false)):
+					sub["done"] = true
+					sub["done_t"] = t
+			if not ph.has("done_t"):
+				ph["done_t"] = t
 			continue
 		if pstep > step or pstep >= _steps.size():
 			continue
@@ -662,6 +666,7 @@ func _quest_tick(pos: Vector3, agl: float) -> void:
 				"marks", "kills", "step": ok = false   # закриваються разом із кроком (гілка pstep < step)
 			if ok:
 				sub["done"] = true
+				sub["done_t"] = t
 
 
 ## Місія сама подає потрібний борт фази (як зміна оператора за НСУ): SHARK → матка → FPV → SHARK.
@@ -693,7 +698,7 @@ func quest_lines() -> Array:
 	for ph: Dictionary in _quest:
 		var pstep := int(ph["step"])
 		var phase_state := 2 if pstep < step else (1 if pstep == step else 0)
-		out.append({"h": ph["who"], "st": phase_state})
+		out.append({"h": ph["who"], "st": phase_state, "age": t - float(ph.get("done_t", -100.0))})
 		if phase_state != 1:
 			continue                     # розгорнута лише поточна фаза; інші — тільки заголовок
 		var first_active := true
@@ -709,7 +714,7 @@ func quest_lines() -> Array:
 				st = 1
 			if st != 2 and phase_state == 1:
 				first_active = false
-			out.append({"t": txt, "st": st})
+			out.append({"t": txt, "st": st, "age": t - float(sub.get("done_t", -100.0))})
 	return out
 
 
