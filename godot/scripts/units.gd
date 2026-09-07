@@ -1131,7 +1131,7 @@ func soldier_anim_scene() -> Dictionary:
 				var names := tl.get_animation_list()
 				if not names.is_empty():
 					var anim: Animation = tl.get_animation(names[0]).duplicate()
-					if cname in ["run", "aim"]:   # crouch — переходный: замирает в позе прицела
+					if cname in ["run", "aim", "crouch"]:
 						anim.loop_mode = Animation.LOOP_LINEAR
 					lib.add_animation(cname, anim)
 					clips[cname] = cname if lib_name == "" else lib_name + "/" + cname
@@ -1164,7 +1164,7 @@ func soldier_anim_scene() -> Dictionary:
 		rm.mesh = _rifle_mesh()
 		# арматура Meshy в масштабе 0.01 — компенсируем ×100; смещение в bone-юнитах (×100 к метрам).
 		# Хват: ствол вдоль пальцев (подбор по кадрам --animshot)
-		rm.transform = Transform3D(Basis(Vector3(0, 0, 1), -PI * 0.5).scaled(Vector3.ONE * 100.0), Vector3(0, 8.0, 2.0))
+		rm.transform = Transform3D(Basis(Vector3(0, 0, 1), -PI * 0.5).scaled(Vector3.ONE * 135.0), Vector3(0, 8.0, 2.0))
 		att.add_child(rm)
 	return {"root": root, "player": ap, "clips": clips}
 

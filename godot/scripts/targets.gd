@@ -406,11 +406,6 @@ func _process(dt: float) -> void:
 					if clip != "":
 						t.cur_anim = want         # фиксируем состояние ТОЛЬКО сыграв клип
 						ap2.play(clip, 0.25)
-						if want == "crouch":
-							# клип переходный («подобрал-навёл») — в бою начинаем с фазы прицела
-							var ca := ap2.get_animation(clip)
-							if ca != null:
-								ap2.seek(ca.length * 0.55, true)
 					elif ap2.current_animation == "":
 						# клипа нет и плеер молчит — не стоим в бинд-позе, играем走 walk
 						var wclip := String((animd.clips as Dictionary).get("walk", ""))
