@@ -54,23 +54,20 @@ func _draw_quest(f: Font, vp: Vector2) -> void:
 		return
 	var fs := 11
 	var lh := 16.0
-	var w := 252.0
-	var h := lines.size() * lh + 22.0
 	var x := 14.0
-	var y := clampf(vp.y * 0.5 - h * 0.5, 96.0, vp.y - h - 120.0)
-	_panel(Rect2(x, y, w, h), 0.38)
+	var y := 60.0                                     # верх-ліво, одразу під плашкою FPS
+	# без підкладки: текст тримається на контурі _txt; жовтий — попереду, зелений — поточна, червоний — виконано
 	var yy := y + 16.0
 	_txt(f, Vector2(x + 10, yy), "ЗАВДАННЯ", fs, DIM)
 	yy += lh * 0.5
 	for ln: Dictionary in lines:
 		yy += lh
+		var st := int(ln.st)
+		var c := Color(1.0, 0.85, 0.3) if st == 0 else (Color(0.5, 1.0, 0.55) if st == 1 else Color(1.0, 0.38, 0.3, 0.85))
 		if ln.has("h"):
-			var hc := Color(1.0, 0.78, 0.35) if int(ln.st) == 1 else (Color(0.55, 1.0, 0.59, 0.75) if int(ln.st) == 2 else DIM)
-			_txt(f, Vector2(x + 10, yy), str(ln.h).to_upper(), fs, hc)
+			_txt(f, Vector2(x + 10, yy), str(ln.h).to_upper(), fs, c)
 		else:
-			var st := int(ln.st)
 			var pre := "✓ " if st == 2 else ("▸ " if st == 1 else "·  ")
-			var c := Color(0.55, 1.0, 0.59, 0.62) if st == 2 else (Color(1.0, 0.78, 0.35) if st == 1 else Color(0.82, 0.82, 0.80, 0.5))
 			_txt(f, Vector2(x + 18, yy), pre + str(ln.t), fs, c)
 
 ## Закріплені цілі: маленький червоний квадратик сталого екранного розміру (бачать усі дрони).
