@@ -430,6 +430,8 @@ func _process(dt: float) -> void:
 		_acc -= H
 		if drone_id == "wing":
 			_step_wing(H, s, wind)
+		elif not fpv_track.is_empty() and bool(fpv_track.get("alive", false)):
+			_step_guided(H, s)
 		elif mode == MODE_GPS:
 			_step_gps(H, s, wind)
 		else:
@@ -491,15 +493,36 @@ func _step_autodovid(dt: float) -> void:
 	if absf(st_pitch) > 0.6 or absf(st_roll) > 0.6:
 		fpv_track = {}
 		if main.hud != null: main.hud.toast("АВТОДОВІД ВИМК", "керування у пілота", Color(1.0, 0.78, 0.47), 1.2)
-		return
+
+
+## Термінальне наведення: поки активний автодовід, штатна фізика підміняється «ракетним»
+## контуром — вектор швидкості повертається до цілі (до 120°/с), модуль тримає газ пілота.
+## Останні 7 м летимо прямо; зіткнення обробляє _ground_and_obstacles → підрив БЧ.
+func _step_guided(dt: float, s: Dictionary) -> void:
 	var tp: Vector3 = fpv_track.node.position + Vector3(0, 1.2, 0)
-	var dirv: Vector3 = (tp - global_position)
-	if dirv.length() < 7.0:
-		return                                   # фінальні метри — БЧ/скид зроблять своє
-	body = body.slerp(Basis.looking_at(dirv.normalized(), Vector3.UP), clampf(dt * 2.2, 0.0, 1.0))
+	var to := tp - global_position
+	var dist := to.length()
+	var dirv := to / maxf(dist, 0.01)
+	var spd := velocity.length()
+	var tgt_spd := clampf(22.0 + float(s.get("thr_c", 0.0)) * 10.0, 10.0, 32.0)   # газ = швидкість зближення
+	spd = move_toward(spd, tgt_spd, dt * 9.0)
+	var cur: Vector3 = velocity.normalized() if velocity.length() > 0.5 else -body.z
+	if dist > 7.0:
+		var ang := cur.angle_to(dirv)
+		if ang > 0.001:
+			var axis := cur.cross(dirv)
+			if axis.length() < 0.001:
+				axis = cur.cross(Vector3.UP)      # прямо позаду — довертаємо через горизонт
+			cur = cur.rotated(axis.normalized(), minf(ang, deg_to_rad(120.0) * dt)).normalized()
+	velocity = cur * spd
+	position += velocity * dt
+	if absf(cur.dot(Vector3.UP)) < 0.99:
+		body = Basis.looking_at(cur, Vector3.UP)
+	throttle = clampf(spd / 30.0, 0.3, 1.0)
+	st_thr = throttle
 
 
-## Пробіл на FPV: захопити найближчу відмічену ціль попереду (до 1500 м) / скасувати.
+## Пробіл на FPV: захопити найближчу відмічену ціль попереду (до 500 м) / скасувати.
 func toggle_autodovid() -> void:
 	if not fpv_track.is_empty():
 		fpv_track = {}
@@ -508,7 +531,7 @@ func toggle_autodovid() -> void:
 	if main == null or main.targets == null:
 		return
 	var best: Dictionary = {}
-	var best_d := 1500.0
+	var best_d := 500.0
 	var fwd: Vector3 = -body.z
 	for t: Dictionary in main.targets.marked_list():
 		var to: Vector3 = t.node.position - global_position
@@ -518,7 +541,7 @@ func toggle_autodovid() -> void:
 		if d < best_d:
 			best_d = d; best = t
 	if best.is_empty():
-		if main.hud != null: main.hud.toast("НЕМАЄ МІТКИ ПОПЕРЕДУ", "відміть ціль розвідником або підлети ближче (до 1.5 км)", Color(1.0, 0.78, 0.47), 1.6)
+		if main.hud != null: main.hud.toast("НЕМАЄ МІТКИ ПОПЕРЕДУ", "відміть ціль розвідником або підлети ближче (до 500 м)", Color(1.0, 0.78, 0.47), 1.6)
 		return
 	fpv_track = best
 	if main.hud != null:
