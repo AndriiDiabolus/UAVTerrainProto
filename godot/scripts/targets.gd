@@ -222,24 +222,6 @@ func _spawn_squad(road: Dictionary, d: float) -> void:
 			"anim": anim, "stance": randf() < 0.5, "cur_anim": "walk"})
 
 
-## Маркер цели: тонкая квадратная рамка-билборд вокруг цели (вместо прежнего столба).
-var _frame_tex_cache: ImageTexture = null
-
-func _frame_tex() -> ImageTexture:
-	if _frame_tex_cache == null:
-		var img := Image.create(64, 64, true, Image.FORMAT_RGBA8)
-		img.fill(Color(0, 0, 0, 0))
-		for i in 64:
-			for b in 3:                        # обводка 3 px (~0.4 м на рамке 9 м)
-				img.set_pixel(i, b, Color(1, 1, 1, 1))
-				img.set_pixel(i, 63 - b, Color(1, 1, 1, 1))
-				img.set_pixel(b, i, Color(1, 1, 1, 1))
-				img.set_pixel(63 - b, i, Color(1, 1, 1, 1))
-		img.generate_mipmaps()
-		_frame_tex_cache = ImageTexture.create_from_image(img)
-	return _frame_tex_cache
-
-
 func _add_marker(node: Node3D, color: Color, h: float) -> void:
 	if "--nomarkers" in OS.get_cmdline_user_args():
 		return
@@ -268,28 +250,6 @@ func _add_marker(node: Node3D, color: Color, h: float) -> void:
 	cm.albedo_color = color
 	cap.mesh.surface_set_material(0, cm)
 	node.add_child(cap)
-
-## Красная рамка-квадрат вокруг цели — знак «отмечена разведчиком» (вешается из mark_at).
-func _add_mark_frame(t: Dictionary) -> void:
-	var node: Node3D = t.node
-	if node.get_node_or_null("MarkerFrame") != null:
-		return
-	var mi := MeshInstance3D.new()
-	mi.name = "MarkerFrame"
-	var quad := QuadMesh.new()
-	var s := 4.5 if t.kind == "soldier" else 9.0
-	quad.size = Vector2(s, s)
-	mi.mesh = quad
-	mi.position = Vector3(0, 1.4 if t.kind == "soldier" else 2.2, 0)
-	var mat := StandardMaterial3D.new()
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mat.albedo_texture = _frame_tex()
-	mat.albedo_color = Color(1.0, 0.2, 0.12, 0.9)
-	mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED   # рамка всегда развёрнута к камере
-	mat.no_depth_test = true                   # видна и когда цель за домом/деревом
-	mi.mesh.surface_set_material(0, mat)
-	node.add_child(mi)
 
 
 func _process(dt: float) -> void:
@@ -629,6 +589,16 @@ var _aa_enabled := not ("--noaa" in OS.get_cmdline_user_args())
 ## Отметка цели разведчиком (ЛКМ у wing): ближайшая к оптической оси живая цель
 ## в конусе max_ang_deg и до 6 км помечается (t.marked) — метку видят все дроны в HUD.
 func mark_at(cam: Camera3D, max_ang_deg: float) -> Dictionary:
+	var best := best_in_cone(cam, max_ang_deg)
+	if not best.is_empty() and not best.get("marked", false):
+		best.marked = true
+		if main.get("telemetry") != null:
+			main.telemetry.event("target_marked", {"kind": best.kind})
+	return best
+
+
+## Найкраща жива ціль у конусі оптичної осі — для прицілу розвідника і mark_at. Без побічних дій.
+func best_in_cone(cam: Camera3D, max_ang_deg: float) -> Dictionary:
 	var fwd: Vector3 = -cam.global_transform.basis.z
 	var origin: Vector3 = cam.global_position
 	var best_ang := deg_to_rad(max_ang_deg)
@@ -643,11 +613,6 @@ func mark_at(cam: Camera3D, max_ang_deg: float) -> Dictionary:
 		if ang < best_ang:
 			best_ang = ang
 			best = t
-	if not best.is_empty() and not best.get("marked", false):
-		best.marked = true
-		_add_mark_frame(best)
-		if main.get("telemetry") != null:
-			main.telemetry.event("target_marked", {"kind": best.kind})
 	return best
 
 

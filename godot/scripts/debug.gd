@@ -250,6 +250,11 @@ func _schedule_screenshot() -> void:
 			var tp: Vector3 = pick.node.position
 			main.cam.global_position = tp + Vector3(8.0, 6.5, 8.5)
 			main.cam.look_at(tp + Vector3(0, 1.9, 0))
+			if "--wingaim" in OS.get_cmdline_user_args():
+				# прицел разведчика: смотрим на цель с дистанции с борта wing
+				main.cam.set_drone("wing")
+				main.cam.global_position = tp + Vector3(45.0, 26.0, 55.0)
+				main.cam.look_at(tp + Vector3(0, 1.5, 0))
 			if "--markdebug" in OS.get_cmdline_user_args():
 				main.targets.mark_at(main.cam, 30.0)
 		await RenderingServer.frame_post_draw

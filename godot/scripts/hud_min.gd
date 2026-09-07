@@ -43,6 +43,57 @@ func _process(dt: float) -> void:
 	queue_redraw()
 
 
+const MARK_RED := Color(1.0, 0.22, 0.14, 0.95)
+
+## Закріплені цілі: маленький червоний квадратик сталого екранного розміру (бачать усі дрони).
+func _draw_marked_squares(f: Font, cam: Camera3D) -> void:
+	if main.targets == null:
+		return
+	for t: Dictionary in main.targets.marked_list():
+		var wp: Vector3 = t.node.position + Vector3(0, 1.0 if t.kind == "soldier" else 1.8, 0)
+		if cam.is_position_behind(wp):
+			continue
+		var sp := cam.unproject_position(wp)
+		var half := 8.0 if t.kind == "soldier" else 11.0
+		var r := Rect2(sp - Vector2(half, half), Vector2(half, half) * 2.0)
+		draw_rect(r.grow(1.0), Color(0, 0, 0, 0.55), false, 3.5)     # тёмная подложка — читается на любом фоне
+		draw_rect(r, MARK_RED, false, 1.6)
+		draw_line(sp + Vector2(-3, 0), sp + Vector2(3, 0), MARK_RED, 1.0)   # центральная точка-крестик
+		draw_line(sp + Vector2(0, -3), sp + Vector2(0, 3), MARK_RED, 1.0)
+
+
+## Приціл розвідника (wing): перехрестя + кути зони захоплення того ж конуса, що й mark_at.
+## Порожньо — білий; ціль у конусі — бурштиновий + підпис; уже закріплена — червоний.
+func _draw_wing_reticle(f: Font, vp: Vector2, cam: Camera3D) -> void:
+	var c := vp * 0.5
+	var cone_deg := clampf(cam.fov * 0.12, 0.5, 5.0)                 # тот же порог, что в mark_at
+	var tg: Dictionary = main.targets.best_in_cone(cam, cone_deg) if main.targets != null else {}
+	var col := Color(0.95, 0.95, 0.95, 0.85)
+	var label := ""
+	if not tg.is_empty():
+		var nm := {"tank": "ТАНК", "apc": "БТР", "soldier": "ПІХОТА"}
+		var d := int(cam.global_position.distance_to(tg.node.position))
+		if tg.get("marked", false):
+			col = MARK_RED
+			label = "ЦІЛЬ ЗАКРІПЛЕНА · %s · %d м" % [nm.get(tg.kind, "ЦІЛЬ"), d]
+		else:
+			col = Color(1.0, 0.65, 0.2, 0.95)
+			label = "ЗАХОПЛЕННЯ: %s · %d м · ЛКМ" % [nm.get(tg.kind, "ЦІЛЬ"), d]
+	# зона захоплення: половина стороны = проекция конуса на экран
+	var r_px := clampf(tan(deg_to_rad(cone_deg)) / tan(deg_to_rad(cam.fov * 0.5)) * vp.y * 0.5, 26.0, vp.y * 0.42)
+	for sgn: Vector2 in [Vector2(-1, -1), Vector2(1, -1), Vector2(-1, 1), Vector2(1, 1)]:   # уголки рамки
+		var corner: Vector2 = c + sgn * r_px
+		draw_line(corner, corner - Vector2(sgn.x, 0) * r_px * 0.28, col, 2.0)
+		draw_line(corner, corner - Vector2(0, sgn.y) * r_px * 0.28, col, 2.0)
+	# перехрестя з центральним зазором
+	for a: Vector2 in [Vector2(1, 0), Vector2(-1, 0), Vector2(0, 1), Vector2(0, -1)]:
+		draw_line(c + a * 6.0, c + a * 18.0, col, 2.0)
+	draw_circle(c, 1.5, col)
+	if label != "":
+		var w := f.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, 14).x
+		_txt(f, Vector2(c.x - w * 0.5, c.y + r_px + 24.0), label, 14, col)
+
+
 func _txt(f: Font, pos: Vector2, s: String, size: int, col: Color = TXT) -> void:
 	draw_string_outline(f, pos, s, HORIZONTAL_ALIGNMENT_LEFT, -1, size, 2, OUT)
 	draw_string(f, pos, s, HORIZONTAL_ALIGNMENT_LEFT, -1, size, col)
@@ -153,6 +204,9 @@ func _draw() -> void:
 
 	# --- панель НСУ (все дроны): авиагоризонт, скорость, высота, курс, строка станции ---
 	if main.get("menu_open") != true:
+		_draw_marked_squares(f, cam)
+		if str(cam.get("drone_id")) == "wing":
+			_draw_wing_reticle(f, vp, cam)
 		_draw_shark_panel(f, vp, cam, agl)
 
 	# --- контекст: батарея ---
