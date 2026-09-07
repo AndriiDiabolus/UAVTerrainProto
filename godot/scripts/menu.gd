@@ -95,7 +95,7 @@ func _input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 			return
 		match kc:
-			KEY_ESCAPE: _start_flight(false)
+			KEY_ESCAPE: main.get_tree().quit()   # Esc з меню закриває гру (політ продовжує Enter на «Політ»)
 			KEY_UP: sel = posmod(sel - 1, ITEMS.size())
 			KEY_DOWN: sel = posmod(sel + 1, ITEMS.size())
 			KEY_LEFT: _adjust(-1)
@@ -146,7 +146,7 @@ func _adjust(dir: int) -> void:
 
 func _activate() -> void:
 	match ITEMS[sel]:
-		"полёт": _start_flight(true)
+		"полёт": _start_flight(false)
 		"миссия":
 			set_open(false)
 			main.mission.start(mission_pick)
@@ -217,7 +217,7 @@ func _draw_panel() -> void:
 	d.draw_string(f, Vector2(40, 78), "UAV TERRAIN", HORIZONTAL_ALIGNMENT_LEFT, -1, 42, TXT)
 	d.draw_string(f, Vector2(41, 104), "тренажер оператора БпЛА · реальний рельєф України", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, DIM)
 	var vals := {
-		"полёт": "",
+		"полёт": "продовжити ↵",
 		"миссия": "%d · %s" % [mission_pick, str(main.mission.MISSIONS[mission_pick]["name"]).split("· ")[1] if main.mission != null else ""],
 		"реплей": (replay_files[replay_pick].trim_prefix("flight_").trim_suffix(".csv") if not replay_files.is_empty() else "немає записів"),
 		"регион": ("степ" if main.region == "steppe" else "Карпати"),
@@ -249,7 +249,7 @@ func _draw_panel() -> void:
 			var arrows := ("◂ %s ▸" % v) if selc and it != "полёт" else v
 			d.draw_string(f, Vector2(408 - f.get_string_size(arrows, HORIZONTAL_ALIGNMENT_LEFT, -1, 14).x, y), arrows, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, ACC if selc else DIM)
 		y += 50.0
-	d.draw_string(f, Vector2(40, y + 6), "↑↓ пункт · ◂▸ значення · Enter — обрати · Esc — продовжити", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, DIM)
+	d.draw_string(f, Vector2(40, y + 6), "↑↓ пункт · ◂▸ значення · Enter — обрати · Esc — вийти з гри", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, DIM)
 	# оверлей мастера калибровки пульта
 	if main.rc != null and main.rc.wizard_active:
 		var cw := 640.0; var chh := 130.0
