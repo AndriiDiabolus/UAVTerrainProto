@@ -79,6 +79,107 @@ func _draw_quest(f: Font, vp: Vector2) -> void:
 			var pre := "✓ " if st == 2 else ("▸ " if st == 1 else "·  ")
 			_txt(f, Vector2(x + 18, yy), pre + str(ln.t), fsz, c)
 
+## Міні-мапа (верх-право, північ згори): точки місії, закріплені цілі, ретранслятор, дім, борт.
+func _draw_minimap(f: Font, vp: Vector2) -> void:
+	var cam: Camera3D = main.cam
+	var S := 190.0
+	var rect := Rect2(vp.x - S - 14.0, 60.0, S, S)
+	var c2 := rect.get_center()
+	var cw: Vector3 = cam.global_position
+	# охоплення: борт у центрі; вмістити дім, точки місії та ретранслятор
+	var ext := 500.0
+	var home: Vector3 = main._home_pos
+	ext = maxf(ext, Vector2(home.x - cw.x, home.z - cw.z).length())
+	var mission_on: bool = main.mission != null and main.mission.active
+	if mission_on:
+		for st: Dictionary in main.mission._steps:
+			if not bool(st["done"]):
+				var sp3: Vector3 = st["pos"]
+				ext = maxf(ext, Vector2(sp3.x - cw.x, sp3.z - cw.z).length())
+	if main.relay_node != null:
+		ext = maxf(ext, Vector2(main.relay_pos.x - cw.x, main.relay_pos.z - cw.z).length())
+	var sc := (S * 0.5 - 16.0) / (ext * 1.12)
+	_panel(rect, 0.5, Color(1, 1, 1, 0.16))
+	# кілометрова сітка, привʼязана до світових координат
+	var half_w := ext * 1.12
+	for k in range(ceili((cw.x - half_w) / 1000.0), floori((cw.x + half_w) / 1000.0) + 1):
+		var gx: float = c2.x + (k * 1000.0 - cw.x) * sc
+		if gx > rect.position.x + 2.0 and gx < rect.end.x - 2.0:
+			draw_line(Vector2(gx, rect.position.y + 2), Vector2(gx, rect.end.y - 2), Color(1, 1, 1, 0.07), 1.0)
+	for k in range(ceili((cw.z - half_w) / 1000.0), floori((cw.z + half_w) / 1000.0) + 1):
+		var gy: float = c2.y + (k * 1000.0 - cw.z) * sc
+		if gy > rect.position.y + 2.0 and gy < rect.end.y - 2.0:
+			draw_line(Vector2(rect.position.x + 2, gy), Vector2(rect.end.x - 2, gy), Color(1, 1, 1, 0.07), 1.0)
+	# точки місії: район цілей (mark) — червоне, рубіж (relay_at) — бурштинове, БДА/розвідка — блакитне
+	if mission_on:
+		var cur: int = main.mission.step
+		for i in main.mission._steps.size():
+			var st: Dictionary = main.mission._steps[i]
+			if bool(st["done"]):
+				continue
+			var p := _map_pt(rect, c2, cw, sc, st["pos"])
+			var kind := str(st["kind"])
+			var act: bool = i == cur
+			var a: float = 1.0 if act else 0.45
+			match kind:
+				"mark":
+					_map_zone(p, 11.0, Color(1.0, 0.3, 0.2, a), f, "ЦІЛІ" if act else "")
+				"relay_at":
+					_map_zone(p, maxf(float(st.get("r", 150.0)) * sc, 8.0), Color(1.0, 0.7, 0.25, a), f, "РУБІЖ" if act else "")
+				"recon":
+					_map_zone(p, maxf(float(st.get("r", 100.0)) * sc, 8.0), Color(0.45, 0.75, 1.0, a), f, "БДА" if act else "")
+				"gate":
+					draw_circle(p, 3.0, Color(0.3, 1.0, 0.4, a))
+				"land":
+					draw_circle(p, 3.0, Color(0.95, 0.85, 0.25, a))
+				"strike_marked":
+					pass                     # цілі вже показані мітками
+	# закріплені цілі — маленькі червоні квадрати
+	if main.targets != null:
+		for tgm: Dictionary in main.targets.marked_list():
+			var mp := _map_pt(rect, c2, cw, sc, tgm.node.position)
+			draw_rect(Rect2(mp - Vector2(2.5, 2.5), Vector2(5, 5)), MARK_RED, false, 1.2)
+	# ретранслятор/матка на позиції
+	if main.relay_node != null:
+		var rp := _map_pt(rect, c2, cw, sc, main.relay_pos)
+		var dia := PackedVector2Array([rp + Vector2(0, -5), rp + Vector2(5, 0), rp + Vector2(0, 5), rp + Vector2(-5, 0)])
+		draw_colored_polygon(dia, Color(0.5, 0.85, 1.0, 0.95))
+	# дім — зелений трикутник
+	var hp := _map_pt(rect, c2, cw, sc, home)
+	draw_colored_polygon(PackedVector2Array([hp + Vector2(0, -5), hp + Vector2(4.5, 3.5), hp + Vector2(-4.5, 3.5)]),
+		Color(0.55, 1.0, 0.59, 0.9))
+	# власний борт — стрілка за курсом (північ згори)
+	var fwd: Vector3 = -cam.global_transform.basis.z
+	var d2 := Vector2(fwd.x, fwd.z)
+	if d2.length() < 0.05:
+		d2 = Vector2(0, -1)
+	d2 = d2.normalized()
+	var n2 := Vector2(-d2.y, d2.x)
+	draw_colored_polygon(PackedVector2Array([c2 + d2 * 8.0, c2 - d2 * 4.0 + n2 * 4.5, c2 - d2 * 4.0 - n2 * 4.5]),
+		Color(0.4, 0.95, 1.0))
+	# рамка сервісу: північ і масштабна лінійка 1 км
+	_txt(f, Vector2(rect.position.x + 6, rect.position.y + 14), "Пн", 10, DIM)
+	var bar := 1000.0 * sc
+	if bar < 12.0: bar = 500.0 * sc
+	var by := rect.end.y - 8.0
+	draw_line(Vector2(rect.position.x + 8, by), Vector2(rect.position.x + 8 + bar, by), Color(1, 1, 1, 0.5), 1.5)
+	_txt(f, Vector2(rect.position.x + 8, by - 4.0), "1 км" if bar >= 12.0 * 2.0 else "500 м", 9, DIM)
+
+
+func _map_pt(rect: Rect2, c2: Vector2, cw: Vector3, sc: float, w: Vector3) -> Vector2:
+	var p := c2 + Vector2(w.x - cw.x, w.z - cw.z) * sc
+	p.x = clampf(p.x, rect.position.x + 8.0, rect.end.x - 8.0)
+	p.y = clampf(p.y, rect.position.y + 8.0, rect.end.y - 8.0)
+	return p
+
+
+func _map_zone(p: Vector2, r: float, col: Color, f: Font, label: String) -> void:
+	draw_arc(p, r, 0.0, TAU, 28, col, 1.6)
+	draw_circle(p, 2.0, col)
+	if label != "":
+		_txt(f, p + Vector2(-f.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, 10).x * 0.5, -r - 4.0), label, 10, col)
+
+
 ## Закріплені цілі: маленький червоний квадратик сталого екранного розміру (бачать усі дрони).
 func _draw_marked_squares(f: Font, cam: Camera3D) -> void:
 	if main.targets == null:
@@ -197,9 +298,10 @@ func _draw() -> void:
 	if main.mission != null and not main.mission.active and main.get("menu_open") != true \
 			and not (main.mission.get("last_result") as Dictionary).is_empty():
 		_draw_mission_result(f, vp, main.mission.last_result)
-	# --- квест-панель зліва (місії 6-7): видно і в FPV — задачі потрібні на кожному борті ---
+	# --- квест-панель зліва і міні-мапа справа: видно і в FPV — потрібні на кожному борті ---
 	if main.get("menu_open") != true:
 		_draw_quest(f, vp)
+		_draw_minimap(f, vp)
 	if main.hud != null and main.hud.get("fpv_on") == true:
 		return          # в FPV остальным владеет OSD видеотракта
 
