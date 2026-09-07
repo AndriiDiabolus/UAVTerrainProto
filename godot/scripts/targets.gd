@@ -331,7 +331,7 @@ func _process(dt: float) -> void:
 			var rng_max := 120.0 if t.kind == "soldier" else 450.0
 			if t.aa_t <= 0.0 and dist_d < rng_max:
 				t.aa_t = 1.6 if t.kind != "soldier" else 2.5
-				var origin: Vector3 = t.node.position + Vector3(0, 2.2, 0)
+				var origin: Vector3 = t.node.position + Vector3(0, 1.4 if t.kind == "soldier" else 2.2, 0)
 				if _terrain_hit(origin, (cam_pos - origin).normalized(), dist_d) >= dist_d - 1.0:
 					_aa_burst(t, origin, cam_pos, dist_d, rng_max, agl, drone_spd)
 		# движение: по дороге туда-обратно либо по полям между вейпоинтами
@@ -389,10 +389,15 @@ func _process(dt: float) -> void:
 				if str(t.get("cur_anim", "")) == "react" and ap2.is_playing():
 					pass                          # шарахание доигрывает, потом автомат вернёт состояние
 				elif str(t.get("cur_anim", "")) != want:
-					t.cur_anim = want
 					var clip := String((animd.clips as Dictionary).get(want, ""))
 					if clip != "":
+						t.cur_anim = want         # фиксируем состояние ТОЛЬКО сыграв клип
 						ap2.play(clip, 0.25)
+					elif ap2.current_animation == "":
+						# клипа нет и плеер молчит — не стоим в бинд-позе, играем走 walk
+						var wclip := String((animd.clips as Dictionary).get("walk", ""))
+						if wclip != "":
+							ap2.play(wclip)
 		else:
 			# техника прижимается к рельефу, но крен ограничен (иначе тонет на кручах)
 			var up := _terrain_normal(wx, wz)
@@ -714,13 +719,14 @@ func _kill(t: Dictionary, pos: Vector3) -> void:
 	if main.get("sound") != null:
 		main.sound.boom(pos)
 	var kanim: Dictionary = t.get("anim", {}) if t.get("anim") != null else {}
+	var kdeath := ""
 	if t.kind == "soldier" and not kanim.is_empty():
 		# анимированный боец падает (навзничь/ничком), без перекраски в гарь — труп реалистичнее
 		var dn := "death_a" if randf() < 0.5 else "death_b"
-		var clip := String((kanim.clips as Dictionary).get(dn, ""))
-		if clip != "":
-			(kanim.player as AnimationPlayer).play(clip, 0.1)
-	else:
+		kdeath = String((kanim.clips as Dictionary).get(dn, ""))
+		if kdeath != "":
+			(kanim.player as AnimationPlayer).play(kdeath, 0.1)
+	if kdeath == "":
 		for g: MeshInstance3D in _geo_list(t.node):
 			g.material_override = wreck_mat
 	for c in t.node.get_children():   # погасить маркер над подбитой целью (риг-узлы не трогаем)

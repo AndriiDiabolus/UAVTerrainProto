@@ -19,6 +19,8 @@ func setup(m: Node3D) -> void:
 			_fx_shot(a.substr(9))
 		elif a.begins_with("--animshot="):
 			_anim_shot(a.substr(11))
+	if "--squadtest" in OS.get_cmdline_user_args():
+		_squad_test()
 	if "--mapdump" in OS.get_cmdline_user_args():
 		_mapdump()
 
@@ -382,6 +384,48 @@ func _anim_shot(clip: String) -> void:
 		var out := ProjectSettings.globalize_path("res://../anim_%s_%d.png" % [clip, si])
 		img.save_png(out)
 		print("ANIMSHOT saved: ", out)
+	get_tree().quit()
+
+
+## --squadtest: дождаться спавна пехоты, форсировать тревогу, логать автомат анимаций 10 с.
+func _squad_test() -> void:
+	await RenderingServer.frame_post_draw
+	for i in 90:
+		await get_tree().process_frame
+	var tg = main.targets
+	var t0 := Time.get_ticks_msec()
+	var sold: Dictionary = {}
+	while (Time.get_ticks_msec() - t0) < 30000:
+		for t: Dictionary in tg.targets:
+			if t.kind == "soldier" and t.alive:
+				sold = t
+				break
+		if not sold.is_empty():
+			break
+		await get_tree().process_frame
+	if sold.is_empty():
+		print("SQUADTEST: пехота не заспавнилась за 30 с")
+		get_tree().quit()
+		return
+	print("SQUADTEST: отряд найден, форсирую тревогу")
+	for t: Dictionary in tg.targets:
+		if t.kind == "soldier":
+			t.alert = true
+	var t1 := Time.get_ticks_msec()
+	var last := -1
+	while (Time.get_ticks_msec() - t1) < 10000:
+		var sec := int((Time.get_ticks_msec() - t1) / 500.0)
+		if sec != last:
+			last = sec
+			var ad: Dictionary = sold.get("anim", {})
+			var ap_s := "нет"
+			if not ad.is_empty():
+				var ap := ad.player as AnimationPlayer
+				ap_s = "%s playing=%s" % [ap.current_animation, ap.is_playing()]
+			print("SQUADTEST t=%.1fс offset=%.2f hide=%.2f cur=%s ap=[%s] alert=%s" %
+				[(Time.get_ticks_msec() - t1) / 1000.0, float(sold.offset), float(sold.hide_off),
+				str(sold.get("cur_anim", "?")), ap_s, str(sold.alert)])
+		await get_tree().process_frame
 	get_tree().quit()
 
 
