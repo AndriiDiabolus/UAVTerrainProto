@@ -151,6 +151,7 @@ func set_drone(id: String) -> void:
 			main.targets.armed = false           # носитель не вооружён — взвод БЧ снимается
 		if id != "wing":
 			wing_zoom = 1.0                      # зум гимбала остаётся только у разведчика
+			_zoom_t = 1.0
 			_gim_yaw = 0.0
 
 
@@ -221,16 +222,16 @@ func _unhandled_input(event: InputEvent) -> void:
 						main.targets.fire(self)
 			MOUSE_BUTTON_WHEEL_UP:
 				if drone_id == "wing":
-					wing_zoom = clampf(wing_zoom * 1.3, 1.0, 30.0)
+					_zoom_t = clampf(_zoom_t * 1.3, 1.0, 60.0)
 					if main != null and main.hud != null:
-						main.hud.toast("ЗУМ ×%.0f" % wing_zoom, "", Color(0.7, 0.9, 1.0), 0.8)
+						main.hud.toast("ЗУМ ×%.0f%s" % [_zoom_t, " · цифровий" if _zoom_t > 30.5 else ""], "", Color(0.7, 0.9, 1.0), 0.8)
 				else:
 					current_speed = clampf(current_speed * 1.15, SPEED_MIN, SPEED_MAX)
 			MOUSE_BUTTON_WHEEL_DOWN:
 				if drone_id == "wing":
-					wing_zoom = clampf(wing_zoom / 1.3, 1.0, 30.0)
+					_zoom_t = clampf(_zoom_t / 1.3, 1.0, 60.0)
 					if main != null and main.hud != null:
-						main.hud.toast("ЗУМ ×%.0f" % wing_zoom, "", Color(0.7, 0.9, 1.0), 0.8)
+						main.hud.toast("ЗУМ ×%.0f%s" % [_zoom_t, " · цифровий" if _zoom_t > 30.5 else ""], "", Color(0.7, 0.9, 1.0), 0.8)
 				else:
 					current_speed = clampf(current_speed / 1.15, SPEED_MIN, SPEED_MAX)
 	elif event is InputEventMouseMotion and mouse_captured:
@@ -407,7 +408,8 @@ func _process(dt: float) -> void:
 # Нет висения: скорость 17–33 м/с (газ E/Q), крен A/D → координированный вираж,
 # тангаж W/S → набор/снижение (кабрирование съедает скорость, пикирование добавляет),
 # сваливание ниже 15 м/с — нос сам опускается. Старт — «катапульта» с земли.
-var wing_zoom := 1.0                 # оптический зум гимбала ×1..×30 (колесо мыши)
+var wing_zoom := 1.0                 # текущий зум гимбала (плавно тянется к _zoom_t)
+var _zoom_t := 1.0                   # целевой зум: ×1..×30 оптика, ×30..×60 цифровая ступень
 var _gim_yaw := 0.0                  # рыскание подвеса относительно курса (мышь X)
 var _wing_air := 22.0                # воздушная скорость, м/с
 var _wing_auto := false              # авто-набор высоты после катапульты
@@ -701,8 +703,9 @@ func _apply_camera(dt: float, wind: Vector3) -> void:
 		# камера жёстко на корпусе с наклоном вверх (FPV)
 		cam_b = body * Basis(Vector3.RIGHT, deg_to_rad(P["cam_tilt"]))
 	global_transform.basis = cam_b * Basis.from_euler(Vector3(wob_p, 0.0, wob_r))
-	# оптический зум гимбала разведчика (сужение FOV; чувствительность мыши падает с зумом)
+	# зум гимбала разведчика: плавный довод к цели (как сервопривод оптики), сужение FOV
 	if drone_id == "wing":
-		fov = clampf(75.0 / wing_zoom, 2.6, 75.0)
+		wing_zoom = lerpf(wing_zoom, _zoom_t, clampf(dt * 6.0, 0.0, 1.0))
+		fov = clampf(75.0 / wing_zoom, 1.25, 75.0)
 	elif fov != 75.0:
 		fov = 75.0

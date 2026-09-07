@@ -616,6 +616,22 @@ func best_in_cone(cam: Camera3D, max_ang_deg: float) -> Dictionary:
 	return best
 
 
+## Загроза ППО для борта в точці: level 0 — безпечно, 1 — усередині зони вогню найближчої
+## живої цілі (стрілецька 120 м, ЗКУ/автогармата 450 м); dist — до найнебезпечнішої.
+func aa_threat(pos: Vector3) -> Dictionary:
+	var worst := 0.0
+	var wd := 0.0
+	for t: Dictionary in targets:
+		if not t.alive:
+			continue
+		var rng := 120.0 if t.kind == "soldier" else 450.0
+		var d: float = t.node.position.distance_to(pos)
+		var lv := clampf(1.0 - (d - rng) / (rng * 0.5), 0.0, 1.0)   # 1 у зоні, 0 при d > 1.5·rng
+		if lv > worst:
+			worst = lv; wd = d
+	return {"level": worst, "dist": wd}
+
+
 ## Живые отмеченные цели — для HUD-маркеров всех дронов.
 func marked_list() -> Array:
 	var out: Array = []

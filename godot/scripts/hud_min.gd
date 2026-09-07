@@ -92,6 +92,23 @@ func _draw_wing_reticle(f: Font, vp: Vector2, cam: Camera3D) -> void:
 	if label != "":
 		var w := f.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, 14).x
 		_txt(f, Vector2(c.x - w * 0.5, c.y + r_px + 24.0), label, 14, col)
+	# службові показники оптики над зоною: зум зліва, висота справа
+	var zoom := float(cam.get("wing_zoom"))
+	var zs := "×%.0f%s" % [zoom, " цифр" if zoom > 30.5 else ""]
+	_txt(f, Vector2(c.x - r_px, c.y - r_px - 10.0), zs, 13, col)
+	var agl: float = cam.global_position.y - main.height_at(cam.global_position.x, cam.global_position.z)
+	var agl_s := "AGL %d м" % int(agl)
+	var aw := f.get_string_size(agl_s, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x
+	_txt(f, Vector2(c.x + r_px - aw, c.y - r_px - 10.0), agl_s, 13, col)
+	# загроза ППО: борт у радіусі вогню живої цілі — тримай висоту
+	if main.targets != null:
+		var th: Dictionary = main.targets.aa_threat(cam.global_position)
+		if float(th.level) > 0.0:
+			var hot := float(th.level) >= 1.0
+			var ts := ("⚠ ПІД ОБСТРІЛОМ · %d м" if hot else "⚠ ЗОНА ППО · %d м — НАБЕРИ ВИСОТУ") % int(th.dist)
+			var tw := f.get_string_size(ts, HORIZONTAL_ALIGNMENT_LEFT, -1, 14).x
+			_txt(f, Vector2(c.x - tw * 0.5, c.y - r_px - 32.0), ts, 14,
+				Color(1.0, 0.3, 0.2) if hot else Color(1.0, 0.62, 0.2))
 
 
 func _txt(f: Font, pos: Vector2, s: String, size: int, col: Color = TXT) -> void:
