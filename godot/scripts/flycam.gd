@@ -194,11 +194,27 @@ func speed() -> float:
 	return velocity.length()
 
 
+## Відмітка цілі розвідником під перехрестям (ЛКМ або Пробіл; поріг звужується із зумом).
+func try_mark() -> void:
+	if drone_id != "wing" or main == null or main.targets == null:
+		return
+	var mt: Dictionary = main.targets.mark_at(self, clampf(fov * 0.12, 0.5, 5.0))
+	if main.hud != null and main.hud.has_method("toast"):
+		if mt.is_empty():
+			main.hud.toast("ЦІЛЬ НЕ ЗАХОПЛЕНА", "наведи перехрестя точніше (зум — колесо/−=)", Color(1.0, 0.78, 0.47), 1.2)
+		else:
+			var nm := {"tank": "ТАНК", "apc": "БТР", "soldier": "ПІХОТА"}
+			main.hud.toast("ЦІЛЬ ВІДМІЧЕНА · %s" % nm.get(mt.kind, "ЦІЛЬ"), "мітку бачать усі дрони", Color(1.0, 0.62, 0.2), 1.6)
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	# − / = (и нампад): зум крыла / скорость GPS. Отдельный if с return — НЕ elif!
 	# (elif-ветка на InputEventKey съедала бы Esc/Tab/B до их обработчиков ниже)
 	if event is InputEventKey and event.pressed:
 		var zkc: int = event.physical_keycode if event.physical_keycode != 0 else event.keycode
+		if zkc == KEY_SPACE and not event.echo and drone_id == "wing":
+			try_mark()
+			return
 		if zkc == KEY_EQUAL or zkc == KEY_MINUS or zkc == KEY_KP_ADD or zkc == KEY_KP_SUBTRACT:
 			var zin := zkc == KEY_EQUAL or zkc == KEY_KP_ADD
 			if drone_id == "wing":
@@ -216,14 +232,7 @@ func _unhandled_input(event: InputEvent) -> void:
 					mouse_captured = true
 				elif main != null and main.targets != null:
 					if drone_id == "wing":
-						# разведчик: ЛКМ отмечает цель под перекрестием (порог сужается с зумом)
-						var mt: Dictionary = main.targets.mark_at(self, clampf(fov * 0.12, 0.5, 5.0))
-						if main.hud != null and main.hud.has_method("toast"):
-							if mt.is_empty():
-								main.hud.toast("ЦІЛЬ НЕ ЗАХОПЛЕНА", "наведи перехрестя точніше (зум — колесо)", Color(1.0, 0.78, 0.47), 1.2)
-							else:
-								var nm := {"tank": "ТАНК", "apc": "БТР", "soldier": "ПІХОТА"}
-								main.hud.toast("ЦІЛЬ ВІДМІЧЕНА · %s" % nm.get(mt.kind, "ЦІЛЬ"), "мітку бачать усі дрони", Color(1.0, 0.62, 0.2), 1.6)
+						try_mark()
 					elif drone_id == "mship":
 						# матка — невооружённый носитель: оружие доступно только FPV после отделения
 						if main.hud != null and main.hud.has_method("toast"):

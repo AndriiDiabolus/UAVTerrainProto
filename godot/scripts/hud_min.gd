@@ -213,7 +213,7 @@ func _draw_wing_reticle(f: Font, vp: Vector2, cam: Camera3D) -> void:
 			label = "ЦІЛЬ ЗАКРІПЛЕНА · %s · %d м" % [nm.get(tg.kind, "ЦІЛЬ"), d]
 		else:
 			col = Color(1.0, 0.65, 0.2, 0.95)
-			label = "ЗАХОПЛЕННЯ: %s · %d м · ЛКМ" % [nm.get(tg.kind, "ЦІЛЬ"), d]
+			label = "ЗАХОПЛЕННЯ: %s · %d м · ЛКМ/Пробіл" % [nm.get(tg.kind, "ЦІЛЬ"), d]
 	# зона захоплення: половина стороны = проекция конуса на экран
 	var r_px := clampf(tan(deg_to_rad(cone_deg)) / tan(deg_to_rad(cam.fov * 0.5)) * vp.y * 0.5, 26.0, vp.y * 0.42)
 	for sgn: Vector2 in [Vector2(-1, -1), Vector2(1, -1), Vector2(-1, 1), Vector2(1, 1)]:   # уголки рамки
