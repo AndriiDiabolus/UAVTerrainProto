@@ -34,6 +34,7 @@ var _hold_t := 0.0
 var _result_label: Label
 var _strike_targets: Array = []
 var _marked_snapshot: Array = []
+var _mission_marks: Array = []       # власна група цілей для mark із "kinds" (чужі мітки не рахуються)
 var last_result := {}          # разбор последнего вылета для карточки результатов (hud_min)
 var result_text := ""
 var _hint_t := 0.0
@@ -78,6 +79,21 @@ const MISSIONS := [
 	 "steps": [
 		{"kind": "mark", "n": 2},           # SHARK: катапульта, зум, ЛКМ — відмітити 2 цілі
 		{"kind": "strike_marked", "n": 2},  # FPV: знищити відмічені цілі
+	 ]},
+	# Комбіновані місії: погоду задає сама місія ("weather" — індекс пресету weather.gd).
+	# mark із "kinds"/"dx/dz" спавнить ВЛАСНУ групу цілей біля дороги — чужі мітки не рахуються.
+	{"name": "6 · Повний цикл: SHARK → матка → FPV", "mode": "angle", "par": 600.0, "weather": 1,
+	 "steps": [
+		{"kind": "mark", "n": 3, "dx": 0, "dz": -1800, "kinds": ["tank", "apc", "soldier"]},
+		{"kind": "relay_at", "dx": 0, "dz": -900, "agl": 60, "r": 150},
+		{"kind": "strike_marked", "n": 3},
+		{"kind": "recon", "dx": 0, "dz": -1800, "agl": 80, "hold": 4.0, "r": 120.0},   # БДА
+	 ]},
+	{"name": "7 · Нічна засідка", "mode": "angle", "par": 480.0, "weather": 4,
+	 "steps": [
+		{"kind": "mark", "n": 2, "dx": 0, "dz": -1200, "kinds": ["apc", "soldier"]},
+		{"kind": "relay_at", "dx": 0, "dz": -600, "agl": 50, "r": 120},
+		{"kind": "strike_marked", "n": 2},
 	 ]},
 ]
 
@@ -154,6 +170,14 @@ func start(id: int) -> void:
 		_result_label.visible = true
 		_hint_t = 8.0
 	_marked_snapshot = []
+	_mission_marks = []
+	# погода місії: комбіновані вильоти самі ставлять умови (вітер, ніч)
+	if m.has("weather") and main.weather != null:
+		main.weather.apply(int(m["weather"]), true)
+	# старий ретранслятор у зоні відразу закрив би relay_at — знімаємо
+	if main.relay_node != null:
+		main.relay_node.queue_free()
+		main.relay_node = null
 	_steps = []
 	for s: Dictionary in m["steps"]:
 		var st := s.duplicate()
@@ -172,6 +196,7 @@ func stop() -> void:
 	mission_id = 0
 	_steps = []
 	_strike_targets = []
+	_mission_marks = []
 	for g in _gate_nodes: g.queue_free()
 	_gate_nodes = []
 	if _pad_node != null:
@@ -200,7 +225,7 @@ func _clear_spot(near: Vector3) -> Vector3:
 ## Позиция шага в мире.
 func _resolve(s: Dictionary) -> Vector3:
 	var kind: String = s["kind"]
-	if kind == "takeoff" or kind == "mark" or kind == "strike_marked":
+	if kind == "takeoff" or kind == "strike_marked" or (kind == "mark" and not s.has("dx")):
 		return _origin
 	if kind == "recon" and s.get("auto", false):
 		return _find_hidden_point()
@@ -271,13 +296,14 @@ func _build_visuals() -> void:
 			add_child(mi)
 			s["node"] = mi
 			_gate_nodes.append(mi)
-		elif s["kind"] == "recon":
+		elif s["kind"] == "recon" or s["kind"] == "relay_at":
 			var mi := MeshInstance3D.new()
 			var sph := SphereMesh.new(); sph.radius = 6.0; sph.height = 12.0
 			mi.mesh = sph
 			var mat := StandardMaterial3D.new()
 			mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-			mat.albedo_color = Color(0.4, 0.7, 1.0, 0.7)
+			# розвідка — блакитна, рубіж ретранслятора — бурштинова (як мітки НСУ)
+			mat.albedo_color = Color(0.4, 0.7, 1.0, 0.7) if s["kind"] == "recon" else Color(1.0, 0.65, 0.2, 0.7)
 			mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 			mi.material_override = mat
 			var p: Vector3 = s["pos"]
@@ -360,11 +386,27 @@ func _process(dt: float) -> void:
 				if tg.alive: alive += 1
 			done = alive == 0 and not _strike_targets.is_empty()
 		"mark":
-			done = main.targets != null and main.targets.marked_list().size() >= int(s["n"])
+			if s.has("kinds") and main.targets != null:
+				# власна група: спавн один раз біля дальньої дороги, рахуємо мітки лише з неї
+				if _mission_marks.is_empty():
+					_mission_marks = main.targets.spawn_near(s["pos"], s["kinds"])
+				var mked := 0
+				for tg in _mission_marks:
+					if tg.alive and tg.get("marked", false): mked += 1
+				done = not _mission_marks.is_empty() and mked >= int(s["n"])
+			else:
+				done = main.targets != null and main.targets.marked_list().size() >= int(s["n"])
+		"relay_at":
+			# ретранслятор (H) або матка після відділення FPV (J) — у радіусі від рубежу
+			if main.relay_node != null:
+				var rd := Vector2(main.relay_pos.x - s["pos"].x, main.relay_pos.z - s["pos"].z).length()
+				done = rd < float(s["r"])
 		"strike_marked":
 			# фиксируем отмеченный набор один раз, затем считаем уничтоженных из него
-			if _marked_snapshot.is_empty() and main.targets != null:
-				for tg in main.targets.targets:
+			if _marked_snapshot.is_empty():
+				var src: Array = _mission_marks if not _mission_marks.is_empty() else \
+					(main.targets.targets if main.targets != null else [])
+				for tg in src:
 					if tg.get("marked", false):
 						_marked_snapshot.append(tg)
 			var killed := 0
@@ -492,6 +534,34 @@ func self_test() -> bool:
 	_process(0.05)
 	ok = ok and step == 1 and missed == 1
 	print("MISSIONTEST пропуск ворот → step=%d missed=%d (ждём 1, 1)" % [step, missed])
+	# комбинированная миссия 6: своя группа целей → рубеж ретранслятора → удар → БДА
+	start(6)
+	var ok6 := active and _steps.size() == 4
+	_process(0.05)                                    # первый тик спавнит группу mark
+	ok6 = ok6 and not _mission_marks.is_empty()
+	for tg in _mission_marks: tg.marked = true
+	_process(0.05)
+	ok6 = ok6 and step == 1
+	print("MISSIONTEST м6 mark: группа=%d step=%d (ждём >0, 1)" % [_mission_marks.size(), step])
+	var rz: Dictionary = _steps[1]
+	cam.global_position = rz["pos"]; _prev_pos = cam.global_position
+	main.toggle_relay()
+	_process(0.05)
+	ok6 = ok6 and step == 2
+	print("MISSIONTEST м6 relay_at → step=%d (ждём 2)" % step)
+	_process(0.05)                                    # снапшот отмеченных
+	for tg in _marked_snapshot: tg.alive = false
+	_process(0.05)
+	ok6 = ok6 and step == 3
+	print("MISSIONTEST м6 strike_marked → step=%d (ждём 3)" % step)
+	var bda: Dictionary = _steps[3]
+	cam.global_position = bda["pos"]; _prev_pos = cam.global_position
+	_process(4.2)                                     # hold 4 c в зоне БДА одним тиком
+	ok6 = ok6 and not active
+	print("MISSIONTEST м6 БДА/финиш: active=%s (ждём false)" % active)
+	if main.relay_node != null:
+		main.toggle_relay()                           # прибрать ретранслятор за собой
+	ok = ok and ok6
 	stop()
 	var csv_ok := FileAccess.file_exists("user://results/results.csv")
 	ok = ok and csv_ok
@@ -520,8 +590,17 @@ func hud_line() -> String:
 				if tg.alive: alive += 1
 			what = "знищити цілі біля дороги (%d м), лишилось %d" % [int(pos.distance_to(s["pos"])), alive]
 		"mark":
-			var mk: int = main.targets.marked_list().size() if main.targets != null else 0
-			what = "розвідник SHARK (B): відміть цілей %d/%d (зум — колесо, ЛКМ — мітка)" % [mk, int(s["n"])]
+			var mk := 0
+			if not _mission_marks.is_empty():
+				for tg in _mission_marks:
+					if tg.alive and tg.get("marked", false): mk += 1
+			elif main.targets != null:
+				mk = main.targets.marked_list().size()
+			var far_s := (" · група %d м" % int(pos.distance_to(s["pos"]))) if s.has("dx") else ""
+			what = "розвідник SHARK (B): відміть цілей %d/%d (зум — колесо, ЛКМ — мітка)%s" % [mk, int(s["n"]), far_s]
+		"relay_at":
+			var rd := Vector2(pos.x - s["pos"].x, pos.z - s["pos"].z).length()
+			what = "рубіж %d м: розгорни ретранслятор у зоні (H · або J — відділити FPV від матки)" % int(rd)
 		"strike_marked":
 			var killed := 0
 			for tg in _marked_snapshot:

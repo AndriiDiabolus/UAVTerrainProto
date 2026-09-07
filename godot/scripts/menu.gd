@@ -116,7 +116,7 @@ func _input(event: InputEvent) -> void:
 
 func _adjust(dir: int) -> void:
 	match ITEMS[sel]:
-		"миссия": mission_pick = clampi(mission_pick + dir, 1, 5)
+		"миссия": mission_pick = clampi(mission_pick + dir, 1, main.mission.MISSIONS.size() - 1 if main.mission != null else 5)
 		"реплей":
 			if not replay_files.is_empty():
 				replay_pick = posmod(replay_pick + dir, replay_files.size())
