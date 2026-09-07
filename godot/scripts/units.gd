@@ -1095,6 +1095,7 @@ func soldier_anim_scene() -> Dictionary:
 	if ap == null:
 		inst.free()
 		return {}
+
 	# риг Meshy уже в метрах (~1.7 м); AABB скиннед-меша лежит в bind-space и ВРЁТ —
 	# не нормируем, только разворачиваем носом в +X (фронт рига — +Z)
 	inst.transform = Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3.ZERO)
@@ -1136,7 +1137,38 @@ func soldier_anim_scene() -> Dictionary:
 					clips[cname] = cname if lib_name == "" else lib_name + "/" + cname
 					break
 		tmp.free()
+	# автомат в правую кисть: BoneAttachment3D едет со всеми клипами
+	var sk := inst.find_child("Skeleton3D", true, false) as Skeleton3D
+	if sk == null:
+		var sks := inst.find_children("*", "Skeleton3D", true, false)
+		if not sks.is_empty():
+			sk = sks[0] as Skeleton3D
+	if sk != null and sk.find_bone("RightHand") >= 0:
+		var att := BoneAttachment3D.new()
+		sk.add_child(att)
+		att.bone_name = "RightHand"          # ПОСЛЕ add_child — иначе кость не резолвится
+		att.name = "RifleAtt"
+		var rm := MeshInstance3D.new()
+		rm.mesh = _rifle_mesh()
+		# арматура Meshy в масштабе 0.01 — компенсируем ×100; смещение в bone-юнитах (×100 к метрам).
+		# Хват: ствол вдоль пальцев (подбор по кадрам --animshot)
+		rm.transform = Transform3D(Basis(Vector3(0, 0, 1), -PI * 0.5).scaled(Vector3.ONE * 100.0), Vector3(0, 8.0, 2.0))
+		att.add_child(rm)
 	return {"root": root, "player": ap, "clips": clips}
+
+
+## Процедурный АК (~0.85 м): ствольная коробка, ствол, цевьё, магазин, приклад. Ось ствола — +X.
+func _rifle_mesh() -> ArrayMesh:
+	var m := ArrayMesh.new()
+	var dark := Color(0.07, 0.07, 0.075)
+	var wood := Color(0.30, 0.19, 0.10)
+	_append(m, _box(0.26, 0.055, 0.038), Transform3D(), dark)                                                     # коробка
+	_append(m, _cyl(0.011, 0.36), Transform3D(Basis(Vector3(0, 0, 1), PI * 0.5), Vector3(0.30, 0.012, 0)), dark)  # ствол
+	_append(m, _box(0.13, 0.045, 0.034), Transform3D(Basis(), Vector3(0.19, -0.002, 0)), wood)                    # цевьё
+	_append(m, _box(0.045, 0.15, 0.028), Transform3D(Basis(Vector3(0, 0, 1), 0.4), Vector3(0.045, -0.095, 0)), dark)  # магазин
+	_append(m, _box(0.2, 0.06, 0.032), Transform3D(Basis(Vector3(0, 0, 1), -0.1), Vector3(-0.21, -0.012, 0)), wood)   # приклад
+	_append(m, _box(0.03, 0.05, 0.02), Transform3D(Basis(), Vector3(-0.05, -0.05, 0)), dark)                      # рукоять
+	return m
 
 
 ## Пехотинец-узел: GLB (Meshy) или процедурный фоллбек. Ноги на y=0, лицом в +X.

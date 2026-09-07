@@ -370,6 +370,12 @@ func _anim_shot(clip: String) -> void:
 	await get_tree().process_frame
 	var cname := String((ad.clips as Dictionary).get(clip, ""))
 	print("ANIMSHOT клипы: ", ad.clips.keys(), " → играю: ", cname)
+	var att := (ad.root as Node3D).find_child("RifleAtt", true, false)
+	if att != null:
+		await get_tree().process_frame
+		print("ANIMSHOT rifle att gpos=", (att as Node3D).global_position, " gscale=", (att as Node3D).global_transform.basis.get_scale())
+	else:
+		print("ANIMSHOT rifle att НЕ НАЙДЕН")
 	if cname != "":
 		(ad.player as AnimationPlayer).play(cname)
 	var t0 := Time.get_ticks_msec()
