@@ -45,6 +45,34 @@ func _process(dt: float) -> void:
 
 const MARK_RED := Color(1.0, 0.22, 0.14, 0.95)
 
+## Квест-панель: тактичні саб-задачі місії дрібним шрифтом зліва (✓ готово · ▸ поточна · · попереду).
+func _draw_quest(f: Font, vp: Vector2) -> void:
+	if main.mission == null or main.mission.get("active") != true:
+		return
+	var lines: Array = main.mission.quest_lines()
+	if lines.is_empty():
+		return
+	var fs := 11
+	var lh := 16.0
+	var w := 252.0
+	var h := lines.size() * lh + 22.0
+	var x := 14.0
+	var y := clampf(vp.y * 0.5 - h * 0.5, 96.0, vp.y - h - 120.0)
+	_panel(Rect2(x, y, w, h), 0.38)
+	var yy := y + 16.0
+	_txt(f, Vector2(x + 10, yy), "ЗАВДАННЯ", fs, DIM)
+	yy += lh * 0.5
+	for ln: Dictionary in lines:
+		yy += lh
+		if ln.has("h"):
+			var hc := Color(1.0, 0.78, 0.35) if int(ln.st) == 1 else (Color(0.55, 1.0, 0.59, 0.75) if int(ln.st) == 2 else DIM)
+			_txt(f, Vector2(x + 10, yy), str(ln.h).to_upper(), fs, hc)
+		else:
+			var st := int(ln.st)
+			var pre := "✓ " if st == 2 else ("▸ " if st == 1 else "·  ")
+			var c := Color(0.55, 1.0, 0.59, 0.62) if st == 2 else (Color(1.0, 0.78, 0.35) if st == 1 else Color(0.82, 0.82, 0.80, 0.5))
+			_txt(f, Vector2(x + 18, yy), pre + str(ln.t), fs, c)
+
 ## Закріплені цілі: маленький червоний квадратик сталого екранного розміру (бачать усі дрони).
 func _draw_marked_squares(f: Font, cam: Camera3D) -> void:
 	if main.targets == null:
@@ -163,6 +191,9 @@ func _draw() -> void:
 	if main.mission != null and not main.mission.active and main.get("menu_open") != true \
 			and not (main.mission.get("last_result") as Dictionary).is_empty():
 		_draw_mission_result(f, vp, main.mission.last_result)
+	# --- квест-панель зліва (місії 6-7): видно і в FPV — задачі потрібні на кожному борті ---
+	if main.get("menu_open") != true:
+		_draw_quest(f, vp)
 	if main.hud != null and main.hud.get("fpv_on") == true:
 		return          # в FPV остальным владеет OSD видеотракта
 

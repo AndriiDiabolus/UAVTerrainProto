@@ -35,6 +35,7 @@ var _result_label: Label
 var _strike_targets: Array = []
 var _marked_snapshot: Array = []
 var _mission_marks: Array = []       # власна група цілей для mark із "kinds" (чужі мітки не рахуються)
+var _quest: Array = []               # фази квесту (копія з місії, з done-прапорцями сабів)
 var last_result := {}          # разбор последнего вылета для карточки результатов (hud_min)
 var result_text := ""
 var _hint_t := 0.0
@@ -88,12 +89,56 @@ const MISSIONS := [
 		{"kind": "relay_at", "dx": 0, "dz": -900, "agl": 60, "r": 150},
 		{"kind": "strike_marked", "n": 3},
 		{"kind": "recon", "dx": 0, "dz": -1800, "agl": 80, "hold": 4.0, "r": 120.0},   # БДА
+	 ],
+	 "quest": [
+		{"who": "SHARK · розвідка", "step": 0, "subs": [
+			{"t": "перемкнись на крило SHARK (B)", "k": "drone", "id": "wing"},
+			{"t": "катапультний старт — набери хід", "k": "agl", "v": 15.0},
+			{"t": "займи безпечну висоту 300 м (поза ППО)", "k": "agl", "v": 300.0},
+			{"t": "вийди в район цілей", "k": "reach", "v": 700.0},
+			{"t": "відміть цілі %d/%d (зум −/=, ЛКМ)", "k": "marks"},
+		]},
+		{"who": "МАТКА · ретранслятор", "step": 1, "subs": [
+			{"t": "перемкнись на матку-носій (B)", "k": "drone", "id": "mship"},
+			{"t": "дійди до рубежу звʼязку", "k": "reach", "v": 160.0},
+			{"t": "розгорни ретранслятор (H) чи відділи FPV (J)", "k": "step"},
+		]},
+		{"who": "FPV · удар", "step": 2, "subs": [
+			{"t": "перемкнись на FPV (B)", "k": "drone", "id": "fpv"},
+			{"t": "дістанься відміток", "k": "near_mark", "v": 400.0},
+			{"t": "знищ відмічені цілі %d/%d", "k": "kills"},
+		]},
+		{"who": "SHARK · БДА", "step": 3, "subs": [
+			{"t": "повернись на крило (B)", "k": "drone", "id": "wing"},
+			{"t": "вийди над точку удару", "k": "reach", "v": 130.0},
+			{"t": "утримуйся 4 с — підтвердь ураження", "k": "step"},
+		]},
 	 ]},
 	{"name": "7 · Нічна засідка", "mode": "angle", "par": 480.0, "weather": 4,
 	 "steps": [
 		{"kind": "mark", "n": 2, "dx": 0, "dz": -1200, "kinds": ["apc", "soldier"]},
 		{"kind": "relay_at", "dx": 0, "dz": -600, "agl": 50, "r": 120},
 		{"kind": "strike_marked", "n": 2},
+	 ],
+	 "quest": [
+		{"who": "SHARK · нічна розвідка", "step": 0, "subs": [
+			{"t": "перемкнись на крило SHARK (B)", "k": "drone", "id": "wing"},
+			{"t": "увімкни тепловізор (T)", "k": "cam", "v": 3},
+			{"t": "займи висоту 250 м", "k": "agl", "v": 250.0},
+			{"t": "вийди в район засідки", "k": "reach", "v": 600.0},
+			{"t": "відміть теплі цілі %d/%d (зум, ЛКМ)", "k": "marks"},
+		]},
+		{"who": "МАТКА · ретранслятор", "step": 1, "subs": [
+			{"t": "перемкнись на матку-носій (B)", "k": "drone", "id": "mship"},
+			{"t": "дійди до рубежу впотемки", "k": "reach", "v": 130.0},
+			{"t": "розгорни ретранслятор (H) чи відділи FPV (J)", "k": "step"},
+		]},
+		{"who": "FPV · удар", "step": 2, "subs": [
+			{"t": "перемкнись на FPV (B)", "k": "drone", "id": "fpv"},
+			{"t": "тепловізор або нічна камера (T/C)", "k": "cam_any", "v": 2},
+			{"t": "дістанься відміток", "k": "near_mark", "v": 350.0},
+			{"t": "знищ цілі %d/%d", "k": "kills"},
+		]},
 	 ]},
 ]
 
@@ -171,6 +216,12 @@ func start(id: int) -> void:
 		_hint_t = 8.0
 	_marked_snapshot = []
 	_mission_marks = []
+	_quest = []
+	for ph: Dictionary in m.get("quest", []):
+		var pc := ph.duplicate(true)
+		for sub: Dictionary in pc["subs"]:
+			sub["done"] = false
+		_quest.append(pc)
 	# погода місії: комбіновані вильоти самі ставлять умови (вітер, ніч)
 	if m.has("weather") and main.weather != null:
 		main.weather.apply(int(m["weather"]), true)
@@ -413,6 +464,7 @@ func _process(dt: float) -> void:
 			for tg in _marked_snapshot:
 				if not tg.alive: killed += 1
 			done = not _marked_snapshot.is_empty() and killed >= int(s["n"])
+	_quest_tick(pos, agl)
 	if done:
 		s["done"] = true
 		if main.get("telemetry") != null: main.telemetry.event("step_done", {"step": step, "kind": s["kind"], "t": t})
@@ -568,6 +620,72 @@ func self_test() -> bool:
 	print("MISSIONTEST results.csv: %s" % csv_ok)
 	print("MISSIONTEST итог: %s" % ("ВСЕ OK" if ok else "ЕСТЬ FAIL"))
 	return ok
+
+
+# ---------------- квест: тактичні саб-задачі (панель зліва, місії 6-7) ----------------
+
+## Латчимо виконання сабів АКТИВНОЇ фази; пройдені фази закриваються цілком.
+func _quest_tick(pos: Vector3, agl: float) -> void:
+	for ph: Dictionary in _quest:
+		var pstep := int(ph["step"])
+		if pstep < step:
+			for sub: Dictionary in ph["subs"]:
+				sub["done"] = true
+			continue
+		if pstep > step or pstep >= _steps.size():
+			continue
+		var stp: Dictionary = _steps[pstep]
+		for sub: Dictionary in ph["subs"]:
+			if sub["done"]:
+				continue
+			var ok := false
+			match str(sub["k"]):
+				"drone":
+					var did := str(main.cam.get("drone_id"))
+					ok = did == str(sub.get("id")) or (str(sub.get("id")) == "fpv" and did in ["fpv7", "fpv5", "mavic"])
+				"agl": ok = agl >= float(sub["v"])
+				"cam": ok = main.hud != null and main.hud.fpv_link != null and int(main.hud.fpv_link.camera) == int(sub["v"])
+				"cam_any": ok = main.hud != null and main.hud.fpv_link != null and int(main.hud.fpv_link.camera) >= int(sub["v"])
+				"reach": ok = Vector2(pos.x - stp["pos"].x, pos.z - stp["pos"].z).length() < float(sub["v"])
+				"near_mark":
+					for tg in (main.targets.marked_list() if main.targets != null else []):
+						if pos.distance_to(tg.node.position) < float(sub["v"]):
+							ok = true; break
+				"marks", "kills", "step": ok = false   # закриваються разом із кроком (гілка pstep < step)
+			if ok:
+				sub["done"] = true
+
+
+## Рядки для панелі квесту: {h: заголовок фази} або {t: текст, st: 0 попереду / 1 поточна / 2 готово}.
+func quest_lines() -> Array:
+	var out: Array = []
+	if _quest.is_empty() or not active:
+		return out
+	var mked := 0
+	for tg in _mission_marks:
+		if tg.alive and tg.get("marked", false): mked += 1
+	var killed := 0
+	for tg in _marked_snapshot:
+		if not tg.alive: killed += 1
+	for ph: Dictionary in _quest:
+		var pstep := int(ph["step"])
+		var phase_state := 2 if pstep < step else (1 if pstep == step else 0)
+		out.append({"h": ph["who"], "st": phase_state})
+		var first_active := true
+		for sub: Dictionary in ph["subs"]:
+			var txt := str(sub["t"])
+			var n := int(_steps[pstep].get("n", 0)) if pstep < _steps.size() else 0
+			if str(sub["k"]) == "marks": txt = txt % [mked, n]
+			elif str(sub["k"]) == "kills": txt = txt % [killed, n]
+			var st := 0
+			if bool(sub["done"]) or phase_state == 2:
+				st = 2
+			elif phase_state == 1 and first_active:
+				st = 1
+			if st != 2 and phase_state == 1:
+				first_active = false
+			out.append({"t": txt, "st": st})
+	return out
 
 
 ## Строка для HUD.
