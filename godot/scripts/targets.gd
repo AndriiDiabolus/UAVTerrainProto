@@ -618,6 +618,14 @@ func best_in_cone(cam: Camera3D, max_ang_deg: float) -> Dictionary:
 	return best
 
 
+## Помітити конкретну ціль (зафіксовану автозахватом супроводу).
+func mark_target(t: Dictionary) -> void:
+	if not t.is_empty() and bool(t.get("alive", false)) and not bool(t.get("marked", false)):
+		t.marked = true
+		if main.get("telemetry") != null:
+			main.telemetry.event("target_marked", {"kind": t.kind})
+
+
 ## Загроза ППО для борта в точці: level 0 — безпечно, 1 — усередині зони вогню найближчої
 ## живої цілі (стрілецька 120 м, ЗКУ/автогармата 450 м); dist — до найнебезпечнішої.
 func aa_threat(pos: Vector3) -> Dictionary:

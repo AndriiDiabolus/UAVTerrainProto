@@ -214,6 +214,17 @@ func _draw_wing_reticle(f: Font, vp: Vector2, cam: Camera3D) -> void:
 		else:
 			col = Color(1.0, 0.65, 0.2, 0.95)
 			label = "ЗАХОПЛЕННЯ: %s · %d м · ЛКМ/Пробіл" % [nm.get(tg.kind, "ЦІЛЬ"), d]
+	# автозахват: ціль у конусі → прогрес 2.5 с; зафіксована — зелений СУПРОВІД
+	var trk: Dictionary = cam.get("track") if cam.get("track") != null else {}
+	var lk := float(cam.get("lock_t")) if cam.get("lock_t") != null else 0.0
+	if not trk.is_empty() and bool(trk.get("alive", false)):
+		var nm2 := {"tank": "ТАНК", "apc": "БТР", "soldier": "ПІХОТА"}
+		col = Color(0.5, 1.0, 0.55)
+		label = "СУПРОВІД: %s · %d м · ЛКМ/Пробіл — мітка" % [nm2.get(trk.kind, "ЦІЛЬ"),
+			int(cam.global_position.distance_to(trk.node.position))]
+	elif lk > 0.05 and not tg.is_empty():
+		label = "ЗАХОПЛЕННЯ… %.1f / %.1f с" % [lk, 2.5]
+		draw_arc(c, 26.0, -PI * 0.5, -PI * 0.5 + TAU * clampf(lk / 2.5, 0.0, 1.0), 24, Color(1.0, 0.65, 0.2), 2.5)
 	# зона захоплення: половина стороны = проекция конуса на экран
 	var r_px := clampf(tan(deg_to_rad(cone_deg)) / tan(deg_to_rad(cam.fov * 0.5)) * vp.y * 0.5, 26.0, vp.y * 0.42)
 	for sgn: Vector2 in [Vector2(-1, -1), Vector2(1, -1), Vector2(-1, 1), Vector2(1, 1)]:   # уголки рамки

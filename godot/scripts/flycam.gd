@@ -149,6 +149,10 @@ func set_drone(id: String) -> void:
 		P = DRONES[id]
 		if id == "mship" and main != null and main.get("targets") != null and main.targets != null:
 			main.targets.armed = false           # носитель не вооружён — взвод БЧ снимается
+		track = {}
+		_lock_cand = {}
+		lock_t = 0.0
+		fpv_track = {}
 		if id != "wing":
 			wing_zoom = 1.0                      # зум гимбала остаётся только у разведчика
 			_zoom_t = 1.0
@@ -198,7 +202,9 @@ func speed() -> float:
 func try_mark() -> void:
 	if drone_id != "wing" or main == null or main.targets == null:
 		return
-	var mt: Dictionary = main.targets.mark_at(self, clampf(fov * 0.12, 0.5, 5.0))
+	var mt: Dictionary = track if not track.is_empty() else main.targets.mark_at(self, clampf(fov * 0.12, 0.5, 5.0))
+	if mt == track and not mt.is_empty():
+		main.targets.mark_target(mt)
 	if main.hud != null and main.hud.has_method("toast"):
 		if mt.is_empty():
 			main.hud.toast("ЦІЛЬ НЕ ЗАХОПЛЕНА", "наведи перехрестя точніше (зум — колесо/−=)", Color(1.0, 0.78, 0.47), 1.2)
@@ -212,9 +218,13 @@ func _unhandled_input(event: InputEvent) -> void:
 	# (elif-ветка на InputEventKey съедала бы Esc/Tab/B до их обработчиков ниже)
 	if event is InputEventKey and event.pressed:
 		var zkc: int = event.physical_keycode if event.physical_keycode != 0 else event.keycode
-		if zkc == KEY_SPACE and not event.echo and drone_id == "wing":
-			try_mark()
-			return
+		if zkc == KEY_SPACE and not event.echo:
+			if drone_id == "wing":
+				try_mark()
+				return
+			elif drone_id in ["fpv7", "fpv5", "mavic"]:
+				toggle_autodovid()
+				return
 		if zkc == KEY_EQUAL or zkc == KEY_MINUS or zkc == KEY_KP_ADD or zkc == KEY_KP_SUBTRACT:
 			var zin := zkc == KEY_EQUAL or zkc == KEY_KP_ADD
 			if drone_id == "wing":
@@ -260,6 +270,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		if mode == MODE_GPS:
 			var sens := MOUSE_SENS / (wing_zoom if drone_id == "wing" else 1.0)
 			if drone_id == "wing":
+				if not track.is_empty() and event.relative.length() > 8.0:
+					track = {}                   # різкий рух миші = зірвати супровід
+					if main != null and main.hud != null:
+						main.hud.toast("СУПРОВІД ЗІРВАНО", "керування підвісом у оператора", Color(1.0, 0.78, 0.47), 1.2)
 				_gim_yaw = clampf(_gim_yaw - event.relative.x * sens, -2.4, 2.4)   # подвес, не курс
 			else:
 				_yaw -= event.relative.x * sens
@@ -423,7 +437,89 @@ func _process(dt: float) -> void:
 		_ground_and_obstacles(H)
 		if main.crashed:
 			return
+	if drone_id == "wing":
+		_step_lock(dt)
+	elif drone_id in ["fpv7", "fpv5", "mavic"]:
+		_step_autodovid(dt)
 	_apply_camera(dt, wind)
+
+
+## Автозахват SHARK: тримай ціль у конусі LOCK_NEED секунд — гімбал фіксує і супроводжує сам.
+func _step_lock(dt: float) -> void:
+	if not track.is_empty():
+		if not bool(track.get("alive", false)):
+			track = {}
+			if main.hud != null: main.hud.toast("СУПРОВІД ВТРАЧЕНО", "ціль знищена", Color(1.0, 0.78, 0.47), 1.4)
+		else:
+			# гімбал доворачивается на цель (только GPS-подвес крыла)
+			var tp: Vector3 = track.node.position + Vector3(0, 1.5, 0)
+			var dirv: Vector3 = tp - global_position
+			var yaw_t := atan2(-dirv.x, -dirv.z)
+			var pitch_t := atan2(dirv.y, Vector2(dirv.x, dirv.z).length())
+			var k := clampf(dt * 5.0, 0.0, 1.0)
+			_pitch = lerp_angle(_pitch, pitch_t, k)
+			_gim_yaw = clampf(lerp_angle(_gim_yaw, wrapf(yaw_t - _yaw, -PI, PI), k), -2.4, 2.4)
+		return
+	if main == null or main.targets == null:
+		return
+	var tg: Dictionary = main.targets.best_in_cone(self, clampf(fov * 0.12, 0.5, 5.0))
+	if not tg.is_empty() and tg == _lock_cand:
+		lock_t += dt
+		if lock_t >= LOCK_NEED:
+			track = tg
+			lock_t = 0.0
+			if main.hud != null:
+				main.hud.toast("ЦІЛЬ ЗАФІКСОВАНА · СУПРОВІД", "гімбал тримає ціль · ЛКМ/Пробіл — мітка · миша — зірвати", Color(0.5, 1.0, 0.55), 2.2)
+	else:
+		_lock_cand = tg
+		lock_t = 0.0
+
+
+## Автодовід FPV: корпус сам довертається на захоплену мітку (термінальне наведення).
+func _step_autodovid(dt: float) -> void:
+	if fpv_track.is_empty():
+		return
+	if not bool(fpv_track.get("alive", false)):
+		fpv_track = {}
+		return
+	# помітний ввід стіків = пілот перехопив управління
+	if absf(st_pitch) > 0.6 or absf(st_roll) > 0.6:
+		fpv_track = {}
+		if main.hud != null: main.hud.toast("АВТОДОВІД ВИМК", "керування у пілота", Color(1.0, 0.78, 0.47), 1.2)
+		return
+	var tp: Vector3 = fpv_track.node.position + Vector3(0, 1.2, 0)
+	var dirv: Vector3 = (tp - global_position)
+	if dirv.length() < 7.0:
+		return                                   # фінальні метри — БЧ/скид зроблять своє
+	body = body.slerp(Basis.looking_at(dirv.normalized(), Vector3.UP), clampf(dt * 2.2, 0.0, 1.0))
+
+
+## Пробіл на FPV: захопити найближчу відмічену ціль попереду (до 1500 м) / скасувати.
+func toggle_autodovid() -> void:
+	if not fpv_track.is_empty():
+		fpv_track = {}
+		if main.hud != null: main.hud.toast("АВТОДОВІД ВИМК", "", Color(1.0, 0.78, 0.47), 1.0)
+		return
+	if main == null or main.targets == null:
+		return
+	var best: Dictionary = {}
+	var best_d := 1500.0
+	var fwd: Vector3 = -body.z
+	for t: Dictionary in main.targets.marked_list():
+		var to: Vector3 = t.node.position - global_position
+		if to.dot(fwd) < 0.0:
+			continue                             # тільки передня півсфера
+		var d := to.length()
+		if d < best_d:
+			best_d = d; best = t
+	if best.is_empty():
+		if main.hud != null: main.hud.toast("НЕМАЄ МІТКИ ПОПЕРЕДУ", "відміть ціль розвідником або підлети ближче (до 1.5 км)", Color(1.0, 0.78, 0.47), 1.6)
+		return
+	fpv_track = best
+	if main.hud != null:
+		var nm := {"tank": "ТАНК", "apc": "БТР", "soldier": "ПІХОТА"}
+		main.hud.toast("АВТОДОВІД · %s · %d м" % [nm.get(best.kind, "ЦІЛЬ"), int(best_d)],
+			"корпус довертається сам · газ твій · Пробіл — скасувати", Color(0.5, 1.0, 0.55), 2.2)
 
 
 # ======================= крыло (SHARK): самолётная модель =======================
@@ -433,6 +529,12 @@ func _process(dt: float) -> void:
 var wing_zoom := 1.0                 # текущий зум гимбала (плавно тянется к _zoom_t)
 var _zoom_t := 1.0                   # целевой зум: ×1..×30 оптика, ×30..×60 цифровая ступень
 var _gim_yaw := 0.0                  # рыскание подвеса относительно курса (мышь X)
+# автозахват розвідника: ціль у конусі 2.5 с → фіксація, гімбал супроводжує сам
+var lock_t := 0.0                    # скільки ціль уже в конусі, с
+const LOCK_NEED := 2.5
+var _lock_cand: Dictionary = {}      # кандидат (у конусі зараз)
+var track: Dictionary = {}           # зафіксована ціль (супровід гімбала)
+var fpv_track: Dictionary = {}       # автодовід FPV на відмічену ціль
 var _wing_air := 22.0                # воздушная скорость, м/с
 var _wing_auto := false              # авто-набор высоты после катапульты
 var _wing_roll := 0.0
