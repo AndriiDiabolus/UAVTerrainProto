@@ -1164,7 +1164,7 @@ func soldier_anim_scene() -> Dictionary:
 		rm.mesh = _rifle_mesh()
 		# арматура Meshy в масштабе 0.01 — компенсируем ×100; смещение в bone-юнитах (×100 к метрам).
 		# Хват: ствол вдоль пальцев (подбор по кадрам --animshot)
-		rm.transform = Transform3D((Basis(Vector3(0, 0, 1), -PI * 0.5) * Basis(Vector3(0, 1, 0), PI)).scaled(Vector3.ONE * 135.0), Vector3(0, 8.0, 2.0))
+		rm.transform = Transform3D((Basis(Vector3(0, 0, 1), -PI * 0.5) * Basis(Vector3(0, 1, 0), PI) * Basis(Vector3(1, 0, 0), PI * 1.25)).scaled(Vector3.ONE * 135.0), Vector3(0, 8.0, 2.0))
 		att.add_child(rm)
 	return {"root": root, "player": ap, "clips": clips}
 

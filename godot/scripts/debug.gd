@@ -21,6 +21,8 @@ func setup(m: Node3D) -> void:
 			_anim_shot(a.substr(11))
 	if "--squadtest" in OS.get_cmdline_user_args():
 		_squad_test()
+	if "--riflegrid" in OS.get_cmdline_user_args():
+		_rifle_grid()
 	if "--mapdump" in OS.get_cmdline_user_args():
 		_mapdump()
 
@@ -432,6 +434,47 @@ func _squad_test() -> void:
 				[(Time.get_ticks_msec() - t1) / 1000.0, float(sold.offset), float(sold.hide_off),
 				str(sold.get("cur_anim", "?")), ap_s, str(sold.alert)])
 		await get_tree().process_frame
+	get_tree().quit()
+
+
+## --riflegrid: 8 бойцов в позе aim с роллом автомата 0..315° — подбор хвата одним кадром.
+func _rifle_grid() -> void:
+	await RenderingServer.frame_post_draw
+	for i in 60:
+		await get_tree().process_frame
+	main.replaying = true
+	var U = load("res://scripts/units.gd").new()
+	var base: Vector3 = main._home_pos + Vector3(-55, 0, 40)   # в сторону от игрового отряда
+	for k in 8:
+		var ad: Dictionary = U.soldier_anim_scene()
+		if ad.is_empty():
+			continue
+		var gz := base.z - 10.5 + k * 3.0
+		var gy: float = main.height_at(base.x, gz)
+		(ad.root as Node3D).position = Vector3(base.x, gy, gz)
+		(ad.root as Node3D).rotation.y = PI * 0.5
+		main.add_child(ad.root)
+		var att := (ad.root as Node3D).find_child("RifleAtt", true, false)
+		if att != null and att.get_child_count() > 0:
+			var rmesh := att.get_child(0) as Node3D
+			rmesh.basis = rmesh.basis * Basis(Vector3(1, 0, 0), k * PI * 0.25)
+			var cols := [Color.RED, Color.ORANGE, Color.YELLOW, Color.GREEN, Color.CYAN, Color.BLUE, Color.MAGENTA, Color.WHITE]
+			var om := StandardMaterial3D.new()
+			om.albedo_color = cols[k]
+			om.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+			(rmesh as MeshInstance3D).material_override = om
+		(ad.player as AnimationPlayer).play(String((ad.clips as Dictionary).get("aim", "")))
+		(ad.player as AnimationPlayer).seek(0.5, true)
+		(ad.player as AnimationPlayer).speed_scale = 0.0     # замереть в одной фазе у всех
+	var cpos := Vector3(base.x + 17.0, main.height_at(base.x, base.z) + 6.0, base.z)
+	var clook := Vector3(base.x, main.height_at(base.x, base.z) + 1.0, base.z)
+	for i in 20:
+		_apply_fx_cam(cpos, clook)
+		await get_tree().process_frame
+	await RenderingServer.frame_post_draw
+	var img := main.get_viewport().get_texture().get_image()
+	img.save_png(ProjectSettings.globalize_path("res://../riflegrid.png"))
+	print("RIFLEGRID saved")
 	get_tree().quit()
 
 
