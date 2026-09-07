@@ -987,9 +987,9 @@ func drone_wing(variant: int) -> Dictionary:
 		root2.add_child(inst)
 		var aabb := _combined_aabb(inst)
 		var s := 3.4 / maxf(aabb.size.x, maxf(aabb.size.y, aabb.size.z))   # размах → 3.4 м
-		var rot := Basis(Vector3.UP, PI)                # Meshy отдаёт нос в -X — разворот
-		if aabb.size.x >= aabb.size.z:
-			rot = Basis(Vector3.UP, -PI * 0.5)         # длинная ось (размах) должна лечь на Z
+		var rot := Basis(Vector3.UP, PI)                # нос вперёд (-Z корпуса)
+		if aabb.size.z > aabb.size.x:
+			rot = Basis(Vector3.UP, -PI * 0.5)         # размах лежал вдоль Z → кладём ПОПЕРЁК курса, на X
 		inst.transform = Transform3D(rot * Basis.from_scale(Vector3.ONE * s), -(rot * (aabb.get_center() * s)))
 		return {"root": root2, "props": []}
 	var root := Node3D.new()

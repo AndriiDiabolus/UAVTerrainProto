@@ -79,7 +79,7 @@ func toggle_third() -> void:
 	if not third:
 		_to_first()
 	elif main.hud != null and main.hud.has_method("toast"):
-		main.hud.toast("ВИД · ТРЕТЬЕ ЛИЦО", "U — вернуться к виду с борта", Color(0.62, 0.86, 1.0))
+		main.hud.toast("ВИД · ТРЕТЯ ОСОБА", "U — повернутись до виду з борту", Color(0.62, 0.86, 1.0))
 
 
 func _to_first() -> void:
@@ -87,7 +87,7 @@ func _to_first() -> void:
 		main.cam.make_current()
 	model.visible = false
 	if main.hud != null and main.hud.has_method("toast"):
-		main.hud.toast("ВИД · С БОРТА", "", Color(0.62, 0.86, 1.0))
+		main.hud.toast("ВИД · З БОРТУ", "", Color(0.62, 0.86, 1.0))
 
 
 func _unhandled_input(e: InputEvent) -> void:
