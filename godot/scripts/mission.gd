@@ -33,6 +33,8 @@ var _pad_node: MeshInstance3D
 var _hold_t := 0.0
 var _result_label: Label
 var _strike_targets: Array = []
+var _marked_snapshot: Array = []
+var last_result := {}          # разбор последнего вылета для карточки результатов (hud_min)
 var result_text := ""
 var _hint_t := 0.0
 
@@ -72,6 +74,11 @@ const MISSIONS := [
 		{"kind": "strike", "dx": 0, "dz": -900, "kinds": ["tank", "apc"]},
 		{"kind": "land", "dx": 0, "dz": 0, "r": 8},
 	 ]},
+	{"name": "5 · Розвідка і удар", "mode": "angle", "par": 420.0,
+	 "steps": [
+		{"kind": "mark", "n": 2},           # SHARK: катапульта, зум, ЛКМ — відмітити 2 цілі
+		{"kind": "strike_marked", "n": 2},  # FPV: знищити відмічені цілі
+	 ]},
 ]
 
 
@@ -107,6 +114,7 @@ func start(id: int) -> void:
 	step = 0; t = 0.0; score = 100.0; crashes = 0; missed = 0; max_speed = 0.0
 	_agl_sum = 0.0; _agl_n = 0; _hold_t = 0.0
 	result_text = ""
+	last_result = {}
 	if _result_label != null: _result_label.visible = false
 	var m: Dictionary = MISSIONS[id]
 	# origin — текущая home-точка (точка взлёта), курс — на юг вдоль долины (как стартовая камера)
@@ -145,6 +153,7 @@ func start(id: int) -> void:
 		_result_label.text = hint
 		_result_label.visible = true
 		_hint_t = 8.0
+	_marked_snapshot = []
 	_steps = []
 	for s: Dictionary in m["steps"]:
 		var st := s.duplicate()
@@ -191,7 +200,7 @@ func _clear_spot(near: Vector3) -> Vector3:
 ## Позиция шага в мире.
 func _resolve(s: Dictionary) -> Vector3:
 	var kind: String = s["kind"]
-	if kind == "takeoff":
+	if kind == "takeoff" or kind == "mark" or kind == "strike_marked":
 		return _origin
 	if kind == "recon" and s.get("auto", false):
 		return _find_hidden_point()
@@ -350,6 +359,18 @@ func _process(dt: float) -> void:
 			for tg in _strike_targets:
 				if tg.alive: alive += 1
 			done = alive == 0 and not _strike_targets.is_empty()
+		"mark":
+			done = main.targets != null and main.targets.marked_list().size() >= int(s["n"])
+		"strike_marked":
+			# фиксируем отмеченный набор один раз, затем считаем уничтоженных из него
+			if _marked_snapshot.is_empty() and main.targets != null:
+				for tg in main.targets.targets:
+					if tg.get("marked", false):
+						_marked_snapshot.append(tg)
+			var killed := 0
+			for tg in _marked_snapshot:
+				if not tg.alive: killed += 1
+			done = not _marked_snapshot.is_empty() and killed >= int(s["n"])
 	if done:
 		s["done"] = true
 		if main.get("telemetry") != null: main.telemetry.event("step_done", {"step": step, "kind": s["kind"], "t": t})
@@ -403,14 +424,17 @@ func _finish(success: bool) -> void:
 		"max_speed_ms": snappedf(max_speed, 0.1), "avg_agl_m": snappedf(avg_agl, 0.1),
 		"drone": str(main.cam.drone_id), "mode": str(main.cam.mode_name()),
 		"date": Time.get_datetime_string_from_system(false, true),
+		"pen_time": int(round(maxf(0.0, t - par) / 2.0)) if success else 0,
+		"pen_crash": crashes * 20, "pen_gates": missed * 15,
 	}
+	last_result = res
 	result_text = "%s\n%s   ОЦЕНКА %d / 100\nвремя %.0f с (норматив %.0f) · крашей %d · пропущено ворот %d\nмакс. скорость %.0f м/с · средняя AGL %.0f м\nN — следующая миссия" % [
 		m["name"], "ВЫПОЛНЕНО" if success else "ПРОВАЛ", int(round(score)), t, par, crashes, missed, max_speed, avg_agl]
+	if _result_label != null:
+		_result_label.visible = false            # стартовая шпаргалка не должна лежать на карточке
+		_hint_t = 0.0
 	_save_result(res)
 	if main.get("telemetry") != null: main.telemetry.event("mission_end", res)
-	if _result_label != null:
-		_result_label.text = result_text
-		_result_label.visible = true
 	print("MISSION %s: %s" % ["OK" if success else "FAIL", JSON.stringify(res)])
 	active = false
 
@@ -495,6 +519,14 @@ func hud_line() -> String:
 			for tg in _strike_targets:
 				if tg.alive: alive += 1
 			what = "уничтожить цели у дороги (%d м), осталось %d" % [int(pos.distance_to(s["pos"])), alive]
+		"mark":
+			var mk: int = main.targets.marked_list().size() if main.targets != null else 0
+			what = "разведчик SHARK (B): отметь целей %d/%d (зум — колесо, ЛКМ — метка)" % [mk, int(s["n"])]
+		"strike_marked":
+			var killed := 0
+			for tg in _marked_snapshot:
+				if not tg.alive: killed += 1
+			what = "FPV (B): уничтожь отмеченные цели %d/%d" % [killed, int(s["n"])]
 	return "МИССИЯ %s · шаг %d/%d · %s · %02d:%02d" % [mission_name(), step + 1, _steps.size(), what,
 		int(t) / 60, int(t) % 60]
 

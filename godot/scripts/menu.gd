@@ -29,7 +29,7 @@ func setup(m: Node3D) -> void:
 	var args := OS.get_cmdline_user_args()
 	var auto := true
 	for a in args:
-		for f in ["--screenshot", "--bench", "--selftest", "--flytest", "--missiontest", "--coltest", "--replay", "--mission", "--targetreport", "--nomenu", "--fxshot", "--animshot"]:
+		for f in ["--screenshot", "--bench", "--selftest", "--flytest", "--missiontest", "--coltest", "--replay", "--mission", "--targetreport", "--nomenu", "--fxshot", "--animshot", "--resultshot"]:
 			if a.begins_with(f):
 				auto = false
 	if "--menushot" in args:
@@ -112,7 +112,7 @@ func _input(event: InputEvent) -> void:
 
 func _adjust(dir: int) -> void:
 	match ITEMS[sel]:
-		"миссия": mission_pick = clampi(mission_pick + dir, 1, 4)
+		"миссия": mission_pick = clampi(mission_pick + dir, 1, 5)
 		"реплей":
 			if not replay_files.is_empty():
 				replay_pick = posmod(replay_pick + dir, replay_files.size())

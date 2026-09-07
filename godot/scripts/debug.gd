@@ -23,6 +23,8 @@ func setup(m: Node3D) -> void:
 		_squad_test()
 	if "--riflegrid" in OS.get_cmdline_user_args():
 		_rifle_grid()
+	if "--resultshot" in OS.get_cmdline_user_args():
+		_result_shot()
 	if "--mapdump" in OS.get_cmdline_user_args():
 		_mapdump()
 
@@ -475,6 +477,29 @@ func _rifle_grid() -> void:
 	var img := main.get_viewport().get_texture().get_image()
 	img.save_png(ProjectSettings.globalize_path("res://../riflegrid.png"))
 	print("RIFLEGRID saved")
+	get_tree().quit()
+
+
+## --resultshot: сымитировать завершение миссии и снять карточку результатов.
+func _result_shot() -> void:
+	await RenderingServer.frame_post_draw
+	for i in 70:
+		await get_tree().process_frame
+	main.mission.start(1)
+	await get_tree().process_frame
+	main.mission.t = 104.0
+	main.mission.crashes = 1
+	main.mission.missed = 1
+	main.mission.score = 100.0 - 20.0 - 15.0
+	main.mission.max_speed = 22.4
+	main.mission._agl_sum = 15.2 * 100; main.mission._agl_n = 100
+	main.mission._finish(true)
+	for i in 8:
+		await get_tree().process_frame
+	await RenderingServer.frame_post_draw
+	var img := main.get_viewport().get_texture().get_image()
+	img.save_png(ProjectSettings.globalize_path("res://../resultshot.png"))
+	print("RESULTSHOT saved")
 	get_tree().quit()
 
 

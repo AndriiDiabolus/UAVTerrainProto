@@ -91,6 +91,10 @@ func _draw() -> void:
 			draw_rect(Rect2(vp.x - iw, 0, iw, vp.y), icc)
 			draw_rect(Rect2(0, 0, vp.x, iw * 0.7), icc)
 			draw_rect(Rect2(0, vp.y - iw * 0.7, vp.x, iw * 0.7), icc)
+	# --- карточка результатов вылета (после миссии; видна и в FPV) ---
+	if main.mission != null and not main.mission.active and main.get("menu_open") != true \
+			and not (main.mission.get("last_result") as Dictionary).is_empty():
+		_draw_mission_result(f, vp, main.mission.last_result)
 	if main.hud != null and main.hud.get("fpv_on") == true:
 		return          # в FPV остальным владеет OSD видеотракта
 
@@ -367,6 +371,58 @@ func _draw_shark_panel(f: Font, vp: Vector2, cam: Camera3D, agl: float) -> void:
 		var lfv := float(cam.get("lens_fog")) if cam.get("lens_fog") != null else 0.0
 		if lfv > 0.1:
 			_txt(f, Vector2(px + 246 * k, by3), "ЛИНЗА ✻", int(12 * k), Color(0.85, 0.9, 0.95))
+
+
+## Карточка разбора вылета: оценка, метрики, штрафы — «тренажёрный» экран результатов.
+func _draw_mission_result(f: Font, vp: Vector2, r: Dictionary) -> void:
+	var k := clampf(vp.y / 1000.0, 0.8, 1.5)
+	var W := 460.0 * k
+	var H := 330.0 * k
+	var px := vp.x * 0.5 - W * 0.5
+	var py := vp.y * 0.5 - H * 0.5 - 40.0 * k
+	var ok: bool = bool(r.get("success", false))
+	var accent := Color(0.55, 1.0, 0.59) if ok else Color(1.0, 0.45, 0.4)
+	_panel(Rect2(px, py, W, H), 0.72, Color(accent.r, accent.g, accent.b, 0.55))
+	draw_rect(Rect2(px, py, W, 42 * k), Color(accent.r, accent.g, accent.b, 0.16))
+	_txt(f, Vector2(px + 18 * k, py + 28 * k), str(r.get("mission", "")), int(17 * k), TXT)
+	_txt(f, Vector2(px + 18 * k, py + 74 * k), "ВЫПОЛНЕНО" if ok else "ПРОВАЛ", int(22 * k), accent)
+	# оценка крупно справа
+	var sc := "%d" % int(r.get("score", 0))
+	var scw := f.get_string_size(sc, HORIZONTAL_ALIGNMENT_LEFT, -1, int(52 * k)).x
+	_txt(f, Vector2(px + W - scw - 60 * k, py + 86 * k), sc, int(52 * k), accent)
+	_txt(f, Vector2(px + W - 52 * k, py + 86 * k), "/100", int(16 * k), DIM)
+	# метрики
+	var rows := [
+		["Время", "%.0f с  (норматив %.0f)" % [float(r.get("time_s", 0)), float(r.get("par_s", 0))]],
+		["Дрон · режим", "%s · %s" % [str(r.get("drone", "")), str(r.get("mode", ""))]],
+		["Средняя высота", "%.0f м AGL" % float(r.get("avg_agl_m", 0))],
+		["Макс. скорость", "%.0f м/с" % float(r.get("max_speed_ms", 0))],
+	]
+	var ry := py + 116.0 * k
+	for row in rows:
+		_txt(f, Vector2(px + 18 * k, ry), str(row[0]), int(13 * k), DIM)
+		_txt(f, Vector2(px + 175 * k, ry), str(row[1]), int(13 * k), TXT)
+		ry += 24.0 * k
+	# разбор штрафов
+	draw_line(Vector2(px + 14 * k, ry - 8 * k), Vector2(px + W - 14 * k, ry - 8 * k), Color(1, 1, 1, 0.14), 1.0)
+	_txt(f, Vector2(px + 18 * k, ry + 12 * k), "РАЗБОР", int(12 * k), DIM)
+	ry += 32.0 * k
+	var pens := []
+	if int(r.get("pen_crash", 0)) > 0:
+		pens.append(["столкновения ×%d" % int(r.get("crashes", 0)), -int(r.get("pen_crash", 0))])
+	if int(r.get("pen_gates", 0)) > 0:
+		pens.append(["пропущенные ворота ×%d" % int(r.get("gates_missed", 0)), -int(r.get("pen_gates", 0))])
+	if int(r.get("pen_time", 0)) > 0:
+		pens.append(["превышение норматива", -int(r.get("pen_time", 0))])
+	if pens.is_empty():
+		_txt(f, Vector2(px + 18 * k, ry), "чистый вылет — без штрафов", int(13 * k), Color(0.55, 1.0, 0.59))
+		ry += 24.0 * k
+	else:
+		for pn in pens:
+			_txt(f, Vector2(px + 18 * k, ry), str(pn[0]), int(13 * k), TXT)
+			_txt(f, Vector2(px + W - 70 * k, ry), "%d" % int(pn[1]), int(13 * k), Color(1.0, 0.6, 0.45))
+			ry += 22.0 * k
+	_txt(f, Vector2(px + 18 * k, py + H - 14 * k), "N — следующая миссия · R — повторить · Esc — меню", int(12 * k), DIM)
 
 
 func _draw_toast(f: Font, vp: Vector2) -> void:
