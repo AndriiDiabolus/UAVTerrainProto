@@ -597,7 +597,7 @@ func hud_line() -> String:
 			elif main.targets != null:
 				mk = main.targets.marked_list().size()
 			var far_s := (" · група %d м" % int(pos.distance_to(s["pos"]))) if s.has("dx") else ""
-			what = "розвідник SHARK (B): відміть цілей %d/%d (зум — колесо, ЛКМ — мітка)%s" % [mk, int(s["n"]), far_s]
+			what = "розвідник SHARK (B): відміть цілей %d/%d (зум — колесо/−=, ЛКМ — мітка)%s" % [mk, int(s["n"]), far_s]
 		"relay_at":
 			var rd := Vector2(pos.x - s["pos"].x, pos.z - s["pos"].z).length()
 			what = "рубіж %d м: розгорни ретранслятор у зоні (H · або J — відділити FPV від матки)" % int(rd)

@@ -244,6 +244,17 @@ func _unhandled_input(event: InputEvent) -> void:
 			_pitch = clampf(_pitch - event.relative.y * sens, -1.5, 1.5)
 		else:
 			_mouse_acc += event.relative
+	elif event is InputEventKey and event.pressed:
+		# − / = (и на нампаде) — зум без колеса мыши; echo пропускаем: держишь — зум едет
+		var kc: int = event.physical_keycode if event.physical_keycode != 0 else event.keycode
+		if kc == KEY_EQUAL or kc == KEY_MINUS or kc == KEY_KP_ADD or kc == KEY_KP_SUBTRACT:
+			var zin := kc == KEY_EQUAL or kc == KEY_KP_ADD
+			if drone_id == "wing":
+				_zoom_t = clampf(_zoom_t * (1.12 if zin else 1.0 / 1.12), 1.0, 60.0)
+				if main != null and main.hud != null:
+					main.hud.toast("ЗУМ ×%.0f%s" % [_zoom_t, " · цифровий" if _zoom_t > 30.5 else ""], "", Color(0.7, 0.9, 1.0), 0.8)
+			else:
+				current_speed = clampf(current_speed * (1.12 if zin else 1.0 / 1.12), SPEED_MIN, SPEED_MAX)
 	elif event.is_action_pressed("fly_mode"):
 		cycle_mode()
 	elif event.is_action_pressed("fly_drone"):
