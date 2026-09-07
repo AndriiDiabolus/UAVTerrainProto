@@ -472,7 +472,7 @@ func _step_wing(dt: float, s: Dictionary, wind: Vector3) -> void:
 		var agl: float = position.y - main.height_at(position.x, position.z)
 		if agl < 800.0:
 			throttle = move_toward(throttle, 1.0, dt * 0.8)
-			_wing_air = move_toward(_wing_air, 33.0, dt * 2.2)
+			_wing_air = move_toward(_wing_air, 25.0, dt * 2.2)   # набір на ~90 км/год, як у реального SHARK
 			_wing_pitch = move_toward(_wing_pitch, deg_to_rad(11.0), dt * deg_to_rad(30.0))
 		else:
 			_wing_pitch = move_toward(_wing_pitch, 0.0, dt * deg_to_rad(20.0))
@@ -488,11 +488,11 @@ func _step_wing(dt: float, s: Dictionary, wind: Vector3) -> void:
 	# газ → целевая скорость; кабрирование тормозит, пикирование разгоняет
 	var thr_tgt := clampf(0.55 + float(s.get("thr_c", 0.0)) * 0.45, 0.0, 1.0)
 	throttle = move_toward(throttle, thr_tgt, dt * 0.8)
-	var v_tgt := lerpf(17.0, 33.0, throttle) * (1.0 - 0.22 * ice)   # лёд портит аэродинамику
+	var v_tgt := lerpf(16.0, 30.0, throttle) * (1.0 - 0.22 * ice)   # 58..108 км/год — реальний діапазон SHARK
 	_wing_air = move_toward(_wing_air, v_tgt, dt * 2.2)
 	_wing_air -= sin(_wing_pitch) * G * dt * 0.55
 	_wing_air -= dt * 1.4 * ice                                     # намерзание тормозит планер
-	_wing_air = clampf(_wing_air, 10.0, 42.0)
+	_wing_air = clampf(_wing_air, 10.0, 36.0)                       # 130 км/год — межа в пікіруванні
 	if _wing_air < 15.0 + 5.0 * ice:                                # обледеневшее крыло сваливается раньше
 		_wing_pitch = move_toward(_wing_pitch, deg_to_rad(-14.0), dt * deg_to_rad(30.0))   # сваливание
 	# координированный вираж: скорость рыскания от крена

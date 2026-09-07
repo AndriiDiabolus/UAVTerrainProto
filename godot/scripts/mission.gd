@@ -83,12 +83,13 @@ const MISSIONS := [
 	 ]},
 	# Комбіновані місії: погоду задає сама місія ("weather" — індекс пресету weather.gd).
 	# mark із "kinds"/"dx/dz" спавнить ВЛАСНУ групу цілей біля дороги — чужі мітки не рахуються.
-	{"name": "6 · Повний цикл: SHARK → матка → FPV", "mode": "angle", "par": 600.0, "weather": 1,
+	{"name": "6 · Повний цикл: SHARK → матка → FPV", "mode": "angle", "par": 900.0, "weather": 1,
 	 "steps": [
-		{"kind": "mark", "n": 3, "dx": 0, "dz": -1800, "kinds": ["tank", "apc", "soldier"]},
-		{"kind": "relay_at", "dx": 0, "dz": -900, "agl": 60, "r": 150},
+		# ціль — за складкою рельєфу (мін. LOS) на 2.5-3.5 км: зліт із сусідньої долини через хребет
+		{"kind": "mark", "n": 3, "hidden": true, "dmin": 2500.0, "dmax": 3500.0, "kinds": ["tank", "apc", "soldier"]},
+		{"kind": "relay_at", "frac": 0.5, "agl": 60, "r": 200},    # рубіж — половина шляху до цілі
 		{"kind": "strike_marked", "n": 3},
-		{"kind": "recon", "dx": 0, "dz": -1800, "agl": 80, "hold": 4.0, "r": 120.0},   # БДА
+		{"kind": "recon", "frac": 1.0, "agl": 80, "hold": 4.0, "r": 150.0},   # БДА над точкою удару
 	 ],
 	 "quest": [
 		{"who": "SHARK · розвідка", "step": 0, "drone": "wing", "subs": [
@@ -111,10 +112,10 @@ const MISSIONS := [
 			{"t": "утримуйся 4 с — підтвердь ураження", "k": "step"},
 		]},
 	 ]},
-	{"name": "7 · Нічна засідка", "mode": "angle", "par": 480.0, "weather": 4,
+	{"name": "7 · Нічна засідка", "mode": "angle", "par": 700.0, "weather": 4,
 	 "steps": [
-		{"kind": "mark", "n": 2, "dx": 0, "dz": -1200, "kinds": ["apc", "soldier"]},
-		{"kind": "relay_at", "dx": 0, "dz": -600, "agl": 50, "r": 120},
+		{"kind": "mark", "n": 2, "hidden": true, "dmin": 2000.0, "dmax": 2800.0, "kinds": ["apc", "soldier"]},
+		{"kind": "relay_at", "frac": 0.5, "agl": 50, "r": 180},
 		{"kind": "strike_marked", "n": 2},
 	 ],
 	 "quest": [
@@ -230,6 +231,14 @@ func start(id: int) -> void:
 		st["pos"] = _resolve(st)
 		st["done"] = false
 		_steps.append(st)
+	# шаги с "frac": точка на линии старт → позиция опорного шага (ref, за замовчуванням 0);
+	# так рубіж ретранслятора завжди лягає на маршрут до знайденої за хребтом цілі
+	for st: Dictionary in _steps:
+		if st.has("frac"):
+			var refp: Vector3 = _steps[int(st.get("ref", 0))]["pos"]
+			var p := _origin.lerp(refp, float(st["frac"]))
+			p.y = main.height_at(p.x, p.z) + float(st.get("agl", 0.0))
+			st["pos"] = p
 	_build_visuals()
 	if main.get("telemetry") != null:
 		main.telemetry.event("mission_start", {"id": id, "name": m["name"]})
@@ -271,6 +280,8 @@ func _clear_spot(near: Vector3) -> Vector3:
 ## Позиция шага в мире.
 func _resolve(s: Dictionary) -> Vector3:
 	var kind: String = s["kind"]
+	if kind == "mark" and s.get("hidden", false):
+		return _find_hidden_point(float(s.get("dmin", 900.0)), float(s.get("dmax", 1600.0)))
 	if kind == "takeoff" or kind == "strike_marked" or (kind == "mark" and not s.has("dx")):
 		return _origin
 	if kind == "recon" and s.get("auto", false):
@@ -283,14 +294,15 @@ func _resolve(s: Dictionary) -> Vector3:
 	return Vector3(x, g + float(s.get("agl", 0.0)), z)
 
 
-## Точка разведки: 900–1600 м от home, где радиовидимость от оператора (home+2 м) хуже всего.
-func _find_hidden_point() -> Vector3:
+## Точка за рельефом: dmin..dmax от home, где радиовидимость от оператора (home+2 м) хуже всего —
+## естественно выбирает соседнюю долину за хребтом.
+func _find_hidden_point(dmin: float = 900.0, dmax: float = 1600.0) -> Vector3:
 	var op := _origin + Vector3(0, 2, 0)
-	var best := _origin + Vector3(0, 30, -1200)
+	var best := _origin + Vector3(0, 30, -(dmin + dmax) * 0.5)
 	var best_los := 2.0
 	for i in 48:
 		var a := TAU * i / 48.0
-		for d: float in [900.0, 1200.0, 1600.0]:
+		for d: float in [dmin, (dmin + dmax) * 0.5, dmax]:
 			var x := _origin.x + cos(a) * d; var z := _origin.z + sin(a) * d
 			var p := Vector3(x, main.height_at(x, z) + 30.0, z)
 			var l: float = main.los_factor(op, p)
