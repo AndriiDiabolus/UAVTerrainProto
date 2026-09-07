@@ -76,7 +76,7 @@ func check_crash(pos: Vector3) -> String:
 						return "здание"
 			for c: Dictionary in _col_cyl.get(kk, []):
 				if pos.y - DRONE_R < c.top and Vector2(pos.x - c.x, pos.z - c.z).length() < c.r + DRONE_R:
-					return "столб / ЛЭП"
+					return "стовп / ЛЕП"
 	var ck := Vector2i(int(floor(pos.x / CHUNK_M)), int(floor(pos.z / CHUNK_M)))
 	for dx in [-1, 0, 1]:
 		for dz in [-1, 0, 1]:

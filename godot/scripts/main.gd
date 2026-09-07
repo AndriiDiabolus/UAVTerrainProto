@@ -563,7 +563,7 @@ func _build_props() -> void:
 # ======================= Качество (пресеты под слабые ПК) =======================
 var quality := 2                       # 0 низкое / 1 среднее / 2 высокое
 var _quality_from_flag := false
-const QUALITY_NAMES := ["низкое", "среднее", "высокое"]
+const QUALITY_NAMES := ["низька", "середня", "висока"]
 const SETTINGS_PATH := "user://settings.cfg"
 # FSR2: рендерим ~59% пикселей, темпоральная реконструкция до полного окна — по замерам 01.09
 # окно «правая половина Retina» стоило −14 FPS чистого GPU; FSR2 возвращает эту цену.
@@ -681,7 +681,7 @@ func apply_quality(q: int) -> void:
 		cfg.save(SETTINGS_PATH)
 	print("Качество: ", QUALITY_NAMES[quality])
 	if hud != null and hud.has_method("toast"):
-		hud.toast("КАЧЕСТВО · " + QUALITY_NAMES[quality].to_upper(), "", Color(0.85, 0.85, 0.85), 1.5)
+		hud.toast("ЯКІСТЬ · " + QUALITY_NAMES[quality].to_upper(), "", Color(0.85, 0.85, 0.85), 1.5)
 
 
 # ======================= Столкновения, краш, HUD =======================
@@ -737,7 +737,7 @@ var relay_pos := Vector3.ZERO
 func toggle_relay() -> void:
 	if relay_node != null:
 		relay_node.queue_free(); relay_node = null
-		if hud != null: hud.toast("ретранслятор снят")
+		if hud != null: hud.toast("ретранслятор знято")
 		return
 	relay_pos = cam.global_position
 	relay_node = Node3D.new()
@@ -756,7 +756,7 @@ func toggle_relay() -> void:
 	beam.mesh.surface_set_material(0, bmat)
 	relay_node.add_child(beam)
 	relay_node.position = relay_pos
-	if hud != null: hud.toast("РЕТРАНСЛЯТОР развёрнут", "держит канал за препятствием, пока висит", Color(0.6, 0.9, 1.0))
+	if hud != null: hud.toast("РЕТРАНСЛЯТОР розгорнуто", "тримає канал за перешкодою, поки висить", Color(0.6, 0.9, 1.0))
 	if telemetry != null: telemetry.event("relay_deploy", {"x": relay_pos.x, "z": relay_pos.z})
 
 
@@ -800,7 +800,7 @@ func launch_from_mothership() -> void:
 		return
 	if cam.get("drone_id") != "mship":
 		if hud != null:
-			hud.toast("нужна матка", "выбери дрон «матка-носитель» в меню и долети до рубежа", Color(1.0, 0.8, 0.5))
+			hud.toast("потрібна матка", "обери дрон «матка-носій» у меню і долети до рубежу", Color(1.0, 0.8, 0.5))
 		return
 	var drop: Vector3 = cam.global_position                       # тут висит матка после отделения
 	# матка остаётся точкой связи (ретранслятор), видимый гексакоптер + луч
@@ -832,7 +832,7 @@ func launch_from_mothership() -> void:
 		_fpv_osd.battery = 1.0
 		_fpv_osd.signal_q = 1.0
 	if hud != null:
-		hud.toast("FPV ОТДЕЛЁН ОТ МАТКИ", "матка висит и ретранслирует · FPV свежий · работай", Color(0.6, 0.9, 1.0))
+		hud.toast("FPV ВІДДІЛЕНО ВІД МАТКИ", "матка висить і ретранслює · FPV свіжий · працюй", Color(0.6, 0.9, 1.0))
 	if telemetry != null:
 		telemetry.event("mothership_release", {"x": drop.x, "z": drop.z})
 
@@ -892,7 +892,7 @@ func damage_drone(amount: float, what: String) -> void:
 		crash(what)
 		return
 	if hud != null:
-		hud.toast("ПОПАДАНИЕ: %s" % what, "дрон повреждён", Color(1.0, 0.5, 0.3), 1.4)
+		hud.toast("ВЛУЧАННЯ: %s" % what, "дрон пошкоджено", Color(1.0, 0.5, 0.3), 1.4)
 	if drone_dmg >= 0.5 and _dmg_trail == null and fx != null:
 		_dmg_trail = fx.damage_trail(cam)
 
@@ -912,7 +912,7 @@ func crash(what: String) -> void:
 	if telemetry != null:
 		telemetry.event("crash_" + what)
 	if _crash_label != null:
-		_crash_label.text = "⚠  СТОЛКНОВЕНИЕ: %s\nR — перезапуск с точки взлёта" % what
+		_crash_label.text = "⚠  ЗІТКНЕННЯ: %s\nR — перезапуск з точки зльоту" % what
 		_crash_label.visible = true
 	if sound != null:
 		sound.boom(cam.global_position)
@@ -1260,7 +1260,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif _kc(event) == KEY_V and targets != null:
 			if str(cam.get("drone_id")) == "wing":
 				if hud != null:
-					hud.toast("РАЗВЕДЧИК НЕ ВООРУЖЁН", "ЛКМ — отметить цель для ударных дронов", Color(1.0, 0.78, 0.47))
+					hud.toast("РОЗВІДНИК НЕ ОЗБРОЄНИЙ", "ЛКМ — відмітити ціль для ударних дронів", Color(1.0, 0.78, 0.47))
 			else:
 				targets.cycle_weapon()
 		elif _kc(event) == KEY_H:

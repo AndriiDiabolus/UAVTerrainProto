@@ -478,8 +478,8 @@ const BLAST_R := 7.0                # радиус поражения техни
 var ammo := AMMO_MAX
 
 # --- вооружение дрона: 0 = сброс осколочный, 1 = сброс кумулятивный, 2 = БЧ-камикадзе ---
-const WEAPONS := ["сброс ОСКОЛОЧНЫЙ", "сброс КУМУЛЯТИВНЫЙ", "БЧ (камикадзе)", "ВОЗДУХ дробовик"]
-const WEAPON_HINTS := ["по пехоте, R≈10 м; технике нужен прямой", "по технике, класть точно (R≈4.5 м)", "взвод ЛКМ, подрыв при столкновении", "по воздушным целям: конус ЛКМ ≤90 м или таран"]
+const WEAPONS := ["скид ОСКОЛКОВИЙ", "скид КУМУЛЯТИВНИЙ", "БЧ (камікадзе)", "ПОВІТРЯ дробовик"]
+const WEAPON_HINTS := ["по піхоті, R≈10 м; техніці потрібен прямий", "по техніці, класти точно (R≈4.5 м)", "зведення ЛКМ, підрив при зіткненні", "по повітряних цілях: конус ЛКМ ≤90 м або таран"]
 var weapon := 0
 var armed := false                  # БЧ взведена (клавиша применения при выбранной БЧ)
 const KAMI_R := 11.0                # радиус поражения БЧ, м (тяжелее сбросного боеприпаса)
@@ -491,7 +491,7 @@ func cycle_weapon(dir: int = 1) -> void:
 	weapon = posmod(weapon + dir, WEAPONS.size())
 	armed = false
 	if main.hud != null:
-		main.hud.toast("оружие: %s" % WEAPONS[weapon], WEAPON_HINTS[weapon], Color(0.95, 0.9, 0.8))
+		main.hud.toast("зброя: %s" % WEAPONS[weapon], WEAPON_HINTS[weapon], Color(0.95, 0.9, 0.8))
 	if main.get("telemetry") != null:
 		main.telemetry.event("weapon", {"w": WEAPONS[weapon]})
 
@@ -543,7 +543,7 @@ func fire(cam: Camera3D) -> void:
 		# камикадзе: клавиша применения взводит/снимает БЧ
 		armed = not armed
 		if main.hud != null:
-			main.hud.toast("БЧ ВЗВЕДЕНА — столкновение = подрыв" if armed else "БЧ снята с боевого взвода")
+			main.hud.toast("БЧ ЗВЕДЕНА — зіткнення = підрив" if armed else "БЧ знята з бойового зведення")
 		if main.get("sound") != null and armed:
 			main.sound.shot()
 		return
@@ -666,7 +666,7 @@ func _aa_burst(t: Dictionary, origin: Vector3, drone: Vector3, dist: float, rng_
 	var p := base * (1.0 - dist / rng_max) * (0.35 + 0.65 * (1.0 - clampf(spd / 22.0, 0.0, 1.0)))
 	if agl > 120.0: p *= 0.4
 	var hit := randf() < p
-	var what: String = {"tank": "ЗПУ танка", "apc": "автопушка БТР", "soldier": "стрелковое"}.get(t.kind, "огонь")
+	var what: String = {"tank": "ЗКУ танка", "apc": "автогармата БТР", "soldier": "стрілецька"}.get(t.kind, "вогонь")
 	# очередь болидов через fx: каждый выстрел со своей точкой прилёта (промахи — мимо на 2–9 м)
 	if main.get("fx") != null:
 		var prof: Dictionary = main.fx.GUN_PROFILES.get(t.kind, main.fx.GUN_PROFILES["soldier"])
@@ -688,7 +688,7 @@ func _aa_burst(t: Dictionary, origin: Vector3, drone: Vector3, dist: float, rng_
 				if is_instance_valid(main) and not main.crashed:
 					main.damage_drone(dmg, what))
 	elif hit and not main.crashed:
-		main.crash("зенитный огонь (%s)" % what)
+		main.crash("зенітний вогонь (%s)" % what)
 	if main.get("sound") != null:
 		main.sound.shot()
 	if main.get("telemetry") != null:

@@ -13,6 +13,10 @@ var replay_files: PackedStringArray = []
 var _orbit_t := 0.0
 var _panel: Control
 const ITEMS := ["полёт", "миссия", "реплей", "регион", "деревья", "дрон", "скин", "оружие", "камера", "пульт", "рейты", "погода", "качество", "выход"]
+# ITEMS — внутренние ключи match'ей; на экран выводятся украинские названия из этой карты.
+const DISPLAY_UA := {"полёт": "Політ", "миссия": "Місія", "реплей": "Реплей", "регион": "Регіон",
+	"деревья": "Дерева", "дрон": "Дрон", "скин": "Скін", "оружие": "Зброя", "камера": "Камера",
+	"пульт": "Пульт", "рейты": "Рейти", "погода": "Погода", "качество": "Якість", "выход": "Вихід"}
 const ACC := Color(1.0, 0.78, 0.35)
 const TXT := Color(0.92, 0.92, 0.9)
 const DIM := Color(0.78, 0.78, 0.76, 0.8)
@@ -211,20 +215,20 @@ func _draw_panel() -> void:
 	d.draw_rect(Rect2(0, 0, 434, vp.y), Color(0.03, 0.04, 0.055, 0.86))
 	d.draw_line(Vector2(434, 0), Vector2(434, vp.y), Color(1, 1, 1, 0.12), 1.0)
 	d.draw_string(f, Vector2(40, 78), "UAV TERRAIN", HORIZONTAL_ALIGNMENT_LEFT, -1, 42, TXT)
-	d.draw_string(f, Vector2(41, 104), "тренажёр оператора БпЛА · реальный рельеф", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, DIM)
+	d.draw_string(f, Vector2(41, 104), "тренажер оператора БпЛА · реальний рельєф України", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, DIM)
 	var vals := {
 		"полёт": "",
 		"миссия": "%d · %s" % [mission_pick, str(main.mission.MISSIONS[mission_pick]["name"]).split("· ")[1] if main.mission != null else ""],
-		"реплей": (replay_files[replay_pick].trim_prefix("flight_").trim_suffix(".csv") if not replay_files.is_empty() else "нет записей"),
-		"регион": ("степь" if main.region == "steppe" else "Карпаты"),
-		"деревья": ("версия 2 · Meshy" if int(main.trees_ver) == 2 else "версия 1 · классика"),
+		"реплей": (replay_files[replay_pick].trim_prefix("flight_").trim_suffix(".csv") if not replay_files.is_empty() else "немає записів"),
+		"регион": ("степ" if main.region == "steppe" else "Карпати"),
+		"деревья": ("версія 2 · Meshy" if int(main.trees_ver) == 2 else "версія 1 · класика"),
 		"дрон": ("%s · зум ×30" % str(main.cam.drone_name())) if str(main.cam.get("drone_id")) == "wing" \
 			else "%s · T/W %.1f" % [str(main.cam.drone_name()), float(main.cam.P["tw"])],
 		"скин": (str(main.droneview.skin_name()) if main.get("droneview") != null else "—"),
-		"оружие": ("— разведчик" if str(main.cam.get("drone_id")) == "wing" else ("%s ×%d" % [main.targets.WEAPONS[main.targets.weapon], main.targets.weapon_ammo()]) + (" · для FPV" if str(main.cam.get("drone_id")) == "mship" else "")) if main.targets != null else "—",
+		"оружие": ("— розвідник" if str(main.cam.get("drone_id")) == "wing" else ("%s ×%d" % [main.targets.WEAPONS[main.targets.weapon], main.targets.weapon_ammo()]) + (" · для FPV" if str(main.cam.get("drone_id")) == "mship" else "")) if main.targets != null else "—",
 		"камера": (main.hud.fpv_link.camera_name() if main.hud != null and main.hud.fpv_link != null else "—"),
-		"пульт": (("настроен · " + str(main.rc.joy_name()).left(18)) if main.rc.configured else
-			(("найден: " + str(main.rc.joy_name()).left(14) + " — Enter") if main.rc.joy_name() != "" else "не подключен")),
+		"пульт": (("налаштовано · " + str(main.rc.joy_name()).left(18)) if main.rc.configured else
+			(("знайдено: " + str(main.rc.joy_name()).left(14) + " — Enter") if main.rc.joy_name() != "" else "не підключено")),
 		"рейты": str(main.rc.rates_label()),
 		"погода": str(main.weather.label) if main.weather != null else "—",
 		"качество": main.QUALITY_NAMES[main.quality],
@@ -238,34 +242,34 @@ func _draw_panel() -> void:
 		if selc:
 			d.draw_rect(Rect2(22, y - 24, 390, 36), Color(ACC.r, ACC.g, ACC.b, 0.15))
 			d.draw_rect(Rect2(22, y - 24, 390, 36), Color(ACC.r, ACC.g, ACC.b, 0.7), false, 1.5)
-		var name := it.capitalize()
+		var name: String = DISPLAY_UA.get(it, it.capitalize())
 		d.draw_string(f, Vector2(40, y), icons[it] + "  " + name, HORIZONTAL_ALIGNMENT_LEFT, -1, 20, ACC if selc else TXT)
 		var v: String = vals[it]
 		if v != "":
 			var arrows := ("◂ %s ▸" % v) if selc and it != "полёт" else v
 			d.draw_string(f, Vector2(408 - f.get_string_size(arrows, HORIZONTAL_ALIGNMENT_LEFT, -1, 14).x, y), arrows, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, ACC if selc else DIM)
 		y += 50.0
-	d.draw_string(f, Vector2(40, y + 6), "↑↓ пункт · ◂▸ значение · Enter — выбрать · Esc — продолжить", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, DIM)
+	d.draw_string(f, Vector2(40, y + 6), "↑↓ пункт · ◂▸ значення · Enter — обрати · Esc — продовжити", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, DIM)
 	# оверлей мастера калибровки пульта
 	if main.rc != null and main.rc.wizard_active:
 		var cw := 640.0; var chh := 130.0
 		var cx := (vp.x - cw) * 0.5; var cyy := (vp.y - chh) * 0.5
 		d.draw_rect(Rect2(cx, cyy, cw, chh), Color(0.03, 0.05, 0.08, 0.94))
 		d.draw_rect(Rect2(cx, cyy, cw, chh), Color(0.55, 0.85, 1.0, 0.8), false, 2.0)
-		d.draw_string(f, Vector2(cx + 24, cyy + 36), "НАСТРОЙКА ПУЛЬТА  ·  шаг %d/4" % maxi(main.rc.wizard_step + 1, 1), HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color(0.55, 0.85, 1.0))
+		d.draw_string(f, Vector2(cx + 24, cyy + 36), "НАЛАШТУВАННЯ ПУЛЬТА  ·  крок %d/4" % maxi(main.rc.wizard_step + 1, 1), HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color(0.55, 0.85, 1.0))
 		d.draw_string(f, Vector2(cx + 24, cyy + 72), str(main.rc.wizard_hint), HORIZONTAL_ALIGNMENT_LEFT, -1, 18, TXT)
-		d.draw_string(f, Vector2(cx + 24, cyy + 104), "Esc — отмена", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, DIM)
+		d.draw_string(f, Vector2(cx + 24, cyy + 104), "Esc — скасувати", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, DIM)
 	# памятка справа внизу
 	var px := vp.x - 560.0; var py := vp.y - 324.0
 	d.draw_rect(Rect2(px, py, 520, 286), Color(0.03, 0.04, 0.055, 0.72))
 	d.draw_rect(Rect2(px, py, 520, 286), Color(1, 1, 1, 0.14), false, 1.0)
-	d.draw_string(f, Vector2(px + 20, py + 26), "ПАМЯТКА  (в игре — удерживай I)", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, TXT)
-	var rows := [["W/S · A/D · E/Q", "тангаж · крен · газ"], ["мышь / ←→", "рыскание (в GPS — обзор)"],
-		["Tab · B · C", "режим · дрон · камера"], ["U", "вид с борта ⇄ третье лицо"],
-		["F · T · Y", "FPV-очки · тепловизор · палитра"],
-		["ЛКМ", "захват мыши / сброс боеприпаса"], ["N", "следующая миссия"],
-		["V · H · J", "оружие · ретранслятор · матка"],
-		["1–5, 8 · 6 · 7", "погода · туман · дождь"], ["G · M", "качество · звук"], ["R · Esc", "рестарт · меню"]]
+	d.draw_string(f, Vector2(px + 20, py + 26), "ПАМ’ЯТКА  (у грі — тримай I)", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, TXT)
+	var rows := [["W/S · A/D · E/Q", "тангаж · крен · газ"], ["миша / ←→", "рискання (у GPS — огляд)"],
+		["Tab · B · C", "режим · дрон · камера"], ["U", "вид з борту ⇄ третя особа"],
+		["F · T · Y", "FPV-окуляри · тепловізор · палітра"],
+		["ЛКМ", "захоплення миші / скид боєприпасу"], ["N", "наступна місія"],
+		["V · H · J", "зброя · ретранслятор · матка"],
+		["1–5, 8 · 6 · 7", "погода · туман · дощ"], ["G · M", "якість · звук"], ["R · Esc", "рестарт · меню"]]
 	var yy := py + 52.0
 	for r in rows:
 		d.draw_rect(Rect2(px + 20, yy - 14, f.get_string_size(r[0], HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x + 12, 20), Color(1, 1, 1, 0.1))

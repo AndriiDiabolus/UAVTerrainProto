@@ -119,7 +119,7 @@ func set_camera(c: int) -> void:
 	_apply_profile()
 	print("Камера: ", CAMERA_NAMES[camera])
 	if main.hud != null and main.hud.has_method("toast"):
-		var subs := ["1200TVL, объектив 150°, 5.8 ГГц аналог · C — следующая, T — тепловизор",
+		var subs := ["1200TVL, об’єктив 150°, 5.8 ГГц аналог · C — наступна, T — тепловізор",
 			"цифровой HD-линк 16:9: чисто, при потере — фриз/SIGNAL LOST · C — следующая",
 			"ночная ч/б, усиление до ×40 · 5.8 ГГц аналог · C — следующая",
 			"LWIR 256×192, FOV 42°, палитра — Y · T/C — обратно"]

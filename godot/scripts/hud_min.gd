@@ -121,17 +121,17 @@ func _draw() -> void:
 		if str(cam.get("drone_id")) == "wing":
 			segs.append(["зум ×%.0f" % float(cam.get("wing_zoom")), TXT])
 			segs.append(["·", DIM])
-			segs.append(["метки %d" % main.targets.marked_list().size(), Color(1.0, 0.62, 0.2)])
+			segs.append(["мітки %d" % main.targets.marked_list().size(), Color(1.0, 0.62, 0.2)])
 		elif str(cam.get("drone_id")) == "mship":
-			segs.append(["носитель FPV", DIM])
+			segs.append(["носій FPV", DIM])
 		elif main.targets.weapon == 2:
-			segs.append(["БЧ ⚠ ВЗВЕДЕНА" if main.targets.armed else "БЧ снята", Color(1.0, 0.45, 0.35) if main.targets.armed else DIM])
+			segs.append(["БЧ ⚠ ЗВЕДЕНА" if main.targets.armed else "БЧ знята", Color(1.0, 0.45, 0.35) if main.targets.armed else DIM])
 		elif main.targets.weapon == 0:
 			segs.append(["оск ×%d" % int(main.targets.ammo_frag), TXT])
 		else:
 			segs.append(["кум ×%d" % int(main.targets.ammo_heat), TXT])
 	if cam.get("landed") == true:
-		segs.append(["·", DIM]); segs.append(["на земле", DIM])
+		segs.append(["·", DIM]); segs.append(["на землі", DIM])
 	var widths: Array = []
 	var total := 0.0
 	for sg in segs:
@@ -162,13 +162,13 @@ func _draw() -> void:
 		var blocks := ""
 		for i in 5: blocks += "▮" if bat > (i + 0.5) / 5.0 else "▯"
 		_txt(f, Vector2(24, 68), "БАТАРЕЯ %d %%   %s" % [int(bat * 100.0), blocks], 14, col)
-		_txt(f, Vector2(24, 86), "садись" if bat < 0.2 else "возвращайся", 11, Color(col.r, col.g, col.b, 0.7))
+		_txt(f, Vector2(24, 86), "сідай" if bat < 0.2 else "повертайся", 11, Color(col.r, col.g, col.b, 0.7))
 	# --- контекст: канал / РЭБ / failsafe ---
 	var jam_s := ""
 	if main.get("ew") != null:
 		var ji: Dictionary = main.ew.nearest_info(p)
 		if not ji.is_empty() and float(ji.edge) < 0.0:
-			jam_s = "РЭБ: подавление %d %%" % int(float(ji.jam) * 100.0)
+			jam_s = "РЕБ: придушення %d %%" % int(float(ji.jam) * 100.0)
 	var fsafe: bool = cam.get("failsafe") == true
 	if lq < 0.7 or jam_s != "" or fsafe:
 		var col := Color(1.0, 0.5, 0.45) if (fsafe or lq < 0.3) else Color(1.0, 0.78, 0.47)
@@ -176,7 +176,7 @@ func _draw() -> void:
 		var bars := ""
 		for i in 5: bars += "▂▃▅▆▇"[i] if lq > (i + 0.5) / 5.0 else " "
 		_txt(f, Vector2(vp.x - 240, 34), ("✖ FAILSAFE" if fsafe else "КАНАЛ %d %%   %s" % [int(lq * 100.0), bars]), 14, col)
-		var hint := jam_s if jam_s != "" else "вернись в прямую видимость или разверни ретранслятор (H)"
+		var hint := jam_s if jam_s != "" else "повернись у пряму видимість або розгорни ретранслятор (H)"
 		_txt(f, Vector2(vp.x - 240, 52), hint, 11, Color(col.r, col.g, col.b, 0.7))
 	# --- контекст: миссия ---
 	if main.mission != null and main.mission.active:
@@ -189,7 +189,7 @@ func _draw() -> void:
 		var w3: Vector3 = main.weather.wind_vec()
 		if w3.length() >= 5.0:
 			_panel(Rect2(10, vp.y - 64, 176, 36), 0.35, Color(0.78, 0.86, 1.0, 0.35))
-			_txt(f, Vector2(20, vp.y - 40), "ветер %d м/с %s" % [int(w3.length()), main.hud._wind_arrow(w3)], 14, Color(0.8, 0.88, 1.0))
+			_txt(f, Vector2(20, vp.y - 40), "вітер %d м/с %s" % [int(w3.length()), main.hud._wind_arrow(w3)], 14, Color(0.8, 0.88, 1.0))
 	_draw_toast(f, vp)
 
 
@@ -264,7 +264,7 @@ func _draw_shark_panel(f: Font, vp: Vector2, cam: Camera3D, agl: float) -> void:
 	# --- лента скорости (слева) ---
 	var sx := px + 14.0 * k
 	_panel(Rect2(sx, py + 62 * k, 64 * k, 88 * k), 0.45)
-	_txt(f, Vector2(sx + 6 * k, py + 78 * k), "ВОЗД" if is_wing else "СКОР", int(10 * k), DIM)
+	_txt(f, Vector2(sx + 6 * k, py + 78 * k), "ПОВІТР" if is_wing else "ШВИД", int(10 * k), DIM)
 	var scol := TXT if (not is_wing or air >= 16.0) else Color(1.0, 0.5, 0.45)
 	_txt(f, Vector2(sx + 6 * k, py + 102 * k), "%d" % int(air), int(24 * k), scol)
 	_txt(f, Vector2(sx + 40 * k, py + 102 * k), "м/с", int(10 * k), DIM)
@@ -307,29 +307,29 @@ func _draw_shark_panel(f: Font, vp: Vector2, cam: Camera3D, agl: float) -> void:
 	if is_wing:
 		_txt(f, Vector2(px + 14 * k, by), "ЗУМ ×%.0f" % zoom, int(13 * k), acc if zoom > 1.0 else DIM)
 	elif str(cam.get("drone_id")) == "mship":
-		_txt(f, Vector2(px + 14 * k, by), "НОСИТЕЛЬ", int(13 * k), DIM)
+		_txt(f, Vector2(px + 14 * k, by), "НОСІЙ", int(13 * k), DIM)
 	elif main.targets != null:
 		var wshort: Array = ["ОСК", "КУМ", "БЧ", "ДРОБ"]
 		var wi: int = main.targets.weapon
 		if wi == 2:
 			var armed: bool = main.targets.armed
-			_txt(f, Vector2(px + 14 * k, by), "БЧ ВЗВЕДЕНА" if armed else "БЧ снята", int(13 * k),
+			_txt(f, Vector2(px + 14 * k, by), "БЧ ЗВЕДЕНА" if armed else "БЧ знята", int(13 * k),
 				Color(1.0, 0.45, 0.35) if armed else DIM)
 		else:
 			_txt(f, Vector2(px + 14 * k, by), "%s ×%d" % [wshort[clampi(wi, 0, 3)], main.targets.weapon_ammo()], int(13 * k), TXT)
 	var mk: int = main.targets.marked_list().size() if main.targets != null else 0
-	_txt(f, Vector2(px + 116 * k, by), "МЕТКИ %d" % mk, int(13 * k), org if mk > 0 else DIM)
+	_txt(f, Vector2(px + 116 * k, by), "МІТКИ %d" % mk, int(13 * k), org if mk > 0 else DIM)
 	var mode_txt: String
 	var mcol := TXT
 	if is_wing:
-		mode_txt = "АВТО-НАБОР" if auto_c else "РУЧНОЕ"
+		mode_txt = "АВТО-НАБІР" if auto_c else "РУЧНЕ"
 		if auto_c: mcol = Color(0.55, 1.0, 0.59)
 	else:
 		mode_txt = str(cam.mode_name()).split(" ")[0] if cam.has_method("mode_name") else "—"
 	_txt(f, Vector2(px + 196 * k, by), mode_txt, int(13 * k), mcol)
 	if is_wing and air < 15.0 and cam.get("landed") != true:
 		if fmod(Time.get_ticks_msec() / 250.0, 2.0) < 1.0:
-			_txt(f, Vector2(px + 276 * k, by), "СВАЛ!", int(13 * k), Color(1.0, 0.4, 0.35))
+			_txt(f, Vector2(px + 276 * k, by), "ЗВАЛ!", int(13 * k), Color(1.0, 0.4, 0.35))
 
 	# --- строка 2 (НСУ): дом · ветер · время полёта · батарея ---
 	var by2 := py + 196.0 * k
@@ -342,12 +342,12 @@ func _draw_shark_panel(f: Font, vp: Vector2, cam: Camera3D, agl: float) -> void:
 	var arrow: String = arrows[int(round(fposmod(rel + 360.0, 360.0) / 45.0)) % 8]
 	var dl := dh.length()
 	var dist_s := ("%d км" % int(dl / 1000.0)) if dl > 9500.0 else (("%.1f км" % (dl / 1000.0)) if dl > 1000.0 else ("%d м" % int(dl)))
-	_txt(f, Vector2(px + 14 * k, by2), "ДОМ %s %s" % [dist_s, arrow], int(12 * k), TXT)
+	_txt(f, Vector2(px + 14 * k, by2), "ДІМ %s %s" % [dist_s, arrow], int(12 * k), TXT)
 	if main.weather != null:
 		var w3: Vector3 = main.weather.wind_vec()
 		var wcol := TXT if w3.length() < 8.0 else Color(1.0, 0.78, 0.45)
-		_txt(f, Vector2(px + 98 * k, by2), "ВЕТЕР %d м/с %s" % [int(w3.length()), main.hud._wind_arrow(w3)], int(12 * k), wcol)
-	_txt(f, Vector2(px + 192 * k, by2), "ПОЛЁТ %02d:%02d" % [int(_sh_flt) / 60, int(_sh_flt) % 60], int(12 * k), TXT)
+		_txt(f, Vector2(px + 98 * k, by2), "ВІТЕР %d м/с %s" % [int(w3.length()), main.hud._wind_arrow(w3)], int(12 * k), wcol)
+	_txt(f, Vector2(px + 192 * k, by2), "ПОЛІТ %02d:%02d" % [int(_sh_flt) / 60, int(_sh_flt) % 60], int(12 * k), TXT)
 	var bat := 1.0
 	if main._fpv_osd != null:
 		bat = float(main._fpv_osd.battery)
@@ -366,11 +366,11 @@ func _draw_shark_panel(f: Font, vp: Vector2, cam: Camera3D, agl: float) -> void:
 		if icev > 0.01:
 			var blink := fmod(Time.get_ticks_msec() / 350.0, 2.0) < 1.2
 			if blink or icev < 0.3:
-				_txt(f, Vector2(px + 168 * k, by3), "ЛЁД %d%%" % int(icev * 100.0), int(12 * k),
+				_txt(f, Vector2(px + 168 * k, by3), "ЛІД %d%%" % int(icev * 100.0), int(12 * k),
 					Color(1.0, 0.5, 0.45) if icev > 0.5 else Color(0.75, 0.88, 1.0))
 		var lfv := float(cam.get("lens_fog")) if cam.get("lens_fog") != null else 0.0
 		if lfv > 0.1:
-			_txt(f, Vector2(px + 246 * k, by3), "ЛИНЗА ✻", int(12 * k), Color(0.85, 0.9, 0.95))
+			_txt(f, Vector2(px + 246 * k, by3), "ЛІНЗА ✻", int(12 * k), Color(0.85, 0.9, 0.95))
 
 
 ## Карточка разбора вылета: оценка, метрики, штрафы — «тренажёрный» экран результатов.
@@ -385,7 +385,7 @@ func _draw_mission_result(f: Font, vp: Vector2, r: Dictionary) -> void:
 	_panel(Rect2(px, py, W, H), 0.72, Color(accent.r, accent.g, accent.b, 0.55))
 	draw_rect(Rect2(px, py, W, 42 * k), Color(accent.r, accent.g, accent.b, 0.16))
 	_txt(f, Vector2(px + 18 * k, py + 28 * k), str(r.get("mission", "")), int(17 * k), TXT)
-	_txt(f, Vector2(px + 18 * k, py + 74 * k), "ВЫПОЛНЕНО" if ok else "ПРОВАЛ", int(22 * k), accent)
+	_txt(f, Vector2(px + 18 * k, py + 74 * k), "ВИКОНАНО" if ok else "ПРОВАЛ", int(22 * k), accent)
 	# оценка крупно справа
 	var sc := "%d" % int(r.get("score", 0))
 	var scw := f.get_string_size(sc, HORIZONTAL_ALIGNMENT_LEFT, -1, int(52 * k)).x
@@ -393,10 +393,10 @@ func _draw_mission_result(f: Font, vp: Vector2, r: Dictionary) -> void:
 	_txt(f, Vector2(px + W - 52 * k, py + 86 * k), "/100", int(16 * k), DIM)
 	# метрики
 	var rows := [
-		["Время", "%.0f с  (норматив %.0f)" % [float(r.get("time_s", 0)), float(r.get("par_s", 0))]],
+		["Час", "%.0f с  (норматив %.0f)" % [float(r.get("time_s", 0)), float(r.get("par_s", 0))]],
 		["Дрон · режим", "%s · %s" % [str(r.get("drone", "")), str(r.get("mode", ""))]],
-		["Средняя высота", "%.0f м AGL" % float(r.get("avg_agl_m", 0))],
-		["Макс. скорость", "%.0f м/с" % float(r.get("max_speed_ms", 0))],
+		["Середня висота", "%.0f м AGL" % float(r.get("avg_agl_m", 0))],
+		["Макс. швидкість", "%.0f м/с" % float(r.get("max_speed_ms", 0))],
 	]
 	var ry := py + 116.0 * k
 	for row in rows:
@@ -405,24 +405,24 @@ func _draw_mission_result(f: Font, vp: Vector2, r: Dictionary) -> void:
 		ry += 24.0 * k
 	# разбор штрафов
 	draw_line(Vector2(px + 14 * k, ry - 8 * k), Vector2(px + W - 14 * k, ry - 8 * k), Color(1, 1, 1, 0.14), 1.0)
-	_txt(f, Vector2(px + 18 * k, ry + 12 * k), "РАЗБОР", int(12 * k), DIM)
+	_txt(f, Vector2(px + 18 * k, ry + 12 * k), "РОЗБІР", int(12 * k), DIM)
 	ry += 32.0 * k
 	var pens := []
 	if int(r.get("pen_crash", 0)) > 0:
-		pens.append(["столкновения ×%d" % int(r.get("crashes", 0)), -int(r.get("pen_crash", 0))])
+		pens.append(["зіткнення ×%d" % int(r.get("crashes", 0)), -int(r.get("pen_crash", 0))])
 	if int(r.get("pen_gates", 0)) > 0:
-		pens.append(["пропущенные ворота ×%d" % int(r.get("gates_missed", 0)), -int(r.get("pen_gates", 0))])
+		pens.append(["пропущені ворота ×%d" % int(r.get("gates_missed", 0)), -int(r.get("pen_gates", 0))])
 	if int(r.get("pen_time", 0)) > 0:
-		pens.append(["превышение норматива", -int(r.get("pen_time", 0))])
+		pens.append(["перевищення нормативу", -int(r.get("pen_time", 0))])
 	if pens.is_empty():
-		_txt(f, Vector2(px + 18 * k, ry), "чистый вылет — без штрафов", int(13 * k), Color(0.55, 1.0, 0.59))
+		_txt(f, Vector2(px + 18 * k, ry), "чистий виліт — без штрафів", int(13 * k), Color(0.55, 1.0, 0.59))
 		ry += 24.0 * k
 	else:
 		for pn in pens:
 			_txt(f, Vector2(px + 18 * k, ry), str(pn[0]), int(13 * k), TXT)
 			_txt(f, Vector2(px + W - 70 * k, ry), "%d" % int(pn[1]), int(13 * k), Color(1.0, 0.6, 0.45))
 			ry += 22.0 * k
-	_txt(f, Vector2(px + 18 * k, py + H - 14 * k), "N — следующая миссия · R — повторить · Esc — меню", int(12 * k), DIM)
+	_txt(f, Vector2(px + 18 * k, py + H - 14 * k), "N — наступна місія · R — повторити · Esc — меню", int(12 * k), DIM)
 
 
 func _draw_toast(f: Font, vp: Vector2) -> void:

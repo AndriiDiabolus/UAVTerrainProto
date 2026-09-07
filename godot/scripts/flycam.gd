@@ -31,7 +31,7 @@ var st_yaw := 0.0
 var st_thr := 0.0
 
 enum { MODE_GPS, MODE_ANGLE, MODE_ACRO }
-const MODE_NAMES := ["GPS · удержание", "ANGLE · стабилизация", "ACRO"]
+const MODE_NAMES := ["GPS · утримання", "ANGLE · стабілізація", "ACRO"]
 
 const G := 9.81
 const SPEED_MIN := 8.0
@@ -47,15 +47,15 @@ const CLEARANCE := 0.35              # высота «ног» над землё
 ## Профили: масса, тяговооружённость, drag (F=-c·v|v|), макс. наклон (ANGLE), макс. угловые скорости,
 ## отклик по угл. скорости (сек), экспонента стиков, наклон камеры (FPV), предел GPS-скорости.
 const DRONES := {
-	"fpv7":  {"name": "FPV 7\" ударный", "mass": 1.15, "tw": 3.2, "drag": 0.016, "tilt": 55.0,
+	"fpv7":  {"name": "FPV 7\" ударний", "mass": 1.15, "tw": 3.2, "drag": 0.016, "tilt": 55.0,
 		"rate": 560.0, "yaw_rate": 360.0, "tau": 0.06, "expo": 0.45, "cam_tilt": 25.0, "gps_v": 26.0},
-	"fpv5":  {"name": "FPV 5\" гоночный", "mass": 0.68, "tw": 5.5, "drag": 0.011, "tilt": 60.0,
+	"fpv5":  {"name": "FPV 5\" гоночний", "mass": 0.68, "tw": 5.5, "drag": 0.011, "tilt": 60.0,
 		"rate": 800.0, "yaw_rate": 480.0, "tau": 0.045, "expo": 0.5, "cam_tilt": 32.0, "gps_v": 30.0},
-	"mavic": {"name": "квадрокоптер (класс Mavic)", "mass": 0.9, "tw": 2.0, "drag": 0.022, "tilt": 35.0,
+	"mavic": {"name": "квадрокоптер (клас Mavic)", "mass": 0.9, "tw": 2.0, "drag": 0.022, "tilt": 35.0,
 		"rate": 200.0, "yaw_rate": 120.0, "tau": 0.12, "expo": 0.2, "cam_tilt": 0.0, "gps_v": 20.0},
-	"mship": {"name": "матка-носитель (несёт FPV)", "mass": 7.5, "tw": 1.7, "drag": 0.030, "tilt": 22.0,
+	"mship": {"name": "матка-носій (несе FPV)", "mass": 7.5, "tw": 1.7, "drag": 0.030, "tilt": 22.0,
 		"rate": 130.0, "yaw_rate": 70.0, "tau": 0.22, "expo": 0.15, "cam_tilt": 8.0, "gps_v": 12.0},
-	"wing": {"name": "SHARK · разведчик-крыло", "mass": 5.0, "tw": 0.6, "drag": 0.02, "tilt": 45.0,
+	"wing": {"name": "SHARK · розвідник-крило", "mass": 5.0, "tw": 0.6, "drag": 0.02, "tilt": 45.0,
 		"rate": 90.0, "yaw_rate": 40.0, "tau": 0.3, "expo": 0.2, "cam_tilt": 0.0, "gps_v": 25.0},
 }
 var P: Dictionary = DRONES["fpv7"]
@@ -157,9 +157,9 @@ func set_drone(id: String) -> void:
 func cycle_mode() -> void:
 	mode = (mode + 1) % 3
 	if main != null and main.hud != null and main.hud.has_method("toast"):
-		var tips := ["W/S вперёд-назад · A/D вбок · E/Q вверх-вниз · мышь — камера",
-			"W/S наклон · A/D крен · E/Q газ · мышь/←→ рыскание · выравнивается сам",
-			"стики = угловая скорость · E/Q газ · выравнивания нет"]
+		var tips := ["W/S вперед-назад · A/D вбік · E/Q вгору-вниз · миша — камера",
+			"W/S нахил · A/D крен · E/Q газ · миша/←→ рискання · вирівнюється сам",
+			"стіки = кутова швидкість · E/Q газ · вирівнювання немає"]
 		main.hud.toast("РЕЖИМ · " + MODE_NAMES[mode], tips[mode], Color(0.9, 0.9, 0.9))
 	if mode == MODE_GPS:
 		# при возврате в GPS подвес выравнивается по текущему курсу
@@ -173,7 +173,7 @@ func cycle_drone() -> void:
 	var keys := DRONES.keys()
 	set_drone(keys[(keys.find(drone_id) + 1) % keys.size()])
 	if main != null and main.hud != null and main.hud.has_method("toast"):
-		main.hud.toast("ДРОН · " + drone_name(), "масса %.2f кг · T/W %.1f · до %d°/с" % [float(P["mass"]), float(P["tw"]), int(P["rate"])], Color(0.9, 0.9, 0.9))
+		main.hud.toast("ДРОН · " + drone_name(), "маса %.2f кг · T/W %.1f · до %d°/с" % [float(P["mass"]), float(P["tw"]), int(P["rate"])], Color(0.9, 0.9, 0.9))
 
 
 func mode_name() -> String:
@@ -206,14 +206,14 @@ func _unhandled_input(event: InputEvent) -> void:
 						var mt: Dictionary = main.targets.mark_at(self, clampf(fov * 0.12, 0.5, 5.0))
 						if main.hud != null and main.hud.has_method("toast"):
 							if mt.is_empty():
-								main.hud.toast("ЦЕЛЬ НЕ ЗАХВАЧЕНА", "наведи перекрестие точнее (зум — колесо)", Color(1.0, 0.78, 0.47), 1.2)
+								main.hud.toast("ЦІЛЬ НЕ ЗАХОПЛЕНА", "наведи перехрестя точніше (зум — колесо)", Color(1.0, 0.78, 0.47), 1.2)
 							else:
-								var nm := {"tank": "ТАНК", "apc": "БТР", "soldier": "ПЕХОТА"}
-								main.hud.toast("ЦЕЛЬ ОТМЕЧЕНА · %s" % nm.get(mt.kind, "ЦЕЛЬ"), "метку видят все дроны", Color(1.0, 0.62, 0.2), 1.6)
+								var nm := {"tank": "ТАНК", "apc": "БТР", "soldier": "ПІХОТА"}
+								main.hud.toast("ЦІЛЬ ВІДМІЧЕНА · %s" % nm.get(mt.kind, "ЦІЛЬ"), "мітку бачать усі дрони", Color(1.0, 0.62, 0.2), 1.6)
 					elif drone_id == "mship":
 						# матка — невооружённый носитель: оружие доступно только FPV после отделения
 						if main.hud != null and main.hud.has_method("toast"):
-							main.hud.toast("МАТКА НЕ ВООРУЖЕНА", "оружие — у FPV после отделения (J)", Color(1.0, 0.78, 0.47))
+							main.hud.toast("МАТКА НЕ ОЗБРОЄНА", "зброя — у FPV після відділення (J)", Color(1.0, 0.78, 0.47))
 					elif main.targets.weapon == 3:
 						if main.get("airtargets") != null:
 							main.airtargets.shoot(self)
@@ -432,7 +432,7 @@ func _step_atmo(dt: float) -> void:
 		if ice > 0.03 and not _ice_warned:
 			_ice_warned = true
 			if main.hud != null and main.hud.has_method("toast"):
-				main.hud.toast("ОБЛЕДЕНЕНИЕ", "снижайся в тёплый воздух — падает тяга", Color(0.7, 0.85, 1.0), 3.0)
+				main.hud.toast("ОБМЕРЗАННЯ", "знижуйся в тепле повітря — падає тяга", Color(0.7, 0.85, 1.0), 3.0)
 	elif t_air > 2.0:
 		ice = maxf(ice - dt / 20.0, 0.0)
 		if ice < 0.01:
@@ -452,7 +452,7 @@ func _step_wing(dt: float, s: Dictionary, wind: Vector3) -> void:
 		_wing_auto = true
 		position.y += 1.5
 		if main.hud != null and main.hud.has_method("toast"):
-			main.hud.toast("КАТАПУЛЬТА", "авто-набор до 350 м · колесо мыши — зум · ЛКМ — отметить цель", Color(0.7, 0.9, 1.0))
+			main.hud.toast("КАТАПУЛЬТА", "авто-набір до 350 м · колесо миші — зум · ЛКМ — відмітити ціль", Color(0.7, 0.9, 1.0))
 	if absf(float(s.p)) > 0.15 or absf(float(s.r)) > 0.3:
 		_wing_auto = false                       # пилот взял управление
 	if _wing_auto:

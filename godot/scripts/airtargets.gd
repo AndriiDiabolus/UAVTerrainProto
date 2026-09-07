@@ -155,7 +155,7 @@ func _kill(e: Dictionary) -> void:
 	if main.get("fx") != null:
 		main.fx.wreck_fire(e.node)          # дымит при падении
 	if main.hud != null:
-		main.hud.toast("ВОЗДУШНАЯ ЦЕЛЬ СБИТА", "", Color(0.6, 1.0, 0.6))
+		main.hud.toast("ПОВІТРЯНУ ЦІЛЬ ЗБИТО", "", Color(0.6, 1.0, 0.6))
 	if main.get("telemetry") != null:
 		main.telemetry.event("air_kill", {"kind": e.kind})
 

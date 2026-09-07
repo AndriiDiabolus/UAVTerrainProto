@@ -40,7 +40,7 @@ var _hint_t := 0.0
 
 const MISSIONS := [
 	{},   # 0 — нет
-	{"name": "1 · Взлёт — коридор — посадка", "mode": "angle", "par": 90.0,
+	{"name": "1 · Зліт — коридор — посадка", "mode": "angle", "par": 90.0,
 	 "steps": [
 		{"kind": "takeoff", "agl": 8.0},
 		{"kind": "gate", "dx": 0, "dz": -120, "agl": 15, "r": 7},
@@ -50,7 +50,7 @@ const MISSIONS := [
 		{"kind": "gate", "dx": 0, "dz": -760, "agl": 12, "r": 7},
 		{"kind": "land", "dx": 0, "dz": -840, "r": 6},
 	 ]},
-	{"name": "2 · Слалом ACRO (низко)", "mode": "acro", "par": 60.0,
+	{"name": "2 · Слалом ACRO (низько)", "mode": "acro", "par": 60.0,
 	 "steps": [
 		{"kind": "gate", "dx": 40, "dz": -90, "agl": 6, "r": 5},
 		{"kind": "gate", "dx": -40, "dz": -170, "agl": 8, "r": 5},
@@ -61,14 +61,14 @@ const MISSIONS := [
 		{"kind": "gate", "dx": 0, "dz": -560, "agl": 5, "r": 5},
 		{"kind": "gate", "dx": 0, "dz": -640, "agl": 5, "r": 5},
 	 ]},
-	{"name": "3 · Разведка за хребтом", "mode": "angle", "par": 240.0,
+	{"name": "3 · Розвідка за хребтом", "mode": "angle", "par": 240.0,
 	 "steps": [
 		{"kind": "takeoff", "agl": 8.0},
 		{"kind": "recon", "auto": true, "hold": 5.0, "r": 120.0},   # точка выбирается там, где LOS от home < 0.3
 		{"kind": "gate", "dx": 0, "dz": -60, "agl": 20, "r": 12},   # вернуться в зону сигнала
 		{"kind": "land", "dx": 0, "dz": 0, "r": 8},
 	 ]},
-	{"name": "4 · Ударный заход", "mode": "angle", "par": 150.0,
+	{"name": "4 · Ударний захід", "mode": "angle", "par": 150.0,
 	 "steps": [
 		{"kind": "takeoff", "agl": 8.0},
 		{"kind": "strike", "dx": 0, "dz": -900, "kinds": ["tank", "apc"]},
@@ -142,13 +142,13 @@ func start(id: int) -> void:
 		switched = true
 	var names := ["GPS", "ANGLE", "ACRO"]
 	var tips := {
-		0: "GPS: W/S вперёд-назад · A/D вбок · E/Q вверх-вниз · мышь — камера",
-		1: "ANGLE: W/S наклон · A/D крен · E/Q газ (без удержания высоты) · мышь/←→ рыскание",
-		2: "ACRO: W/S — скорость тангажа · A/D — крена · E/Q газ · мышь/←→ рыскание · выравнивания нет",
+		0: "GPS: W/S вперед-назад · A/D вбік · E/Q вгору-вниз · миша — камера",
+		1: "ANGLE: W/S нахил · A/D крен · E/Q газ (без утримання висоти) · миша/←→ рискання",
+		2: "ACRO: W/S — швидкість тангажа · A/D — крену · E/Q газ · миша/←→ рискання · вирівнювання немає",
 	}
 	var cur: int = int(main.cam.mode)
-	var hint := "МИССИЯ %s\nРежим полёта: %s%s\n%s\nTab — сменить режим · N — следующая миссия" % [
-		m["name"], names[cur], "" if switched or cur == want_i else "  (рекомендуется %s — нажми Tab)" % names[want_i], tips[cur]]
+	var hint := "МІСІЯ %s\nРежим польоту: %s%s\n%s\nTab — змінити режим · N — наступна місія" % [
+		m["name"], names[cur], "" if switched or cur == want_i else "  (рекомендовано %s — натисни Tab)" % names[want_i], tips[cur]]
 	if _result_label != null:
 		_result_label.text = hint
 		_result_label.visible = true
@@ -428,8 +428,8 @@ func _finish(success: bool) -> void:
 		"pen_crash": crashes * 20, "pen_gates": missed * 15,
 	}
 	last_result = res
-	result_text = "%s\n%s   ОЦЕНКА %d / 100\nвремя %.0f с (норматив %.0f) · крашей %d · пропущено ворот %d\nмакс. скорость %.0f м/с · средняя AGL %.0f м\nN — следующая миссия" % [
-		m["name"], "ВЫПОЛНЕНО" if success else "ПРОВАЛ", int(round(score)), t, par, crashes, missed, max_speed, avg_agl]
+	result_text = "%s\n%s   ОЦІНКА %d / 100\nчас %.0f с (норматив %.0f) · крашів %d · пропущено воріт %d\nмакс. швидкість %.0f м/с · середня AGL %.0f м\nN — наступна місія" % [
+		m["name"], "ВИКОНАНО" if success else "ПРОВАЛ", int(round(score)), t, par, crashes, missed, max_speed, avg_agl]
 	if _result_label != null:
 		_result_label.visible = false            # стартовая шпаргалка не должна лежать на карточке
 		_hint_t = 0.0
@@ -504,30 +504,30 @@ func self_test() -> bool:
 func hud_line() -> String:
 	if not active:
 		if result_text != "": return ""
-		return "N — начать миссию"
+		return "N — почати місію"
 	var s := current_step()
 	if s.is_empty(): return ""
 	var pos: Vector3 = main.cam.global_position
 	var what := ""
 	match s["kind"]:
-		"takeoff": what = "взлёт до %d м AGL" % int(s["agl"])
+		"takeoff": what = "зліт до %d м AGL" % int(s["agl"])
 		"gate": what = "ворота %d м" % int(pos.distance_to(s["pos"]))
-		"land": what = "посадка на площадку %d м" % int(Vector2(pos.x - s["pos"].x, pos.z - s["pos"].z).length())
-		"recon": what = "разведка: точка %d м, удержание %.0f/%.0f с" % [int(pos.distance_to(s["pos"])), _hold_t, float(s["hold"])]
+		"land": what = "посадка на майданчик %d м" % int(Vector2(pos.x - s["pos"].x, pos.z - s["pos"].z).length())
+		"recon": what = "розвідка: точка %d м, утримання %.0f/%.0f с" % [int(pos.distance_to(s["pos"])), _hold_t, float(s["hold"])]
 		"strike":
 			var alive := 0
 			for tg in _strike_targets:
 				if tg.alive: alive += 1
-			what = "уничтожить цели у дороги (%d м), осталось %d" % [int(pos.distance_to(s["pos"])), alive]
+			what = "знищити цілі біля дороги (%d м), лишилось %d" % [int(pos.distance_to(s["pos"])), alive]
 		"mark":
 			var mk: int = main.targets.marked_list().size() if main.targets != null else 0
-			what = "разведчик SHARK (B): отметь целей %d/%d (зум — колесо, ЛКМ — метка)" % [mk, int(s["n"])]
+			what = "розвідник SHARK (B): відміть цілей %d/%d (зум — колесо, ЛКМ — мітка)" % [mk, int(s["n"])]
 		"strike_marked":
 			var killed := 0
 			for tg in _marked_snapshot:
 				if not tg.alive: killed += 1
-			what = "FPV (B): уничтожь отмеченные цели %d/%d" % [killed, int(s["n"])]
-	return "МИССИЯ %s · шаг %d/%d · %s · %02d:%02d" % [mission_name(), step + 1, _steps.size(), what,
+			what = "FPV (B): знищ відмічені цілі %d/%d" % [killed, int(s["n"])]
+	return "МІСІЯ %s · крок %d/%d · %s · %02d:%02d" % [mission_name(), step + 1, _steps.size(), what,
 		int(t) / 60, int(t) % 60]
 
 

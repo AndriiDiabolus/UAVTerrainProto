@@ -22,7 +22,7 @@ var mission_marker: Label
 func _toggle_sound() -> void:
 	_sound_muted = not _sound_muted
 	AudioServer.set_bus_mute(0, _sound_muted)
-	toast("ЗВУК: ВЫКЛ" if _sound_muted else "ЗВУК: ВКЛ", "", Color(0.8, 0.8, 0.8), 1.2)
+	toast("ЗВУК: ВИМК" if _sound_muted else "ЗВУК: УВІМК", "", Color(0.8, 0.8, 0.8), 1.2)
 
 
 var _min: Control
@@ -73,7 +73,7 @@ func setup(m: Node3D) -> void:
 
 	# кнопка звука в правом верхнем углу
 	_sound_btn = Button.new()
-	_sound_btn.text = "  Звук: ВКЛ  "
+	_sound_btn.text = "  Звук: УВІМК  "
 	_sound_btn.focus_mode = Control.FOCUS_NONE
 	_sound_btn.add_theme_font_size_override("font_size", 15)
 	_sound_btn.set_anchors_preset(Control.PRESET_TOP_RIGHT)
@@ -94,7 +94,7 @@ func setup(m: Node3D) -> void:
 
 	# указатель на ближайшую цель
 	target_marker = Label.new()
-	target_marker.text = "◆ ЦЕЛЬ"
+	target_marker.text = "◆ ЦІЛЬ"
 	target_marker.add_theme_font_size_override("font_size", 16)
 	target_marker.add_theme_color_override("font_color", Color(1, 0.25, 0.15))
 	target_marker.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.9))
@@ -247,9 +247,9 @@ func _process(_dt: float) -> void:
 			var ji: Dictionary = main.ew.nearest_info(p)
 			if not ji.is_empty():
 				if float(ji.edge) < 0.0:
-					jline = "   ⚠ РЭБ: подавление %d%%" % int(float(ji.jam) * 100.0)
+					jline = "   ⚠ РЕБ: придушення %d%%" % int(float(ji.jam) * 100.0)
 				elif float(ji.edge) < 400.0:
-					jline = "   РЭБ-зона через %d м" % int(ji.edge)
+					jline = "   РЕБ-зона через %d м" % int(ji.edge)
 		var fs: String = "   ✖ FAILSAFE" if cam.get("failsafe") == true else ""
 		tline += "\nКанал: %d%%%s%s" % [int(lq * 100.0), jline, fs]
 	if main.mission != null:
@@ -260,13 +260,13 @@ func _process(_dt: float) -> void:
 		var w: Vector3 = main.weather.wind_vec()
 		wline = "\n%s   ветер %d м/с %s" % [main.weather.label, int(w.length()), _wind_arrow(w)]
 		if _wind_label != null:
-			_wind_label.text = "Ветер: %d м/с %s" % [int(w.length()), _wind_arrow(w)]
+			_wind_label.text = "Вітер: %d м/с %s" % [int(w.length()), _wind_arrow(w)]
 	var fline := ""
 	if cam.has_method("mode_name"):
 		var src: String = ("пульт: " + str(cam.joy_name)) if str(cam.joy_name) != "" else "клавиатура"
 		fline = "\n[%s]  %s  ·  %s%s  ·  качество: %s (G)" % [cam.mode_name(), cam.drone_name(), src,
 			("  ·  НА ЗЕМЛЕ" if cam.landed else ""), main.QUALITY_NAMES[main.quality]]
-	hud_label.text = "%.5f°N  %.5f°E\nMSL %d м   AGL %d м\nскорость %d м/с   FPS %d%s%s%s\nW/S тангаж · A/D крен · E/Q газ · ←/→ рыскание · Tab режим · B дрон · Shift буст · ЛКМ огонь · 1-5/8/P погода · 6 туман · 7 дождь · M звук · F FPV · C камера · T тепло · R рестарт" % [
+	hud_label.text = "%.5f°N  %.5f°E\nMSL %d м   AGL %d м\nшвидкість %d м/с   FPS %d%s%s%s\nW/S тангаж · A/D крен · E/Q газ · ←/→ рискання · Tab режим · B дрон · Shift буст · ЛКМ вогонь · 1-5/8/P погода · 6 туман · 7 дощ · M звук · F FPV · C камера · T тепло · R рестарт" % [
 		ll.x, ll.y, int(p.y), int(p.y - ground), int(spd), int(Engine.get_frames_per_second()), fline, tline, wline]
 	_update_target_marker(p)
 	_update_marked_markers()
@@ -335,7 +335,7 @@ func _update_marked_markers() -> void:
 			mk.visible = false
 			continue
 		mk.visible = true
-		mk.text = "◇ %s  %d м" % [names.get(t.kind, "ЦЕЛЬ"), int(cam.global_position.distance_to(t.node.position))]
+		mk.text = "◇ %s  %d м" % [names.get(t.kind, "ЦІЛЬ"), int(cam.global_position.distance_to(t.node.position))]
 		mk.position = sp - mk.size * 0.5
 	if lst.size() > _marked_labels.size():
 		pass                                        # хвост списка не влезает в пул — не критично
@@ -367,8 +367,8 @@ func _update_target_marker(p: Vector3) -> void:
 	sp.x = clampf(sp.x, margin, vp.x - margin)
 	sp.y = clampf(sp.y, margin, vp.y - margin)
 	target_marker.position = sp - target_marker.size * 0.5
-	var names := {"tank": "ТАНК", "apc": "БТР", "soldier": "ПЕХОТА", "air_wing": "БпЛА-крыло", "air_quad": "БпЛА-квадро"}
-	var name_ru: String = names.get(n.kind, "ЦЕЛЬ")
+	var names := {"tank": "ТАНК", "apc": "БТР", "soldier": "ПІХОТА", "air_wing": "БпЛА-крило", "air_quad": "БпЛА-квадро"}
+	var name_ru: String = names.get(n.kind, "ЦІЛЬ")
 	var air: bool = str(n.kind).begins_with("air_")
 	target_marker.add_theme_color_override("font_color", Color(0.35, 0.7, 1.0) if air else Color(1, 0.25, 0.15))
 	target_marker.text = "◆ %s  %d м" % [name_ru, int(n.dist)]

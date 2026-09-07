@@ -9,7 +9,7 @@ extends Node3D
 var main: Node3D
 var skin := 1
 var third := false
-const SKIN_NAMES := ["классика", "полевой", "ночной"]
+const SKIN_NAMES := ["класика", "польовий", "нічний"]
 
 var model: Node3D
 var _props: Array = []

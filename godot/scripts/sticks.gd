@@ -29,7 +29,7 @@ func _draw() -> void:
 	var yaw: float = cam.get("st_yaw")
 	var pit: float = cam.get("st_pitch")
 	var rol: float = cam.get("st_roll")
-	_box(Vector2(0, 0), yaw, thr * 2.0 - 1.0, "ГАЗ / РЫСК", f)
+	_box(Vector2(0, 0), yaw, thr * 2.0 - 1.0, "ГАЗ / РИСК", f)
 	_box(Vector2(BOX + GAP, 0), rol, pit, "ТАНГ / КРЕН", f)
 
 
