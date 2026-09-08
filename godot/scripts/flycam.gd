@@ -464,7 +464,12 @@ func _step_lock(dt: float) -> void:
 		return
 	if main == null or main.targets == null:
 		return
-	var tg: Dictionary = main.targets.best_in_cone(self, clampf(fov * 0.12, 0.5, 5.0))
+	var cone := clampf(fov * 0.12, 0.5, 5.0)
+	var tg: Dictionary = main.targets.best_in_cone(self, cone)
+	# гістерезис: тримаємось обраного кандидата, поки він у конусі. Інакше на 2 км конус
+	# накриває всю групу цілей, «best» стрибає між ними і скидає прогрес — захват не набирався.
+	if not _lock_cand.is_empty() and main.targets.in_cone(self, _lock_cand, cone * 1.3):
+		tg = _lock_cand
 	if not tg.is_empty() and tg == _lock_cand:
 		lock_t += dt
 		if lock_t >= LOCK_NEED:
@@ -477,6 +482,10 @@ func _step_lock(dt: float) -> void:
 				var nm := {"tank": "ТАНК", "apc": "БТР", "soldier": "ПІХОТА"}
 				main.hud.toast("ЗАФІКСОВАНО Й ВІДМІЧЕНО · %s" % nm.get(tg.kind, "ЦІЛЬ"),
 					"мітку бачать усі дрони · миша — зірвати супровід і шукати наступну", Color(0.5, 1.0, 0.55), 2.4)
+	elif tg.is_empty():
+		lock_t = maxf(0.0, lock_t - dt * 1.5)   # коротке зісковзування не обнуляє прогрес
+		if lock_t <= 0.0:
+			_lock_cand = {}
 	else:
 		_lock_cand = tg
 		lock_t = 0.0

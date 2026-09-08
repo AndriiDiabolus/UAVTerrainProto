@@ -618,6 +618,16 @@ func best_in_cone(cam: Camera3D, max_ang_deg: float) -> Dictionary:
 	return best
 
 
+## Чи лишається ціль у конусі оптичної осі (гістерезис автозахвату).
+func in_cone(cam: Camera3D, t: Dictionary, max_ang_deg: float) -> bool:
+	if t.is_empty() or not bool(t.get("alive", false)):
+		return false
+	var to: Vector3 = (t.node.position + Vector3(0, 1.5, 0)) - cam.global_position
+	if to.length() > 6000.0:
+		return false
+	return (-cam.global_transform.basis.z).angle_to(to.normalized()) < deg_to_rad(max_ang_deg)
+
+
 ## Помітити конкретну ціль (зафіксовану автозахватом супроводу).
 func mark_target(t: Dictionary) -> void:
 	if not t.is_empty() and bool(t.get("alive", false)) and not bool(t.get("marked", false)):
