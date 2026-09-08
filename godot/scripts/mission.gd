@@ -83,10 +83,10 @@ const MISSIONS := [
 	 ]},
 	# Комбіновані місії: погоду задає сама місія ("weather" — індекс пресету weather.gd).
 	# mark із "kinds"/"dx/dz" спавнить ВЛАСНУ групу цілей біля дороги — чужі мітки не рахуються.
-	{"name": "6 · Повний цикл: SHARK → матка → FPV", "mode": "angle", "par": 900.0, "weather": 1,
+	{"name": "6 · Повний цикл: SHARK → матка → FPV", "mode": "angle", "par": 700.0, "weather": 1,
 	 "steps": [
-		# ціль — за складкою рельєфу (мін. LOS) на 2.5-3.5 км: зліт із сусідньої долини через хребет
-		{"kind": "mark", "n": 3, "hidden": true, "dmin": 2500.0, "dmax": 3500.0, "kinds": ["tank", "apc", "soldier"]},
+		# ціль — за складкою рельєфу (мін. LOS) не далі 1.8 км від позиції старту SHARK
+		{"kind": "mark", "n": 3, "hidden": true, "dmin": 1200.0, "dmax": 1800.0, "kinds": ["tank", "apc", "soldier"]},
 		{"kind": "relay_at", "frac": 0.5, "agl": 60, "r": 200},    # рубіж — половина шляху до цілі
 		{"kind": "strike_marked", "n": 3},
 		{"kind": "recon", "frac": 1.0, "agl": 80, "hold": 4.0, "r": 150.0},   # БДА над точкою удару
