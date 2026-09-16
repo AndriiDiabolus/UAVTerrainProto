@@ -480,6 +480,156 @@ func _plan_for(id: int) -> Dictionary:
 	return _plans[id]
 
 
+# ============================ тактична карта ============================
+
+var _map_sv: SubViewport
+var _map_bg: ColorRect
+var _map_vec: Control
+var _map_key := ""
+var _map_view := Rect2()
+var _vec_roads: Array = []      # [{c, p: PackedVector2Array, bb: Rect2}]
+var _vec_water: Array = []
+var _vec_lakes: Array = []      # [{p, bb, ok}] — ok: полігон тріангулюється
+var _vec_bld := PackedFloat32Array()   # x, z, w, d, ang по 5
+
+
+func _ensure_map() -> void:
+	if _map_sv != null:
+		return
+	_map_sv = SubViewport.new()
+	_map_sv.disable_3d = true
+	_map_sv.msaa_2d = Viewport.MSAA_4X
+	_map_sv.render_target_update_mode = SubViewport.UPDATE_DISABLED
+	add_child(_map_sv)
+	_map_bg = ColorRect.new()
+	var sm := ShaderMaterial.new()
+	sm.shader = load("res://scripts/tactical_map.gdshader")
+	# сирі висоти як RG8 без копіювання: 16 біт little-endian = R молодший, G старший
+	var img := Image.create_from_data(main.px, main.px, false, Image.FORMAT_RG8, main.height_bytes)
+	sm.set_shader_parameter("height_tex", ImageTexture.create_from_image(img))
+	sm.set_shader_parameter("px", float(main.px))
+	sm.set_shader_parameter("e_min", float(main.e_min))
+	sm.set_shader_parameter("e_max", float(main.e_max))
+	sm.set_shader_parameter("size_m", float(main.size_m))
+	if main.terrain_mat != null:
+		sm.set_shader_parameter("mask_tex", main.terrain_mat.get_shader_parameter("mask_tex"))
+		var mpx: Variant = main.terrain_mat.get_shader_parameter("mask_px")
+		sm.set_shader_parameter("mask_px", float(mpx) if mpx != null else 4096.0)
+	_map_bg.material = sm
+	_map_sv.add_child(_map_bg)
+	_map_vec = Control.new()
+	_map_vec.draw.connect(_draw_map_vectors)
+	_map_sv.add_child(_map_vec)
+	_load_vectors()
+
+
+func _poly_entry(pts: Array) -> Dictionary:
+	var pv := PackedVector2Array()
+	var mn := Vector2(INF, INF)
+	var mx := Vector2(-INF, -INF)
+	for q: Array in pts:
+		var v := Vector2(float(q[0]), float(q[1]))
+		pv.append(v)
+		mn = mn.min(v)
+		mx = mx.max(v)
+	return {"p": pv, "bb": Rect2(mn, mx - mn)}
+
+
+func _load_vectors() -> void:
+	var t0 := Time.get_ticks_msec()
+	var rj: Variant = JSON.parse_string(FileAccess.get_file_as_string(main.asset_path("roads.json")))
+	if rj is Dictionary:
+		for rd: Dictionary in rj["roads"]:
+			var e := _poly_entry(rd["p"])
+			e["c"] = str(rd["c"])
+			_vec_roads.append(e)
+	var wj: Variant = JSON.parse_string(FileAccess.get_file_as_string(main.asset_path("water.json")))
+	if wj is Dictionary:
+		for wd: Dictionary in wj["w"]:
+			var e := _poly_entry(wd["p"])
+			e["c"] = str(wd["c"])
+			_vec_water.append(e)
+	if FileAccess.file_exists(main.asset_path("lakes.json")):
+		var lj: Variant = JSON.parse_string(FileAccess.get_file_as_string(main.asset_path("lakes.json")))
+		if lj is Dictionary:
+			for lk: Array in lj["a"]:
+				var e := _poly_entry(lk)
+				e["ok"] = not Geometry2D.triangulate_polygon(e["p"]).is_empty()
+				_vec_lakes.append(e)
+	var bj: Variant = JSON.parse_string(FileAccess.get_file_as_string(main.asset_path("buildings.json")))
+	if bj is Dictionary:
+		for b: Array in bj["b"]:
+			_vec_bld.append_array(PackedFloat32Array([float(b[0]), float(b[1]), float(b[2]), float(b[3]), float(b[4])]))
+	print("Тактична карта: вектори регіону за %d мс (доріг %d, водотоків %d, будівель %d)" % [
+		Time.get_ticks_msec() - t0, _vec_roads.size(), _vec_water.size(), _vec_bld.size() / 5])
+
+
+## Перемальовує карту лише коли змінились вікно світу або розмір у пікселях.
+func _prepare_map(view: Rect2, size_px: Vector2i) -> void:
+	_ensure_map()
+	var key := "%s|%s" % [view, size_px]
+	if key == _map_key:
+		return
+	_map_key = key
+	_map_view = view
+	_map_sv.size = size_px
+	_map_bg.size = Vector2(size_px)
+	_map_vec.size = Vector2(size_px)
+	var sm := _map_bg.material as ShaderMaterial
+	sm.set_shader_parameter("view_min", view.position)
+	sm.set_shader_parameter("view_size", view.size)
+	_map_vec.queue_redraw()
+	_map_sv.render_target_update_mode = SubViewport.UPDATE_ONCE
+
+
+func _draw_map_vectors() -> void:
+	var v := _map_view
+	var sz := _map_vec.size
+	var k := sz.x / v.size.x                      # пікселів на метр
+	var vis := v.grow(200.0)
+	var tr := func(pv: PackedVector2Array) -> PackedVector2Array:
+		var out := PackedVector2Array()
+		out.resize(pv.size())
+		for i in pv.size():
+			out[i] = (pv[i] - v.position) * k
+		return out
+	for lk: Dictionary in _vec_lakes:
+		if bool(lk["ok"]) and vis.intersects(lk["bb"]):
+			_map_vec.draw_colored_polygon(tr.call(lk["p"]), Color(0.16, 0.26, 0.32))
+	for wd: Dictionary in _vec_water:
+		if vis.intersects(wd["bb"]):
+			var river := str(wd["c"]) == "river"
+			_map_vec.draw_polyline(tr.call(wd["p"]), Color(0.30, 0.48, 0.58, 0.95) if river else Color(0.26, 0.40, 0.48, 0.8),
+				maxf(18.0 * k, 2.4) if river else maxf(3.0 * k, 1.1), true)
+	var styles := {"track": [Color(0.62, 0.58, 0.46, 0.28), 0.9, 0.0], "service": [Color(0.74, 0.72, 0.64, 0.45), 1.0, 0.0],
+		"residential": [Color(0.80, 0.78, 0.70, 0.65), 1.4, 0.0], "unclassified": [Color(0.80, 0.78, 0.70, 0.65), 1.5, 0.0],
+		"tertiary": [Color(0.90, 0.86, 0.72, 0.9), 2.2, 3.4], "secondary": [Color(0.96, 0.80, 0.52), 2.8, 4.2],
+		"primary": [Color(0.97, 0.78, 0.48), 3.0, 4.6]}
+	for pass_i in 2:                               # 0 — темна обводка великих доріг, 1 — самі лінії
+		for rd: Dictionary in _vec_roads:
+			if not vis.intersects(rd["bb"]):
+				continue
+			var st: Array = styles.get(str(rd["c"]), styles["track"])
+			if pass_i == 0:
+				if float(st[2]) > 0.0:
+					_map_vec.draw_polyline(tr.call(rd["p"]), Color(0.04, 0.05, 0.04, 0.8), float(st[2]), true)
+			else:
+				_map_vec.draw_polyline(tr.call(rd["p"]), st[0], float(st[1]), true)
+	var bcol := Color(0.80, 0.77, 0.70, 0.9)
+	for i in range(0, _vec_bld.size(), 5):
+		var c := Vector2(_vec_bld[i], _vec_bld[i + 1])
+		if not vis.has_point(c):
+			continue
+		var sp := (c - v.position) * k
+		var hw := maxf(_vec_bld[i + 2] * 0.5 * k, 1.1)
+		var hd := maxf(_vec_bld[i + 3] * 0.5 * k, 1.1)
+		var a := _vec_bld[i + 4]
+		var ax := Vector2(cos(a), sin(a))         # як у main: Basis(UP, -ang) → ширина вздовж (cos, sin)
+		var az := Vector2(-sin(a), cos(a))
+		_map_vec.draw_colored_polygon(PackedVector2Array([sp - ax * hw - az * hd, sp + ax * hw - az * hd,
+			sp + ax * hw + az * hd, sp - ax * hw + az * hd]), bcol)
+
+
 # ============================ вітрина ангара ============================
 
 var _sv: SubViewport
@@ -644,6 +794,10 @@ func _hovered(r: Rect2) -> bool:
 	return _mouse.x >= 0.0 and r.has_point(_mouse / _k)
 
 
+func _gates_word(n: int) -> String:
+	return "%d %s" % [n, "ворота" if n % 10 in [2, 3, 4] and not n % 100 in [12, 13, 14] else "воріт"]
+
+
 func _cap1(s: String) -> String:
 	return s.left(1).to_upper() + s.substr(1).to_lower() if s.length() > 0 else s
 
@@ -790,25 +944,25 @@ func _draw_map(r: Rect2, pl: Dictionary) -> void:
 	var hz := r.size.y * 0.5 / sc
 	var w2s := func(x: float, z: float) -> Vector2:
 		return r.position + r.size * 0.5 + Vector2(x - ctr.x, z - ctr.y) * sc
-	# супутникова підкладка регіону
-	var tex: Texture2D = main.terrain_mat.get_shader_parameter("albedo_tex") if main.terrain_mat != null else null
-	var size_m: float = main.size_m
-	if tex != null:
-		var tw := float(tex.get_width())
-		var src := Rect2((Vector2(ctr.x - hx, ctr.y - hz) / size_m + Vector2(0.5, 0.5)) * tw, Vector2(hx * 2.0, hz * 2.0) / size_m * tw)
-		_panel.draw_texture_rect_region(tex, r, src, Color(0.78, 0.82, 0.76))
-	_panel.draw_rect(r, Color(0.02, 0.03, 0.02, 0.25))
+	# тактична топокарта: рельєф/горизонталі/покрив у шейдері + OSM-вектори, відмальовано в SubViewport
+	var size_px := Vector2i(int(r.size.x * _k), int(r.size.y * _k))
+	var lim := 2560.0 / float(maxi(size_px.x, size_px.y))
+	if lim < 1.0:
+		size_px = Vector2i(int(size_px.x * lim), int(size_px.y * lim))
+	_prepare_map(Rect2(ctr.x - hx, ctr.y - hz, hx * 2.0, hz * 2.0), size_px)
+	if _map_sv != null:
+		_panel.draw_texture_rect(_map_sv.get_texture(), r, false)
 	# сітка 500 м у світових координатах
 	var gstep := 500.0 if half < 2600.0 else 1000.0
 	var gx := ceilf((ctr.x - hx) / gstep) * gstep
 	while gx < ctr.x + hx:
 		var sx: float = w2s.call(gx, 0.0).x
-		_panel.draw_line(Vector2(sx, r.position.y), Vector2(sx, r.end.y), Color(0.86, 0.92, 0.86, 0.10), 1.0)
+		_panel.draw_line(Vector2(sx, r.position.y), Vector2(sx, r.end.y), Color(0.86, 0.92, 0.86, 0.07), 1.0)
 		gx += gstep
 	var gz := ceilf((ctr.y - hz) / gstep) * gstep
 	while gz < ctr.y + hz:
 		var sy: float = w2s.call(0.0, gz).y
-		_panel.draw_line(Vector2(r.position.x, sy), Vector2(r.end.x, sy), Color(0.86, 0.92, 0.86, 0.10), 1.0)
+		_panel.draw_line(Vector2(r.position.x, sy), Vector2(r.end.x, sy), Color(0.86, 0.92, 0.86, 0.07), 1.0)
 		gz += gstep
 	# віньєтка країв
 	_grad(Rect2(r.position.x, r.position.y, r.size.x, 150), Color(0.03, 0.04, 0.03, 0.8), Color(0.03, 0.04, 0.03, 0.0))
@@ -824,7 +978,8 @@ func _draw_map(r: Rect2, pl: Dictionary) -> void:
 		var p: Vector3 = st["pos"]
 		var s2: Vector2 = w2s.call(p.x, p.z)
 		if s2.distance_to(prev) > 6.0:
-			_panel.draw_dashed_line(prev, s2, Color(0.9, 0.93, 0.89, 0.85), 2.0, 9.0)
+			_panel.draw_line(prev, s2, Color(0.02, 0.03, 0.02, 0.75), 6.0, true)
+			_panel.draw_dashed_line(prev, s2, Color(1.0, 1.0, 0.96), 2.4, 10.0)
 			prev = s2
 	var placed: Array = []                        # підписи в одній точці (ціль і БДА) розсуваються вниз
 	var label := func(pos: Vector2, text: String, col: Color) -> void:
@@ -847,7 +1002,8 @@ func _draw_map(r: Rect2, pl: Dictionary) -> void:
 		match str(st["kind"]):
 			"gate":
 				gate_n += 1
-				_panel.draw_arc(s2, 6.0, 0, TAU, 20, GREEN, 2.0)
+				_panel.draw_circle(s2, 7.5, Color(0.02, 0.03, 0.02, 0.85))
+				_panel.draw_arc(s2, 7.0, 0, TAU, 20, GREEN, 2.0, true)
 			"land":
 				_panel.draw_rect(Rect2(s2 - Vector2(6, 6), Vector2(12, 12)), Color(0.95, 0.85, 0.3), false, 2.0)
 				label.call(s2 + Vector2(14, 5), "ПОСАДКА", Color(0.95, 0.85, 0.3))
@@ -879,8 +1035,10 @@ func _draw_map(r: Rect2, pl: Dictionary) -> void:
 				_panel.draw_arc(s2, rr, 0, TAU, 40, Color(1.0, 0.36, 0.24), 2.0)
 				_panel.draw_rect(Rect2(s2 - Vector2(6, 6), Vector2(12, 12)), Color(1.0, 0.36, 0.24), false, 2.0)
 				label.call(s2 + Vector2(rr + 10, 5), "КОЛОНА · " + km.call(p), Color(1.0, 0.42, 0.3))
-	if gate_n > 0:
-		label.call(prev + Vector2(14, -14), "КОРИДОР · %d воріт" % gate_n, GREEN)
+	if gate_n == 1:
+		label.call(prev + Vector2(14, -14), "КОНТРОЛЬНА ТОЧКА", GREEN)
+	elif gate_n > 1:
+		label.call(prev + Vector2(14, -14), "КОРИДОР · %s" % _gates_word(gate_n), GREEN)
 	# старт
 	_panel.draw_colored_polygon(PackedVector2Array([o2 + Vector2(0, -11), o2 + Vector2(10, 7), o2 + Vector2(-10, 7)]), GREEN)
 	label.call(o2 + Vector2(16, 24), "СТАРТ · " + _start_drone_label(mission_pick), GREEN)
@@ -960,16 +1118,18 @@ func _mission_sequence(id: int, pl: Dictionary) -> Array:
 			"takeoff": out.append(["ЗЛІТ", "набір %d м AGL" % int(st["agl"]), ""])
 			"gate": gates += 1
 			"land":
-				if gates > 0:
-					out.append(["КОРИДОР", "%d воріт на різних висотах" % gates, ""])
-					gates = 0
+				if gates == 1:
+					out.append(["ТОЧКА", "повернутись у зону зв'язку", ""])
+				elif gates > 1:
+					out.append(["КОРИДОР", "%s на різних висотах" % _gates_word(gates), ""])
+				gates = 0
 				out.append(["ПОСАДКА", "точно на майданчик", dist.call(st["pos"])])
 			"recon": out.append(["РОЗВІДКА", "утримати точку %d с" % int(st.get("hold", 5)), dist.call(st["pos"])])
 			"strike": out.append(["УДАР", "знищити колону", dist.call(st["pos"])])
 			"mark": out.append(["SHARK", "відмітити %d цілі" % int(st.get("n", 1)), ""])
 			"strike_marked": out.append(["FPV", "знищити відмічені цілі", ""])
 	if gates > 0:
-		out.append(["КОРИДОР", "%d воріт змійкою" % gates, ""])
+		out.append(["КОРИДОР", "%s змійкою" % _gates_word(gates), ""])
 	return out
 
 
