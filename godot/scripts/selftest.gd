@@ -25,6 +25,10 @@ func setup(m: Node3D) -> void:
 	if "--selftest" in args or "--missiontest" in args:
 		any = true
 		_check("миссии/скоринг", main.mission.self_test())
+	if "--selftest" in args or "--menutest" in args:
+		any = true
+		await get_tree().process_frame           # меню створюється в main пізніше за самотест
+		_check("меню: клавіатура, миша, екрани", await main.menu.self_test())
 	if any:
 		print("SELFTEST: %s (провалов: %d)" % ["ВСЕ OK" if fails == 0 else "ЕСТЬ FAIL", fails])
 		main.get_tree().quit(0 if fails == 0 else 1)

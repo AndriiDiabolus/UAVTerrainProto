@@ -1,0 +1,50 @@
+<!doctype html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@200;300;500&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{width:1600px;height:900px;overflow:hidden;background:#140c0a;font-family:'Manrope',sans-serif;color:#f6eee8}
+.bg{position:absolute;inset:0;background:url(bg_sunset.png) center 30%/cover;filter:saturate(.95) contrast(1.05)}
+.v1{position:absolute;inset:0;background:linear-gradient(180deg,rgba(15,8,6,.25) 0%,rgba(15,8,6,0) 30%,rgba(15,8,6,.35) 58%,rgba(12,6,5,.92) 100%)}
+.v2{position:absolute;inset:0;background:linear-gradient(90deg,rgba(12,6,5,.7) 0%,rgba(12,6,5,0) 55%)}
+.bars{position:absolute;left:0;right:0;height:46px;background:#0b0605}
+.title{position:absolute;left:96px;top:205px}
+.eyebrow{font:600 13px 'Manrope';letter-spacing:.38em;color:rgba(255,214,190,.75)}
+.big{font:200 104px 'Unbounded';letter-spacing:.06em;line-height:1;margin-top:18px;color:#fff}
+.big b{font-weight:500}
+.sub{font:400 17px 'Manrope';color:rgba(246,238,232,.72);margin-top:20px;letter-spacing:.02em}
+.menu{position:absolute;left:96px;top:500px;display:flex;flex-direction:column;gap:6px}
+.m{display:flex;align-items:center;gap:0;font:300 30px 'Unbounded';letter-spacing:.02em;color:rgba(246,238,232,.5);height:54px}
+.m .ln{width:0;height:1px;background:#ffb27a}
+.m.on{color:#fff}
+.m.on .ln{width:46px;margin-right:22px}
+.m .hint{font:500 13px 'Manrope';color:rgba(255,190,150,.85);letter-spacing:.06em;margin-left:6px}
+.status{position:absolute;right:96px;bottom:92px;text-align:right;display:flex;flex-direction:column;gap:14px}
+.status .row{display:flex;gap:44px;justify-content:flex-end}
+.status .l{font:600 11px 'Manrope';letter-spacing:.24em;color:rgba(246,238,232,.45)}
+.status .v{font:300 20px 'Unbounded';margin-top:6px;color:#fff}
+.status .v.w{color:#ffb27a}
+.keys{position:absolute;left:96px;bottom:66px;font:500 12px 'Manrope';letter-spacing:.14em;color:rgba(246,238,232,.4)}
+.keys span{border:1px solid rgba(246,238,232,.25);padding:3px 7px;margin-right:6px;color:rgba(246,238,232,.7)}
+</style></head><body>
+<div class="bg"></div><div class="v1"></div><div class="v2"></div>
+<div class="bars" style="top:0"></div><div class="bars" style="bottom:0"></div>
+<div class="title">
+  <div class="eyebrow">ТРЕНАЖЕР ОПЕРАТОРА БпЛА</div>
+  <div class="big"><b>UAV</b> TERRAIN</div>
+  <div class="sub">Реальний рельєф України · Карпати, 52 × 52 км</div>
+</div>
+<div class="menu">
+  <div class="m on"><span class="ln"></span>Продовжити <span class="hint">місія 6 · фаза SHARK</span></div>
+  <div class="m"><span class="ln"></span>Місії</div>
+  <div class="m"><span class="ln"></span>Налаштування</div>
+  <div class="m"><span class="ln"></span>Вихід</div>
+</div>
+<div class="status">
+  <div class="row">
+    <div><div class="l">ПРОЙДЕНО</div><div class="v">4 / 7</div></div>
+    <div><div class="l">СЕРЕДНІЙ БАЛ</div><div class="v">90</div></div>
+    <div><div class="l">ПУЛЬТ</div><div class="v w">не підключено</div></div>
+  </div>
+</div>
+<div class="keys"><span>↑↓</span>вибір &nbsp;&nbsp; <span>ENTER</span>підтвердити &nbsp;&nbsp; <span>ESC</span>назад</div>
+</body></html>

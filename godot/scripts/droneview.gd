@@ -2,7 +2,6 @@ extends Node3D
 ## Внешняя модель дрона игрока (units.drone_fpv7) и всё вокруг неё:
 ## - вид от ТРЕТЬЕГО лица: клавиша U — 1-е ⇄ 3-е лицо; chase-камера с плавным хвостом,
 ##   модель наклоняется как корпус flycam.body, пропеллеры крутятся по газу;
-## - ВЕРТУШКА в главном меню: модель крупно вращается в трёх осях перед камерой облёта;
 ## - СКИНЫ 1..3 (классика / полевой / ночной) — пункт меню «скин», user://settings.cfg.
 ## В FPV-очках (F) модель скрыта (иначе видна изнутри камерой видеотракта).
 
@@ -15,15 +14,6 @@ var model: Node3D
 var _props: Array = []
 var _chase: Camera3D
 var _spin := 0.0
-var _menu_t := 0.0
-var _user_rot := Basis()      # ручное вращение вертушки мышью (трекбол в осях камеры)
-var _idle := 99.0             # секунд с последнего драга; авто-вращение после паузы
-
-
-## Драг мышью в меню: вращение модели на 360° по всем осям (в экранных осях).
-func orbit(rel: Vector2) -> void:
-	_idle = 0.0
-	_user_rot = Basis(Vector3.UP, -rel.x * 0.01) * Basis(Vector3(1, 0, 0), -rel.y * 0.01) * _user_rot
 
 
 func setup(m: Node3D) -> void:
@@ -110,22 +100,10 @@ func _process(dt: float) -> void:
 	var fpv: bool = main.hud != null and main.hud.get("fpv_on") == true
 
 	if menu:
-		# вертушка: крупная модель перед камерой облёта, вращение в трёх осях
+		# у меню модель показує вітрина ангара (окремий SubViewport у menu.gd), у світі її ховаємо
 		if _chase.current:
 			main.cam.make_current()
-		_idle += dt
-		if _idle > 3.0:
-			_menu_t += dt                       # авто-вращение возобновляется после паузы драга
-		model.visible = true
-		var ct: Transform3D = main.cam.global_transform
-		var rot := _user_rot * Basis(Vector3.UP, _menu_t * 0.7) \
-			* Basis(Vector3(1, 0, 0), sin(_menu_t * 0.41) * 0.34) \
-			* Basis(Vector3(0, 0, 1), sin(_menu_t * 0.23) * 0.2)
-		var msc: float = {"fpv7": 6.5, "fpv5": 7.5, "mavic": 6.0, "mship": 1.9, "wing": 1.0}.get(_built_for, 6.5)
-		# модель — в центре ИГРОВОЙ области экрана (окно минус панель меню 434 px слева)
-		var vps := get_viewport().get_visible_rect().size
-		var pos: Vector3 = main.cam.project_position(Vector2((434.0 + vps.x) * 0.5, vps.y * 0.5), 3.6)
-		model.global_transform = Transform3D(ct.basis * rot * Basis.from_scale(Vector3.ONE * msc), pos)
+		model.visible = false
 	elif third and not fpv and not main.get("replaying"):
 		model.visible = true
 		var b: Basis = main.cam.body if main.cam.get("body") != null else main.cam.global_transform.basis

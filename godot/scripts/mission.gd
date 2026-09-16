@@ -42,7 +42,8 @@ var _hint_t := 0.0
 
 const MISSIONS := [
 	{},   # 0 — нет
-	{"name": "1 · Зліт — коридор — посадка", "mode": "angle", "par": 90.0,
+	{"name": "1 · Зліт — коридор — посадка", "mode": "angle", "par": 90.0, "tag": "ВПРАВА",
+	 "brief": "Базова вправа: зліт до 8 м, п'ять воріт коридору на різних висотах і точна посадка на майданчик. Штраф за пропущені ворота й зіткнення.",
 	 "steps": [
 		{"kind": "takeoff", "agl": 8.0},
 		{"kind": "gate", "dx": 0, "dz": -120, "agl": 15, "r": 7},
@@ -52,7 +53,8 @@ const MISSIONS := [
 		{"kind": "gate", "dx": 0, "dz": -760, "agl": 12, "r": 7},
 		{"kind": "land", "dx": 0, "dz": -840, "r": 6},
 	 ]},
-	{"name": "2 · Слалом ACRO (низько)", "mode": "acro", "par": 60.0,
+	{"name": "2 · Слалом ACRO (низько)", "mode": "acro", "par": 60.0, "tag": "ВПРАВА",
+	 "brief": "Вісім воріт змійкою на висоті 5–14 м у режимі ACRO: без самовирівнювання, лише стіки. Вправа на координацію газу й крену.",
 	 "steps": [
 		{"kind": "gate", "dx": 40, "dz": -90, "agl": 6, "r": 5},
 		{"kind": "gate", "dx": -40, "dz": -170, "agl": 8, "r": 5},
@@ -63,27 +65,31 @@ const MISSIONS := [
 		{"kind": "gate", "dx": 0, "dz": -560, "agl": 5, "r": 5},
 		{"kind": "gate", "dx": 0, "dz": -640, "agl": 5, "r": 5},
 	 ]},
-	{"name": "3 · Розвідка за хребтом", "mode": "angle", "par": 240.0,
+	{"name": "3 · Розвідка за хребтом", "mode": "angle", "par": 240.0, "tag": "ВПРАВА",
+	 "brief": "Точка розвідки обрана там, де рельєф закриває радіоканал. Долетіти, утримати позицію 5 с і повернутися в зону сигналу до посадки.",
 	 "steps": [
 		{"kind": "takeoff", "agl": 8.0},
 		{"kind": "recon", "auto": true, "hold": 5.0, "r": 120.0},   # точка выбирается там, где LOS от home < 0.3
 		{"kind": "gate", "dx": 0, "dz": -60, "agl": 20, "r": 12},   # вернуться в зону сигнала
 		{"kind": "land", "dx": 0, "dz": 0, "r": 8},
 	 ]},
-	{"name": "4 · Ударний захід", "mode": "angle", "par": 150.0,
+	{"name": "4 · Ударний захід", "mode": "angle", "par": 150.0, "tag": "ВПРАВА",
+	 "brief": "Танк і БТР на дорозі за 900 м. Вийти на ціль, уразити обидві машини й повернутися на майданчик. Техніка відповідає вогнем.",
 	 "steps": [
 		{"kind": "takeoff", "agl": 8.0},
 		{"kind": "strike", "dx": 0, "dz": -900, "kinds": ["tank", "apc"]},
 		{"kind": "land", "dx": 0, "dz": 0, "r": 8},
 	 ]},
-	{"name": "5 · Розвідка і удар", "mode": "angle", "par": 420.0,
+	{"name": "5 · Розвідка і удар", "mode": "angle", "par": 420.0, "tag": "БОЙОВЕ ЗАВДАННЯ",
+	 "brief": "Крило SHARK знаходить і відмічає дві цілі, після чого ударний FPV знищує саме відмічені. Перша зв'язка розвідника й ударника.",
 	 "steps": [
 		{"kind": "mark", "n": 2},           # SHARK: катапульта, зум, ЛКМ — відмітити 2 цілі
 		{"kind": "strike_marked", "n": 2},  # FPV: знищити відмічені цілі
 	 ]},
 	# Комбіновані місії: погоду задає сама місія ("weather" — індекс пресету weather.gd).
 	# mark із "kinds"/"dx/dz" спавнить ВЛАСНУ групу цілей біля дороги — чужі мітки не рахуються.
-	{"name": "6 · Повний цикл: SHARK → матка → FPV", "mode": "angle", "par": 700.0, "weather": 1,
+	{"name": "6 · Повний цикл: SHARK → матка → FPV", "mode": "angle", "par": 700.0, "weather": 1, "tag": "БОЙОВЕ ЗАВДАННЯ",
+	 "brief": "Колона противника зупинилась за хребтом, прямого радіоканалу немає. Знайти й закріпити цілі, розгорнути ретранслятор на рубежі, уразити й підтвердити результат.",
 	 "steps": [
 		# ціль — за складкою рельєфу (мін. LOS) не далі 1.8 км від позиції старту SHARK
 		{"kind": "mark", "n": 3, "hidden": true, "dmin": 1200.0, "dmax": 1800.0, "kinds": ["tank", "apc", "soldier"]},
@@ -112,7 +118,8 @@ const MISSIONS := [
 			{"t": "утримуйся 4 с — підтвердь ураження", "k": "step"},
 		]},
 	 ]},
-	{"name": "7 · Нічна засідка", "mode": "angle", "par": 700.0, "weather": 4,
+	{"name": "7 · Нічна засідка", "mode": "angle", "par": 700.0, "weather": 4, "tag": "БОЙОВЕ ЗАВДАННЯ",
+	 "brief": "Ніч, БТР і піхота в засідці за хребтом. Цілі видно лише в тепловізор: розвідати з тихої висоти, вивести матку на рубіж і вразити.",
 	 "steps": [
 		{"kind": "mark", "n": 2, "hidden": true, "dmin": 2000.0, "dmax": 2800.0, "kinds": ["apc", "soldier"]},
 		{"kind": "relay_at", "frac": 0.5, "agl": 50, "r": 180},
@@ -161,7 +168,9 @@ func mission_name() -> String:
 	return str(MISSIONS[mission_id].get("name", "")) if mission_id > 0 else ""
 
 
-func start(id: int) -> void:
+## yaw — курс місії (напрям «dz < 0»). NAN — поточний курс дрона (N посеред польоту);
+## меню передає курс, з яким рахувало план брифінгу, щоб маршрут на карті збігся з реальним.
+func start(id: int, yaw: float = NAN) -> void:
 	if id <= 0 or id >= MISSIONS.size():
 		return
 	stop()
@@ -177,6 +186,8 @@ func start(id: int) -> void:
 	_origin = _clear_spot(main._home_pos)
 	# курс миссии = текущий курс дрона: «dz < 0» — вперёд по курсу на момент старта
 	_origin_yaw = main.cam.attitude().get_euler().y if main.cam.has_method("attitude") else 0.0
+	if not is_nan(yaw):
+		_origin_yaw = yaw
 	main._home_pos = _origin + Vector3(0, 0.4, 0)     # R-рестарт — на площадку, не в воздух
 	if main._fpv_osd != null:
 		main._fpv_osd.home = main._home_pos
@@ -227,25 +238,45 @@ func start(id: int) -> void:
 	if main.relay_node != null:
 		main.relay_node.queue_free()
 		main.relay_node = null
-	_steps = []
-	for s: Dictionary in m["steps"]:
-		var st := s.duplicate()
-		st["pos"] = _resolve(st)
-		st["done"] = false
-		_steps.append(st)
-	# шаги с "frac": точка на линии старт → позиция опорного шага (ref, за замовчуванням 0);
-	# так рубіж ретранслятора завжди лягає на маршрут до знайденої за хребтом цілі
-	for st: Dictionary in _steps:
-		if st.has("frac"):
-			var refp: Vector3 = _steps[int(st.get("ref", 0))]["pos"]
-			var p := _origin.lerp(refp, float(st["frac"]))
-			p.y = main.height_at(p.x, p.z) + float(st.get("agl", 0.0))
-			st["pos"] = p
+	_steps = _compute_steps(m)
 	_build_visuals()
 	if main.get("telemetry") != null:
 		main.telemetry.event("mission_start", {"id": id, "name": m["name"]})
 	print("MISSION start: ", m["name"])
 	_prev_pos = main.cam.global_position
+
+
+## Кроки місії з позиціями від поточних _origin/_origin_yaw.
+func _compute_steps(m: Dictionary) -> Array:
+	var out: Array = []
+	for s: Dictionary in m["steps"]:
+		var st := s.duplicate()
+		st["pos"] = _resolve(st)
+		st["done"] = false
+		out.append(st)
+	# шаги с "frac": точка на линии старт → позиция опорного шага (ref, за замовчуванням 0);
+	# так рубіж ретранслятора завжди лягає на маршрут до знайденої за хребтом цілі
+	for st: Dictionary in out:
+		if st.has("frac"):
+			var refp: Vector3 = out[int(st.get("ref", 0))]["pos"]
+			var p := _origin.lerp(refp, float(st["frac"]))
+			p.y = main.height_at(p.x, p.z) + float(st.get("agl", 0.0))
+			st["pos"] = p
+	return out
+
+
+## План для брифінгу без запуску: {origin, yaw, steps}. Той самий розрахунок, що й у start().
+func plan(id: int, yaw: float) -> Dictionary:
+	if id <= 0 or id >= MISSIONS.size():
+		return {}
+	var keep_o := _origin
+	var keep_y := _origin_yaw
+	_origin = _clear_spot(main._home_pos)
+	_origin_yaw = yaw
+	var res := {"origin": _origin, "yaw": yaw, "steps": _compute_steps(MISSIONS[id])}
+	_origin = keep_o
+	_origin_yaw = keep_y
+	return res
 
 
 func stop() -> void:
@@ -625,6 +656,17 @@ func self_test() -> bool:
 		main.toggle_relay()                           # прибрать ретранслятор за собой
 	ok = ok and ok6
 	stop()
+	# карта брифінгу в меню малює plan(); маршрут у польоті має збігтися з ним точка в точку
+	for pid in [1, 6]:
+		var pl := plan(pid, 0.7)
+		start(pid, 0.7)
+		var same: bool = (pl["steps"] as Array).size() == _steps.size()
+		for i in _steps.size():
+			if same and ((pl["steps"][i]["pos"] as Vector3).distance_to(_steps[i]["pos"]) > 0.5):
+				same = false
+		print("MISSIONTEST план брифінгу = старт (місія %d): %s" % [pid, same])
+		ok = ok and same
+		stop()
 	var csv_ok := FileAccess.file_exists("user://results/results.csv")
 	ok = ok and csv_ok
 	print("MISSIONTEST results.csv: %s" % csv_ok)

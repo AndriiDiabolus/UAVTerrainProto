@@ -26,6 +26,7 @@ func _toggle_sound() -> void:
 
 
 var _min: Control
+var crosshair: Array = []
 var _info_held := false
 
 ## Тост по центру сверху (смена камеры/режима/звука).
@@ -82,7 +83,7 @@ func setup(m: Node3D) -> void:
 	_sound_btn.visible = false                    # вариант G: без кнопки, звук — M (тост)
 	layer.add_child(_sound_btn)
 
-	# перекрестие
+	# перекрестие (меню ховає його через crosshair)
 	for size_off: Array in [[Vector2(14, 2), Vector2(-7, -1)], [Vector2(2, 14), Vector2(-1, -7)]]:
 		var cr := ColorRect.new()
 		cr.color = Color(1, 1, 1, 0.8)
@@ -91,6 +92,7 @@ func setup(m: Node3D) -> void:
 		cr.position = size_off[1]
 		cr.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		hud_label.get_parent().add_child(cr)
+		crosshair.append(cr)
 
 	# указатель на ближайшую цель
 	target_marker = Label.new()
