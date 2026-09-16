@@ -179,8 +179,12 @@ func height_at(x: float, z: float) -> float:
 func _build_terrain() -> void:
 	var t0 := Time.get_ticks_msec()
 	var n := MESH_RES
-	var cache_path := "user://terrain_%s%d_%d_%d.res" % [region + "_" if region != "" else "", px, n,
-		FileAccess.get_modified_time(ProjectSettings.globalize_path(asset_path("height.raw")))]
+	# ключ кеша — дата height.raw на диске; в экспортированном билде даты нет (файл в PCK) → хеш содержимого,
+	# иначе новая версия билда с другим рельефом подхватила бы старый меш из user://
+	var stamp := FileAccess.get_modified_time(ProjectSettings.globalize_path(asset_path("height.raw")))
+	if stamp == 0:
+		stamp = hash(height_bytes) & 0x7fffffff
+	var cache_path := "user://terrain_%s%d_%d_%d.res" % [region + "_" if region != "" else "", px, n, stamp]
 	var mesh: ArrayMesh
 
 	if FileAccess.file_exists(cache_path):
