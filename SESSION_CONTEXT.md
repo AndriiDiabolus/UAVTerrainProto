@@ -572,5 +572,21 @@ height.raw. Проверено на собранном macOS: селфтест 9
 в обычной игре 0/6) — баг движка, Windows/Vulkan не затронут. Windows-билд собран, но НЕ запускался
 (нет Windows-машины). build/dist/ITCH_PAGE.md + screenshots/ — текст и кадры для страницы.
 
+**Новое главное меню (16.09.2026)**: menu.gd переписан — 5 экранов: TITLE (кино-минимал:
+Почати/Продовжити · Місії · Ангар · Реплеї · Налаштування · Вихід + статистика из results.csv),
+MISSIONS (брифинг: albedo рельефа через terrain_mat.albedo_tex + маршрут/рубеж/цели/БДА, сетка 500 м,
+подписи раздвигаются; справа tag/brief/порядок действий/условия), HANGAR (SubViewport own_world_3d
+transparent_bg — модель units.build_drone, кадрирование по AABB на 2-м кадре; ТТХ из cam.DRONES,
+слоты оружие/камера/режим/скин, карусель 5 бортов), SETTINGS, REPLAYS. Дизайн-пространство
+1600×900: draw_set_transform(k = vp.y/900), _W = vp.x/k; зоны клика _hits собираются в _draw.
+Шрифты OFL в assets/fonts (Unbounded/Oswald/Manrope — VF через FontVariation wght; IBM Plex Mono).
+mission.plan(id, yaw) = тот же _compute_steps, что в start(id, yaw); меню стартует с _flight_yaw
+(курс на момент открытия меню). Debug: --menushot --menuscreen=missions|hangar|settings|replays
+--menumission=N; --menutest (13 проверок реальных обработчиков, часть selftest; selftest.setup
+теперь корутина — ждёт кадр, т.к. menu создаётся после selftest). droneview больше не крутит
+модель в мире под меню; hud.crosshair скрывается в меню. Макеты: docs/menu_redesign/*.png.
+Проверка из экспортированного macOS-билда: menutest 13/13 ×3 (вывод — через `script -q`, иначе
+известный Metal-краш на выходе съедает буфер stdout).
+
 ---
 *Документ отражает состояние на 16.09.2026. Дальнейшие изменения фиксировать здесь и в README.md.*
