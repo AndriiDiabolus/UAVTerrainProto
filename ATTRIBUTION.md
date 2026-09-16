@@ -11,7 +11,7 @@
 | Фототекстуры (трава, грунт, скала, черепица, стена, асфальт, гравий) | Poly Haven | CC0 (public domain) | атрибуция не требуется |
 | Фасады (окна/двери/ставни) | нарисованы в проекте (`tools/make_facades.py`) | собственные | — |
 | Звук | синтезируется в рантайме | собственный | — |
-| Музыка меню (`assets/audio/menu_theme.wav`) | сгенерирована `tools/make_menu_music.py` (numpy, без сэмплов) | собственная | — |
+| Музыка меню (`assets/audio/menu_theme.mp3`) | «Laments of the War» — Cethiel, [OpenGameArt](https://opengameart.org/content/laments-of-the-war) | CC0 1.0 (public domain) | атрибуция не требуется; автор указан из уважения |
 | Шрифты меню (Unbounded, Oswald, Manrope, IBM Plex Mono) | Google Fonts (`godot/assets/fonts/`) | SIL Open Font License 1.1 | тексты лицензий `OFL-*.txt` лежат рядом со шрифтами |
 
 Строка атрибуции показывается внизу экрана в самом приложении.

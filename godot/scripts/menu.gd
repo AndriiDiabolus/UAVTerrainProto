@@ -663,14 +663,13 @@ func _setup_music() -> void:
 	var cfg := ConfigFile.new()
 	if cfg.load("user://settings.cfg") == OK:
 		music_on = bool(cfg.get_value("game", "menu_music", true))
-	if "--nosound" in OS.get_cmdline_user_args() or not ResourceLoader.exists("res://assets/audio/menu_theme.wav"):
+	if "--nosound" in OS.get_cmdline_user_args() or not ResourceLoader.exists("res://assets/audio/menu_theme.mp3"):
 		return
-	var st := load("res://assets/audio/menu_theme.wav") as AudioStreamWAV
+	# «Laments of the War» — Cethiel, OpenGameArt, CC0; трек починається й закінчується тихо, тож петля без ривка
+	var st := load("res://assets/audio/menu_theme.mp3") as AudioStreamMP3
 	if st == null:
 		return
-	st.loop_mode = AudioStreamWAV.LOOP_FORWARD         # трек згенеровано безшовною петлею (tools/make_menu_music.py)
-	st.loop_begin = 0
-	st.loop_end = int(round(st.get_length() * st.mix_rate))
+	st.loop = true
 	_music = AudioStreamPlayer.new()
 	_music.stream = st
 	_music.bus = "Music"
@@ -1412,7 +1411,7 @@ func _draw_settings() -> void:
 		"weather": ["Погода", str(main.weather.label), ""],
 		"quality": ["Якість графіки", str(main.QUALITY_NAMES[main.quality]).capitalize(), ""],
 		"trees": ["Дерева", "Версія 2 · Meshy" if int(main.trees_ver) == 2 else "Версія 1 · класика", "перезапуск сцени"],
-		"music": ["Музика в меню", "увімкнена" if music_on else "вимкнена", "власний ембієнт-трек"],
+		"music": ["Музика в меню", "увімкнена" if music_on else "вимкнена", "Laments of the War · Cethiel"],
 		"sound": ["Звук польоту", "вимкнено" if main.hud != null and main.hud._sound_muted else "увімкнено", "мотори, вітер, вибухи · M"],
 		"rc": ["Пульт", rc_v, "Enter — майстер калібрування"],
 		"rates": ["Рейти", str(main.rc.rates_label()), "Betaflight Actual"],
