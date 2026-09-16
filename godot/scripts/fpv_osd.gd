@@ -25,6 +25,8 @@ func _ready() -> void:
 
 
 func _process(dt: float) -> void:
+	if main != null and main.get("menu_open") == true:
+		return                                   # пауза меню: батарея, час польоту й канал не змінюються
 	flight_t += dt
 	# ~10 мин на висении; расход растёт с газом (полный газ ≈ ×2.2)
 	var thr := 0.35

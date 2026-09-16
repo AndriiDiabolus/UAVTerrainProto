@@ -23,6 +23,7 @@ var replay_pick := 0
 var replay_files: PackedStringArray = []
 var _started := false         # гравець уже злітав у цій сесії → «Продовжити»
 var _flight_yaw := 0.0        # курс борту на момент відкриття меню — для плану місії
+var _flight_snap := {}        # стан польоту на момент відкриття меню (flycam.flight_snapshot)
 
 var _hits: Array = []         # [{r: Rect2 (дизайн-простір), a: String, i: int}]
 var _k := 1.0                 # масштаб дизайн-простору → екран
@@ -135,6 +136,10 @@ func _load_stats() -> void:
 func set_open(v: bool) -> void:
 	if v and not open and main.cam != null and main.cam.has_method("attitude"):
 		_flight_yaw = main.cam.attitude().get_euler().y
+		_flight_snap = main.cam.flight_snapshot()
+	elif not v and open and main.cam != null and not _flight_snap.is_empty():
+		main.cam.restore_flight(_flight_snap)    # місія/реплей далі самі ставлять борт, де треба
+		_flight_snap = {}
 	open = v
 	main.menu_open = v
 	_panel.visible = v
@@ -315,9 +320,46 @@ func _frames(n: int) -> void:
 func self_test() -> bool:
 	var ok := true
 	var keep_drone := str(main.cam.drone_id)
+	# пауза: «Продовжити» повертає борт туди, де він був, і місія не рахує час, поки меню відкрите
+	main.mission.start(1)
+	var before: Vector3 = main.cam.global_position
+	var t_before: float = main.mission.t
+	var bat_before: float = main._fpv_osd.battery if main._fpv_osd != null else 1.0
+	# лямбда захоплює локальні змінні за значенням — лічильник провалів тримаємо в масиві (спільне посилання)
+	var fails: Array = [0]
 	var check := func(name: String, cond: bool) -> void:
 		print("MENUTEST %s → %s" % [name, "OK" if cond else "FAIL"])
-		ok = ok and cond
+		if not cond:
+			fails[0] += 1
+	set_open(true)
+	title_sel = 0
+	await _frames(20)
+	var orbit_moved: bool = main.cam.global_position.distance_to(before) > 50.0
+	check.call("пауза: таймер місії стоїть", is_equal_approx(float(main.mission.t), t_before))
+	if main._fpv_osd != null:
+		check.call("пауза: батарея не сідає", is_equal_approx(float(main._fpv_osd.battery), bat_before))
+	_start_flight()
+	check.call("«Продовжити» повертає борт на місце (обліт відсунув камеру: %s)" % orbit_moved,
+		main.cam.global_position.distance_to(before) < 0.5)
+	main.mission.stop()
+	# режим, змінений в ангарі, готується від справжнього корпусу: _omega обнулена, підвіс GPS — за курсом корпусу
+	main.cam.set_drone("fpv7")
+	main.cam.set_mode(1)
+	main.cam._omega = Vector3(2, 1, 3)
+	var body_yaw: float = main.cam.body.get_euler().y
+	set_open(true)
+	await _frames(3)
+	_go(Screen.HANGAR)
+	hangar_row = 3
+	_press(KEY_RIGHT); _press(KEY_RIGHT)             # ANGLE → ACRO → GPS
+	_start_flight()
+	check.call("ангар: режим GPS підготовлено від корпусу (omega 0, курс підвісу = курс корпусу)",
+		int(main.cam.mode) == 0 and main.cam._omega == Vector3.ZERO and absf(angle_difference(main.cam._yaw, body_yaw)) < 0.001)
+	mission_pick = 99
+	await _frames(1)
+	_pick_mission(mission_pick)
+	check.call("номер місії поза межами обмежується", mission_pick == main.mission.MISSIONS.size() - 1)
+	mission_pick = 1
 	set_open(true)
 	title_sel = 0
 	await _frames(2)
@@ -370,7 +412,7 @@ func self_test() -> bool:
 		set_open(false)
 	main.mission.stop()
 	main.cam.set_drone(keep_drone)
-	return ok
+	return ok and int(fails[0]) == 0
 
 
 # ============================ дії ============================
@@ -407,6 +449,7 @@ func _pick_mission(id: int) -> void:
 
 
 func _launch_mission() -> void:
+	_pick_mission(mission_pick)
 	var pl := _plan_for(mission_pick)
 	_started = true
 	set_open(false)
@@ -448,7 +491,7 @@ func _hangar_adjust(row: int, dir: int) -> void:
 				main.hud.fpv_link.set_camera(posmod(int(main.hud.fpv_link.camera) + dir, 4))
 		3:
 			if str(main.cam.get("drone_id")) != "wing":
-				main.cam.mode = posmod(int(main.cam.mode) + dir, 3)
+				main.cam.set_mode(posmod(int(main.cam.mode) + dir, 3))
 		4:
 			if main.get("droneview") != null:
 				main.droneview.set_skin(main.droneview.skin + dir)
@@ -981,6 +1024,7 @@ func _keys(pairs: Array, x: float, y: float, col: Color) -> void:
 # ============================ МІСІЇ ============================
 
 func _draw_missions() -> void:
+	_pick_mission(mission_pick)               # номер міг прийти ззовні (--menumission) — тримаємо в межах
 	var W := _W
 	var side_w := 620.0
 	var map_r := Rect2(0, 0, W - side_w, 900)

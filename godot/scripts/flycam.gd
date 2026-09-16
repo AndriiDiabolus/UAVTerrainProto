@@ -160,18 +160,44 @@ func set_drone(id: String) -> void:
 
 
 func cycle_mode() -> void:
-	mode = (mode + 1) % 3
+	set_mode((mode + 1) % 3)
 	if main != null and main.hud != null and main.hud.has_method("toast"):
 		var tips := ["W/S вперед-назад · A/D вбік · E/Q вгору-вниз · миша — камера",
 			"W/S нахил · A/D крен · E/Q газ · миша/←→ рискання · вирівнюється сам",
 			"стіки = кутова швидкість · E/Q газ · вирівнювання немає"]
 		main.hud.toast("РЕЖИМ · " + MODE_NAMES[mode], tips[mode], Color(0.9, 0.9, 0.9))
+
+
+## Режим польоту з повною підготовкою (Tab, ангар меню): у GPS підвіс вирівнюється за курсом корпусу,
+## кутова швидкість попереднього режиму обнуляється.
+func set_mode(m: int) -> void:
+	mode = m
 	if mode == MODE_GPS:
-		# при возврате в GPS подвес выравнивается по текущему курсу
 		var e := body.get_euler()
 		_yaw = e.y
 		_pitch = 0.0
 	_omega = Vector3.ZERO
+
+
+## Знімок польоту на паузу меню: меню водить цю ж камеру по обльоту, тож без повернення
+## «Продовжити» стартувало б з точки обльоту з чужим курсом.
+func flight_snapshot() -> Dictionary:
+	return {"xf": global_transform, "body": body, "vel": velocity, "yaw": _yaw, "pitch": _pitch, "omega": _omega, "mode": mode,
+		"gim": _gim_yaw, "landed": landed, "thr": throttle, "w_air": _wing_air, "w_roll": _wing_roll,
+		"w_pitch": _wing_pitch, "w_auto": _wing_auto}
+
+
+func restore_flight(s: Dictionary) -> void:
+	if s.is_empty():
+		return
+	global_transform = s["xf"]
+	body = s["body"]; velocity = s["vel"]
+	_yaw = s["yaw"]; _pitch = s["pitch"]; _omega = s["omega"]; _gim_yaw = s["gim"]
+	landed = s["landed"]; throttle = s["thr"]
+	_wing_air = s["w_air"]; _wing_roll = s["w_roll"]; _wing_pitch = s["w_pitch"]; _wing_auto = s["w_auto"]
+	_acc = 0.0
+	if int(s["mode"]) != mode:
+		set_mode(mode)                           # режим змінили в ангарі — готуємо його вже від справжнього корпусу
 
 
 func cycle_drone() -> void:

@@ -432,6 +432,8 @@ func _process(dt: float) -> void:
 			_result_label.visible = false
 	if not active or main == null or main.cam == null:
 		return
+	if main.get("menu_open") == true:
+		return                                   # пауза: камера зараз літає обльотом меню, а не дроном
 	if step >= _steps.size():
 		return
 	t += dt

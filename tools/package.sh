@@ -6,7 +6,10 @@ set -euo pipefail
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 VER="${1:-beta}"
 cd "$HERE/build"
-rm -rf dist && mkdir -p dist
+# чистимо лише те, що скрипт створює сам: поруч можуть лежати матеріали сторінки (скриншоти тощо)
+mkdir -p dist
+rm -rf "dist/UAV Terrain Beta (Windows)" "dist/UAV Terrain Beta (macOS)" "dist/UAVTerrain-$VER-windows.zip" "dist/UAVTerrain-$VER-macos.zip"
+cp "$HERE/tools/dist/ITCH_PAGE.md" dist/ 2>/dev/null || true
 pack() {   # $1 — назва теки в архіві, $2 — ім'я zip
   cp "$HERE/ATTRIBUTION.md" "dist/$1/"
   cp "$HERE/tools/dist/README.txt" "dist/$1/README.txt"

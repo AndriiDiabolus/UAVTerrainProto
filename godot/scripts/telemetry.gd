@@ -80,6 +80,8 @@ func event(name: String, data: Dictionary = {}) -> void:
 
 
 func _process(dt: float) -> void:
+	if main != null and main.get("menu_open") == true:
+		return                                   # пауза меню: обліт не пишеться в політ, реплей стоїть
 	if replaying:
 		_step_replay(dt)
 		return
