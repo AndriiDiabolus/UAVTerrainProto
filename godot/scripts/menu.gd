@@ -846,7 +846,7 @@ func _draw_title() -> void:
 	_t("ТРЕНАЖЕР ОПЕРАТОРА БпЛА", x, 225, "Manrope", 600, 13, Color(1.0, 0.84, 0.75, 0.78), 5.0)
 	var w1 := _t("UAV", x, 330, "Unbounded", 500, 100, Color.WHITE, 6.0)
 	_t("TERRAIN", x + w1 + 30, 330, "Unbounded", 200, 100, Color.WHITE, 6.0)
-	_t("Реальний рельєф України · %s, 52 × 52 км" % _region_name(), x, 372, "Manrope", 400, 17, Color(0.965, 0.93, 0.91, 0.72))
+	_t("Реальний рельєф України", x, 372, "Manrope", 400, 17, Color(0.965, 0.93, 0.91, 0.72))
 
 	var labels := {"play": "Продовжити" if _started else "Почати політ", "missions": "Місії", "hangar": "Ангар",
 		"replays": "Реплеї", "settings": "Налаштування", "exit": "Вихід"}
