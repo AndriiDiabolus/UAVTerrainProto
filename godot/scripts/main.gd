@@ -1016,6 +1016,17 @@ func _build_grass() -> void:
 
 var sound: Node3D
 
+## Аудіошина за назвою (створюється при першому зверненні, веде в Master):
+## «SFX» — звук польоту (M вимикає), «Music» — музика меню (окремий перемикач у налаштуваннях).
+func audio_bus(bus_name: String) -> int:
+	var i := AudioServer.get_bus_index(bus_name)
+	if i < 0:
+		AudioServer.add_bus()
+		i = AudioServer.bus_count - 1
+		AudioServer.set_bus_name(i, bus_name)
+		AudioServer.set_bus_send(i, "Master")
+	return i
+
 func _build_sound() -> void:
 	if "--screenshot" in OS.get_cmdline_user_args() or "--nosound" in OS.get_cmdline_user_args():
 		return

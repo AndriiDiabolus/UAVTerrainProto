@@ -21,7 +21,7 @@ var mission_marker: Label
 ## Вкл/выкл весь звук (кнопка в углу или клавиша M).
 func _toggle_sound() -> void:
 	_sound_muted = not _sound_muted
-	AudioServer.set_bus_mute(0, _sound_muted)
+	AudioServer.set_bus_mute(main.audio_bus("SFX"), _sound_muted)
 	toast("ЗВУК: ВИМК" if _sound_muted else "ЗВУК: УВІМК", "", Color(0.8, 0.8, 0.8), 1.2)
 
 
@@ -60,7 +60,7 @@ func setup(m: Node3D) -> void:
 		visible = false
 	if "--sound" in OS.get_cmdline_user_args():
 		_sound_muted = false
-	AudioServer.set_bus_mute(0, _sound_muted)     # по умолчанию тихо, M — включить
+	AudioServer.set_bus_mute(main.audio_bus("SFX"), _sound_muted)     # звук польоту за замовчуванням тихо, M — увімкнути
 	var layer := self
 	hud_label = Label.new()
 	hud_label.position = Vector2(16, 12)

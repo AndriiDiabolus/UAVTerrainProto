@@ -48,7 +48,7 @@ func _keytest() -> void:
 	Input.parse_input_event(ev)
 	await get_tree().process_frame
 	await get_tree().process_frame
-	print("KEYTEST M: muted=", AudioServer.is_bus_mute(0))
+	print("KEYTEST M: muted=", AudioServer.is_bus_mute(main.audio_bus("SFX")))
 	get_tree().quit()
 
 

@@ -29,17 +29,19 @@ var _dog: AudioStreamWAV
 var _bird: AudioStreamWAV
 var _amb_players: Array[AudioStreamPlayer3D] = []
 var _amb_i := 0
+var _menu_k := 0.0     # 1 — відкрите меню: мотори/вітер/дощ глушаться (дрон не летить)
 
 
 func setup(m: Node3D) -> void:
 	main = m
+	main.audio_bus("SFX")
 	# непрерывный синтез (моторы + ветер)
 	gen_player = AudioStreamPlayer.new()
 	var gen := AudioStreamGenerator.new()
 	gen.mix_rate = RATE
 	gen.buffer_length = 0.12
 	gen_player.stream = gen
-	gen_player.bus = "Master"
+	gen_player.bus = "SFX"
 	add_child(gen_player)
 	gen_player.play()
 	playback = gen_player.get_stream_playback()
@@ -53,6 +55,7 @@ func setup(m: Node3D) -> void:
 		p.max_distance = 7000.0
 		p.attenuation_model = AudioStreamPlayer3D.ATTENUATION_INVERSE_DISTANCE
 		p.volume_db = 6.0
+		p.bus = "SFX"
 		add_child(p)
 		_booms.append(p)
 
@@ -61,6 +64,7 @@ func setup(m: Node3D) -> void:
 	sp.name = "Shot"
 	sp.stream = shot_stream
 	sp.volume_db = -4.0
+	sp.bus = "SFX"
 	add_child(sp)
 
 	_thunder = _make_thunder()
@@ -71,6 +75,7 @@ func setup(m: Node3D) -> void:
 		ap.unit_size = 60.0
 		ap.max_distance = 1200.0
 		ap.attenuation_model = AudioStreamPlayer3D.ATTENUATION_INVERSE_DISTANCE
+		ap.bus = "SFX"
 		add_child(ap)
 		_amb_players.append(ap)
 
@@ -96,7 +101,9 @@ func _process(dt: float) -> void:
 		var agl0: float = cp0.y - main.height_at(cp0.x, cp0.z)
 		rain_t = 0.65 * clampf(1.0 - agl0 / 400.0, 0.25, 1.0)
 	_rainlvl = lerpf(_rainlvl, rain_t, clampf(dt * 0.8, 0.0, 1.0))
-	_ambient_oneshots(dt)
+	_menu_k = move_toward(_menu_k, 1.0 if main.get("menu_open") == true else 0.0, dt * 1.5)
+	if _menu_k < 0.5:
+		_ambient_oneshots(dt)
 	_fill()
 
 
@@ -138,6 +145,7 @@ func thunder() -> void:
 		var p := AudioStreamPlayer.new()
 		p.stream = _thunder
 		p.volume_db = lerpf(-2.0, -14.0, delay / 3.5)   # дальняя молния — тише
+		p.bus = "SFX"
 		add_child(p)
 		p.play()
 		p.finished.connect(p.queue_free))
@@ -175,7 +183,7 @@ func _fill() -> void:
 			if randf() < 0.004:
 				drops = (randf() * 2.0 - 1.0) * 0.8
 			s += (_rain_lp2 * 0.55 + drops) * _rainlvl
-		s = clampf(s, -1.0, 1.0)
+		s = clampf(s * (1.0 - _menu_k), -1.0, 1.0)
 		buf[i] = Vector2(s, s)
 	playback.push_buffer(buf)
 

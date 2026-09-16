@@ -31,9 +31,13 @@ var _mouse := Vector2(-1, -1)
 var _plans := {}              # id → план місії для карти брифінгу
 var _plans_home := Vector3.INF
 var _stats := {}              # id → {best, done}
+var _music: AudioStreamPlayer
+var music_on := true          # музика меню (settings.cfg [game] menu_music)
+var _music_lvl := 0.0         # 0..1 плавне наростання/затухання
+const MUSIC_DB := -9.0
 
 const TITLE_ITEMS := ["play", "missions", "hangar", "replays", "settings", "exit"]
-const SETTINGS_ITEMS := ["region", "weather", "quality", "trees", "sound", "rc", "rates"]
+const SETTINGS_ITEMS := ["region", "weather", "quality", "trees", "music", "sound", "rc", "rates"]
 const HANGAR := [
 	{"id": "wing", "t": "SHARK", "s": "розвідник · зум ×60", "cls": "РОЗВІДНИК · КРИЛО", "sub": "КРИЛО · РОЗМАХ 3.4 м",
 	 "desc": "Крило для розвідки з висоти 800 м: гімбал із зумом до ×60, автозахоплення й закріплення цілей для всієї групи."},
@@ -71,6 +75,7 @@ func setup(m: Node3D) -> void:
 	add_child(_panel)
 	_refresh_replays()
 	_load_stats()
+	_setup_music()
 	var args := OS.get_cmdline_user_args()
 	var auto := true
 	for a in args:
@@ -152,6 +157,7 @@ func set_open(v: bool) -> void:
 
 
 func _process(dt: float) -> void:
+	_step_music(dt)
 	if not open or main == null or main.cam == null:
 		return
 	# кінематографічний обліт села навколо точки старту
@@ -347,6 +353,21 @@ func self_test() -> bool:
 	_press(KEY_ENTER)
 	check.call("Enter у брифінгу → місія 1 стартувала, меню закрите",
 		not open and main.mission.active and int(main.mission.mission_id) == 1)
+	if _music != null:
+		# музика: після закриття меню затухає й зупиняється; звук польоту (SFX) глушиться окремо від музики
+		var t_end := Time.get_ticks_msec() + 1600
+		while Time.get_ticks_msec() < t_end:
+			await get_tree().process_frame
+		check.call("музика затихла після старту місії", not _music.playing)
+		set_open(true)
+		t_end = Time.get_ticks_msec() + 1600
+		while Time.get_ticks_msec() < t_end:
+			await get_tree().process_frame
+		check.call("музика грає у відкритому меню", _music.playing and _music_lvl > 0.9)
+		check.call("шина Music не залежить від M (SFX)", not AudioServer.is_bus_mute(main.audio_bus("Music")))
+		if main.sound != null:
+			check.call("гул моторів і вітер у меню приглушені", float(main.sound._menu_k) > 0.99)
+		set_open(false)
 	main.mission.stop()
 	main.cam.set_drone(keep_drone)
 	return ok
@@ -444,6 +465,12 @@ func _setting_adjust(it: String, dir: int) -> void:
 		"trees": _switch_trees()
 		"sound":
 			if main.hud != null: main.hud._toggle_sound()
+		"music":
+			music_on = not music_on
+			var cfg := ConfigFile.new()
+			cfg.load("user://settings.cfg")
+			cfg.set_value("game", "menu_music", music_on)
+			cfg.save("user://settings.cfg")
 		"rc": main.rc.wizard_start()
 		"rates": main.rc.cycle_preset(dir)
 
@@ -628,6 +655,45 @@ func _draw_map_vectors() -> void:
 		var az := Vector2(-sin(a), cos(a))
 		_map_vec.draw_colored_polygon(PackedVector2Array([sp - ax * hw - az * hd, sp + ax * hw - az * hd,
 			sp + ax * hw + az * hd, sp - ax * hw + az * hd]), bcol)
+
+
+# ============================ музика меню ============================
+
+func _setup_music() -> void:
+	var cfg := ConfigFile.new()
+	if cfg.load("user://settings.cfg") == OK:
+		music_on = bool(cfg.get_value("game", "menu_music", true))
+	if "--nosound" in OS.get_cmdline_user_args() or not ResourceLoader.exists("res://assets/audio/menu_theme.wav"):
+		return
+	var st := load("res://assets/audio/menu_theme.wav") as AudioStreamWAV
+	if st == null:
+		return
+	st.loop_mode = AudioStreamWAV.LOOP_FORWARD         # трек згенеровано безшовною петлею (tools/make_menu_music.py)
+	st.loop_begin = 0
+	st.loop_end = int(round(st.get_length() * st.mix_rate))
+	_music = AudioStreamPlayer.new()
+	_music.stream = st
+	_music.bus = "Music"
+	main.audio_bus("Music")
+	_music.volume_db = -80.0
+	add_child(_music)
+
+
+## Музика звучить лише у відкритому меню: наростає ~1.5 с, затухає ~1 с, у тиші — пауза (не крутить CPU).
+func _step_music(dt: float) -> void:
+	if _music == null:
+		return
+	var want := 1.0 if open and music_on else 0.0
+	_music_lvl = move_toward(_music_lvl, want, dt * (0.66 if want > _music_lvl else 1.0))
+	if _music_lvl > 0.001:
+		if not _music.playing:
+			_music.play(_music_pos)
+		_music.volume_db = MUSIC_DB + linear_to_db(_music_lvl)
+	elif _music.playing:
+		_music_pos = _music.get_playback_position()
+		_music.stop()
+
+var _music_pos := 0.0
 
 
 # ============================ вітрина ангара ============================
@@ -1346,7 +1412,8 @@ func _draw_settings() -> void:
 		"weather": ["Погода", str(main.weather.label), ""],
 		"quality": ["Якість графіки", str(main.QUALITY_NAMES[main.quality]).capitalize(), ""],
 		"trees": ["Дерева", "Версія 2 · Meshy" if int(main.trees_ver) == 2 else "Версія 1 · класика", "перезапуск сцени"],
-		"sound": ["Звук", "вимкнено" if main.hud != null and main.hud._sound_muted else "увімкнено", "M"],
+		"music": ["Музика в меню", "увімкнена" if music_on else "вимкнена", "власний ембієнт-трек"],
+		"sound": ["Звук польоту", "вимкнено" if main.hud != null and main.hud._sound_muted else "увімкнено", "мотори, вітер, вибухи · M"],
 		"rc": ["Пульт", rc_v, "Enter — майстер калібрування"],
 		"rates": ["Рейти", str(main.rc.rates_label()), "Betaflight Actual"],
 	}
