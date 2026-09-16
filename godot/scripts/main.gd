@@ -60,7 +60,8 @@ func _ready() -> void:
 			trees_ver = clampi(int(a.substr(8)), 1, 2)
 	if region != "":
 		asset_dir = "res://assets/regions/%s/" % region
-		if not FileAccess.file_exists(ProjectSettings.globalize_path(asset_dir + "meta.json")) and not ResourceLoader.exists(asset_dir + "meta.json"):
+		# FileAccess по res:// видит и диск (редактор), и PCK (экспортированный билд); globalize_path — только диск
+		if not FileAccess.file_exists(asset_dir + "meta.json"):
 			region = ""; asset_dir = "res://assets/"
 	_load_quality()
 	collision = load("res://scripts/collision.gd").new(self)
