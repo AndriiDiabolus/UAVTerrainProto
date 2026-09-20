@@ -20,3 +20,4 @@ godot/assets/albedo_clean.jpg.import
 # macOS
 .DS_Store
 *.app/
+/netshot_*.png

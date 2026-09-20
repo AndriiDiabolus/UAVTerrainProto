@@ -40,6 +40,10 @@ func _place_window_right_half() -> void:
 
 
 func _ready() -> void:
+	# полигон «сетевой заслон»: расчётные режимы (--netbatch / --nettest) считаются
+	# без построения мира и сразу выходят — headless-прогон занимает доли секунды
+	if _netdef_headless():
+		return
 	_place_window_right_half()
 	# фиксированный сид — расстановка/движение целей повторяются от запуска к запуску
 	# (нужно тренажёру для разбора «того же полёта»). Меняется флагом --seed=N.
@@ -53,6 +57,14 @@ func _ready() -> void:
 	if rcfg.load("user://settings.cfg") == OK:
 		region = str(rcfg.get_value("game", "region", ""))
 		trees_ver = int(rcfg.get_value("game", "trees", 2))
+	# полигон «сетевой заслон» ставится на ровную степь, если регион не задан явно
+	if "--netdef" in OS.get_cmdline_user_args():
+		var explicit := false
+		for a in OS.get_cmdline_user_args():
+			if a.begins_with("--region="):
+				explicit = true
+		if not explicit and FileAccess.file_exists("res://assets/regions/steppe/meta.json"):
+			region = "steppe"
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--region="):
 			region = a.substr(9)
@@ -96,6 +108,7 @@ func _ready() -> void:
 	_build_droneview()
 	_build_rc()
 	_build_menu()
+	_build_netdef()
 
 
 var rc: Node                       # пилотский модуль: RC-пульт + rates (rc.gd)
@@ -1248,6 +1261,47 @@ func _spawn_camera() -> void:
 	cam.set("main", self)
 	cam.make_current()
 	_home_pos = cam.position
+
+
+var netdef: Node3D
+
+## Полигон «сетевой заслон» (--netdef): объект защиты, сетевой барьер, волны угроз.
+func _build_netdef() -> void:
+	if not ("--netdef" in OS.get_cmdline_user_args()):
+		return
+	netdef = Node3D.new()
+	netdef.name = "NetDef"
+	netdef.set_script(load("res://scripts/netdef.gd"))
+	add_child(netdef)
+	netdef.setup(self)
+
+
+## Расчётные режимы полигона «сетевой заслон» — без сцены и рельефа.
+## --nettest — самопроверки физической модели; --netbatch[=N] — Монте-Карло по сценариям.
+func _netdef_headless() -> bool:
+	var args := OS.get_cmdline_user_args()
+	var batch := false
+	var test := false
+	var sweep := false
+	for a in args:
+		if a == "--nettest":
+			test = true
+		elif a == "--netbatch" or a.begins_with("--netbatch="):
+			batch = true
+		elif a == "--netsweep" or a.begins_with("--netsweep="):
+			sweep = true
+	if not (batch or test or sweep):
+		return false
+	var B: GDScript = load("res://scripts/netdef_batch.gd")
+	var ok := true
+	if test:
+		ok = B.self_test()
+	if batch:
+		B.run()
+	if sweep:
+		B.sweep()
+	get_tree().quit(0 if ok else 1)
+	return true
 
 
 ## Физический код клавиши: хоткеи работают на любой раскладке (кириллица и т.д.).

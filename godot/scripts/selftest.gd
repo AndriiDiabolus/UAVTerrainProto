@@ -19,6 +19,9 @@ func setup(m: Node3D) -> void:
 		_check("баллистика сброса + поражение", _test_ballistics())
 		_check("БЧ-камикадзе: подрыв при столкновении", _test_kamikaze())
 		_check("ретранслятор: канал вторым хопом", _test_relay())
+	if "--selftest" in args:
+		any = true
+		_check("полігон: фізика сітьового заслону", load("res://scripts/netdef_batch.gd").self_test())
 	if "--selftest" in args or "--flytest" in args:
 		any = true
 		_check("лётная модель", main.cam.self_test())
