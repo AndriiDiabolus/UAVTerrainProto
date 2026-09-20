@@ -467,10 +467,13 @@ func _draw_shark_panel(f: Font, vp: Vector2, cam: Camera3D, agl: float) -> void:
 	var endv := hl.angle()
 	if endv < start: endv += TAU
 	var gpoly := PackedVector2Array([c + hl, c + hr])
-	for i in 21:
-		var a := start + (endv - start) * (i / 20.0)
+	# крайние точки дуги совпадают с hr и hl — дублировать их нельзя:
+	# повторные вершины дают вырожденные рёбра, и триангуляция полигона падает
+	for i in range(1, 20):
+		var a := start + (endv - start) * (float(i) / 20.0)
 		gpoly.append(c + Vector2(cos(a), sin(a)) * R)
-	draw_colored_polygon(gpoly, Color(0.42, 0.30, 0.17, 0.95))
+	if endv - start > 0.02:
+		draw_colored_polygon(gpoly, Color(0.42, 0.30, 0.17, 0.95))
 	draw_line(c + hl, c + hr, Color(1, 1, 1, 0.9), 2.0)
 	# шкала тангажа ±20°
 	for pd in [-20, -10, 10, 20]:
