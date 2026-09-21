@@ -360,6 +360,73 @@ static func wind_state(bar: Dictionary, wind: float) -> Dictionary:
 	}
 
 
+## Сила, которую держит зацепленный участок полотна до разрыва, Н.
+## Работают нити, накрытые габаритом изделия; нагружены неравномерно (η = 0.5).
+static func net_hold_force(net: Dictionary, span: float) -> float:
+	var cell: float = float(net["cell"])
+	var n_cords: int = clampi(2 * (int(ceil(span / cell)) + 1), 2, 48)
+	return float(n_cords) * float(net["break_kn"]) * 1000.0 * 0.5
+
+
+## Силовая схема задержания.
+## Полотно натягивается упруго (ход s_net) до порога тормоза F_b, дальше тормоз на анкере
+## травит ленту с постоянной силой F_b на ходе до s_abs. Условие работы: F_b ниже силы,
+## которую держит полотно, иначе сеть рвётся раньше, чем тормоз стронется.
+## Пиковое замедление = F / m — именно оно ломает планер и будит взрыватель.
+static func capture(bar: Dictionary, span: float, mass: float, e_n: float) -> Dictionary:
+	var net: Dictionary = bar["net"]
+	var s_net: float = maxf(float(net["stroke"]), 0.5)
+	var f_net := net_hold_force(net, span)
+	var f_b: float = float(bar["absorber"]["force"]) * 1000.0
+	var s_abs: float = float(bar["absorber"]["stroke"])
+	var out := {"caught": false, "e_cap": 0.0, "n_g": 0.0, "travel": 0.0, "brake_used": 0.0,
+		"f_net": f_net, "f_b": f_b, "mode": ""}
+	if f_b > 0.0 and f_b < f_net:
+		var e_el := 0.5 * f_b * s_net
+		out["e_cap"] = e_el + f_b * s_abs
+		if e_n <= e_el:
+			# остановлен ещё на упругом участке, тормоз не стронулся
+			var k := f_b / s_net
+			var x := sqrt(2.0 * e_n / k)
+			out["caught"] = true
+			out["travel"] = x
+			out["n_g"] = k * x / (mass * G)
+			out["mode"] = "elastic"
+		else:
+			var s_b := (e_n - e_el) / f_b
+			out["caught"] = s_b <= s_abs
+			out["brake_used"] = minf(s_b, s_abs)
+			out["travel"] = s_net + minf(s_b, s_abs)
+			out["n_g"] = f_b / (mass * G)
+			out["mode"] = "brake"
+	else:
+		# поглотителя нет или он жёстче полотна — работает одна сеть до разрыва
+		var k := f_net / s_net
+		out["e_cap"] = 0.5 * f_net * s_net
+		if e_n <= float(out["e_cap"]):
+			var x := sqrt(2.0 * e_n / k)
+			out["caught"] = true
+			out["travel"] = x
+			out["n_g"] = k * x / (mass * G)
+		else:
+			out["travel"] = s_net
+			out["n_g"] = f_net / (mass * G)
+		out["mode"] = "net_only"
+	return out
+
+
+## Окно сил секции — главное правило настройки тормоза:
+## ветровая нагрузка на анкеры < порог тормоза < сила, которую держит полотно.
+## Ниже окна тормоз травит от ветра, выше — полотно рвётся раньше, чем тормоз стронется.
+static func force_window(bar: Dictionary, wind: float, span := 2.5) -> Dictionary:
+	var ws := wind_state(bar, wind)
+	var w_kn: float = float(ws.get("anchor_kn", 0.0))
+	var b_kn: float = float(bar["absorber"]["force"])
+	var n_kn: float = net_hold_force(bar["net"], span) * 0.001
+	return {"wind_kn": w_kn, "brake_kn": b_kn, "net_kn": n_kn,
+		"ok": b_kn > w_kn and b_kn < n_kn}
+
+
 # ═══════════════════ ОДИН АКТ ПЕРЕХВАТА ═══════════════════
 
 ## Сгенерировать попытку атаки: азимут, высота подхода, скорость, боковое смещение.
@@ -482,20 +549,18 @@ static func engage(bar: Dictionary, shot: Dictionary, rng: RandomNumberGenerator
 		_apply_direct_hit(bar, th, res, rng, shot)
 		return res
 
-	# 5. энергия удара против энергоёмкости узла
+	# 5. торможение: силовая схема «полотно → тормоз на анкере»
 	var v_n: float = v * cos(shot_path_angle(shot, r_stand))   # нормальная к полотну составляющая
 	var e_n := 0.5 * mass * v_n * v_n
-	var n_cords: int = clampi(2 * (int(ceil(span / cell)) + 1), 2, 48)
-	var eta := 0.5                                          # нити нагружаются неравномерно
-	var e_net: float = float(net["break_kn"]) * 1000.0 * float(net["stroke"]) * n_cords * eta
-	var e_abs: float = float(bar["e_abs"])
-	var e_cap := e_net + e_abs
-	var s_eff: float = float(net["stroke"]) + float(bar["absorber"]["stroke"])
-	var n_g := v_n * v_n / (2.0 * maxf(s_eff, 0.5) * G)
+	var cap := capture(bar, span, mass, e_n)
+	var e_cap: float = float(cap["e_cap"])
+	var n_g: float = float(cap["n_g"])
 	res.n_g = n_g
+	res["travel"] = float(cap["travel"])
+	res["brake_used"] = float(cap["brake_used"])
 
 	var airframe_break: bool = n_g > float(th["g_lim"])
-	var caught: bool = e_n <= e_cap
+	var caught: bool = bool(cap["caught"])
 
 	# 6. подрыв БЧ на сети (инерционный взрыватель чувствует замедление)
 	var p_det := 0.0

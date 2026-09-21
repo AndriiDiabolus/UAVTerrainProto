@@ -636,8 +636,8 @@ func _resolve(t: Dictionary) -> void:
 	match oc:
 		"caught":
 			t["state"] = "decel"
-			var s_eff: float = float(bar["net"]["stroke"]) + float(bar["absorber"]["stroke"])
-			t["stroke"] = s_eff
+			# реальный ход торможения из силовой схемы модели (полотно + лента тормоза)
+			t["stroke"] = maxf(float(res.get("travel", 4.0)), 0.5)
 			t["v0"] = float(t["v"])
 			t["gone"] = 0.0
 			t["dir"] = (Vector3(site_pos.x, node.position.y, site_pos.z) - node.position).normalized()

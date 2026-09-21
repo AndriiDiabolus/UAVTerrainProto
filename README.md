@@ -58,7 +58,7 @@ tools/.venv/bin/python tools/build_region.py --name steppe --lat 47.66 --lon 33.
 ./run.sh -- --netdef            # 3D-полигон (регион steppe подставляется сам)
 ./run.sh -- --netbatch=600      # Монте-Карло по конфигурациям → docs/netdef/*.csv + сводка
 ./run.sh -- --netsweep=250      # развёртка: на каком рубеже и высоте ставить полотно
-./run.sh -- --nettest           # 27 самопроверок физики (входят в --selftest)
+./run.sh -- --nettest           # 29 самопроверок физики (входят в --selftest)
 ```
 
 Флаги: `--netscen=` конфигурация, `--netwave=` тип угрозы, `--netwind=3,10,17`, `--netout=`,

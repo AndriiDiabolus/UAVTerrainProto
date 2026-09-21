@@ -151,6 +151,10 @@ static func _print_barrier(k: String, cfg: Dictionary, bar: Dictionary) -> void:
 	print("    поглинач: %s (%.0f кН × %.0f м = %.0f кДж) · покриття фронту %.0f%% · вітер до %.0f м/с"
 		% [bar["absorber"]["name"], bar["absorber"]["force"], bar["absorber"]["stroke"],
 		   float(bar["e_abs"]) * 0.001, float(bar["coverage"]) * 100.0, bar["wind_max"]])
+	var fw := M.force_window(bar, minf(17.0, float(bar["wind_max"])))
+	print("    вікно сил (Шахед, вітер %.0f м/с): анкери %.1f кН < гальмо %.0f кН < полотно %.0f кН → %s"
+		% [minf(17.0, float(bar["wind_max"])), fw["wind_kn"], fw["brake_kn"], fw["net_kn"],
+		   "ОК" if fw["ok"] else "ПОЗА ВІКНОМ"])
 
 
 static func _print_wind_block(bar: Dictionary, w: float, rows: Array, scen: String) -> void:
@@ -424,6 +428,17 @@ static func self_test() -> bool:
 		% [bar_bad["net_mass_seg"], bar_bad["payload"]], not bool(bar_bad["lift_ok"]))
 	_chk(fails, "нереалізований заслін пропускає загрозу",
 		str(M.engage(bar_bad, shot, rng, 3.0)["outcome"]) == "leak_down")
+
+	# 6в. Окно сил: тормоз не травит от ветра и стронется раньше, чем порвётся полотно
+	var fw := M.force_window(bar_yes, 17.0)
+	_chk(fails, "вікно сил: вітер %.1f кН < гальмо %.0f кН < полотно %.0f кН"
+		% [fw["wind_kn"], fw["brake_kn"], fw["net_kn"]], bool(fw["ok"]))
+	# силовая схема: пиковое замедление = порог тормоза / масса
+	var cap := M.capture(bar_yes, 2.5, 200.0, 224000.0)
+	var g_exp: float = float(bar_yes["absorber"]["force"]) * 1000.0 / (200.0 * M.G)
+	_chk(fails, "Шахед 224 кДж: хід %.1f м, %.1f g (чекаємо %.1f g від гальма)"
+		% [cap["travel"], cap["n_g"], g_exp],
+		bool(cap["caught"]) and absf(float(cap["n_g"]) - g_exp) < 0.1)
 
 	# 7. Сплошное покрытие не даёт утечек в зазор
 	var cfg_full: Dictionary = SCENARIOS["azs_aero"].duplicate()
