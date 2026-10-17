@@ -21,3 +21,4 @@ godot/assets/albedo_clean.jpg.import
 .DS_Store
 *.app/
 /netshot_*.png
+tools/wind_cache/

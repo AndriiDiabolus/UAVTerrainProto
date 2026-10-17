@@ -28,6 +28,11 @@ const SCENARIOS := {
 		"site": "azs", "carrier": "aero_400", "net": "light_05", "absorber": "brake_hd",
 		"r_stand": 300.0, "h_top": 190.0, "h_bot": 12.0, "seg_w": 30.0, "gap": 4.0, "arc_deg": 360.0
 	},
+	"azs_opt": {
+		"name": "АЗС · рекомендована геометрія: аеростати 400 м³, рубіж 140 м, полотно до 180 м",
+		"site": "azs", "carrier": "aero_400", "net": "light_05", "absorber": "brake_hd",
+		"r_stand": 140.0, "h_top": 180.0, "h_bot": 12.0, "seg_w": 31.5, "gap": 4.0, "arc_deg": 360.0
+	},
 	"azs_multi": {
 		"name": "АЗС · мультикоптери за тривогою, рубіж 160 м",
 		"site": "azs", "carrier": "multi_60", "net": "light_05", "absorber": "tearweb",
@@ -358,6 +363,232 @@ static func _mix_risk(bar: Dictionary, n: int, rng: RandomNumberGenerator, wind:
 		var agg := M.monte(bar, k, maxi(int(float(n) * float(MIX[k])), 30), rng, wind)
 		acc += float(MIX[k]) * float(agg["p_site_crit"])
 	return acc
+
+
+# ═══════════════════ АНАЛИЗ ЧУВСТВИТЕЛЬНОСТИ ═══════════════════
+# Каждый неуверенный коэффициент модели качается в правдоподобном диапазоне,
+# остальные — в базе. Размах риска объекта показывает, что мерить на стенде первым.
+# Общие случайные числа: перед каждой оценкой генератор пересевается одним сидом.
+
+const SENS := [
+	["knot", "міцність вузла полотна / шнура", 0.5, 1.0, "розрив зразків полотна з вузлами на стенді"],
+	["eta", "частка нитей, що реально тримають виріб", 0.3, 0.7, "скид вантажу в секцію, тензодатчики на нитках"],
+	["stroke_k", "пружний хід полотна (×)", 0.5, 1.5, "прогин полотна при скиді вантажу"],
+	["brake_k", "фактична сила гальма / номінал", 0.7, 1.25, "стендова крива «сила–хід» гальма"],
+	["anchor_share", "частка вітру полотна на анкери", 0.4, 0.8, "тензодатчики на анкерах і прив'язі при підйомі"],
+	["cd_net", "Cd сітки", 0.9, 1.6, "підйом секції з датчиками при різному вітрі"],
+	["cd_aero", "Cd оболонки аеростата", 0.08, 0.2, "підйом секції з датчиками при різному вітрі"],
+	["evade", "частка ухилень оператора FPV", 0.05, 0.4, "опитування операторів, пуски макетів FPV у полотно"],
+	["prop_pusher", "намотування на штовхальний гвинт", 0.3, 0.8, "удари макетом із гвинтом, що обертається"],
+	["fz_imp_g0", "поріг інерційного підривника, g", 4.0, 16.0, "дані піротехніків про підривники Шахеда"],
+	["fz_con_g0", "поріг контактного підривника, g", 2.0, 8.0, "дані піротехніків про підривники FPV/«Молнії»"],
+	["glim_k", "міцність планерів (×)", 0.5, 2.0, "руйнування макета планера при гальмуванні"],
+	["alt_k", "висота підходу (×)", 0.6, 1.5, "треки радарів ППО на останніх кілометрах"],
+	["rdive_k", "дальність початку зниження (×)", 0.6, 1.6, "треки радарів ППО на останніх кілометрах"],
+	["v_k", "швидкість виробів (×)", 0.85, 1.2, "треки радарів ППО"],
+	["cep", "КВО прицілювання, м", 6.0, 30.0, "розбір влучань по об'єктах"],
+	["tnt", "тротиловий еквівалент БЧ", 0.9, 1.5, "дані піротехніків"],
+	["frag", "уламків на кг ВВ", 450.0, 1800.0, "дані піротехніків, розбір уламкових полів"],
+	["wreck_det", "підрив уламків об ґрунт після прориву", 0.1, 0.9, "дані піротехніків: спрацювання підривника зруйнованого виробу"]
+]
+
+
+static func _risk_at(cfg: Dictionary, wind: float, n: int, seed: int) -> Dictionary:
+	var bar := M.build_barrier(cfg)
+	var rng := RandomNumberGenerator.new()
+	var acc := 0.0
+	var stop_sh := 0.0
+	for k_v: Variant in MIX.keys():
+		var k := str(k_v)
+		rng.seed = seed + hash(k)
+		var agg := M.monte(bar, k, maxi(int(float(n) * float(MIX[k])), 40), rng, wind)
+		acc += float(MIX[k]) * float(agg["p_site_crit"])
+		if k == "shahed":
+			stop_sh = float(agg["p_stop"])
+	return {"risk": acc, "stop_shahed": stop_sh}
+
+
+static func sensitivity() -> void:
+	var n := 4000
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--netsens="):
+			n = maxi(int(a.substr(10)), 500)
+	var scen_id := "azs_opt"
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--netscen="):
+			scen_id = a.substr(10)
+	var cfg: Dictionary = SCENARIOS[scen_id]
+	var winds: Array = [3.0, 9.0]
+	var seed := 777
+	M.reset_k()
+	var base: Array = []
+	var noise: Array = []
+	for w_v: Variant in winds:
+		base.append(_risk_at(cfg, float(w_v), n, seed))
+		noise.append(absf(float(_risk_at(cfg, float(w_v), n, seed + 1000)["risk"]) - float(base[-1]["risk"])))
+	print("\n╔══ ЧУТЛИВІСТЬ МОДЕЛІ ══╗")
+	print("конфігурація: %s" % cfg["name"])
+	print("метрика: ризик вивести АЗС з ладу для суміші нальоту (%s), %d спроб на оцінку" % [", ".join(_mix_names()), n])
+	print("база: вітер 3 м/с — %.1f %%, вітер 9 м/с — %.1f %% · шум оцінки ≈ %.1f п.п.\n"
+		% [float(base[0]["risk"]) * 100.0, float(base[1]["risk"]) * 100.0, maxf(float(noise[0]), float(noise[1])) * 100.0])
+	var rows: Array = []
+	for p_v: Variant in SENS:
+		var p: Array = p_v
+		var key := str(p[0])
+		var res := {"key": key, "name": str(p[1]), "lo": float(p[2]), "hi": float(p[3]), "how": str(p[4]),
+			"base": float(M.K_DEFAULT[key]), "r": []}
+		var swing := 0.0
+		for wi in winds.size():
+			M.reset_k(); M.K[key] = float(p[2])
+			var lo := _risk_at(cfg, float(winds[wi]), n, seed)
+			M.reset_k(); M.K[key] = float(p[3])
+			var hi := _risk_at(cfg, float(winds[wi]), n, seed)
+			M.reset_k()
+			res["r"].append([float(lo["risk"]), float(hi["risk"])])
+			swing = maxf(swing, absf(float(hi["risk"]) - float(lo["risk"])))
+		res["swing"] = swing
+		rows.append(res)
+	rows.sort_custom(func(a, b): return float(a["swing"]) > float(b["swing"]))
+	var nf: float = maxf(float(noise[0]), float(noise[1]))
+	print("    %-44s %-13s %-17s %-17s %6s" % ["параметр (база)", "діапазон", "3 м/с: низ → верх", "9 м/с: низ → верх", "розмах"])
+	for r_v: Variant in rows:
+		var r: Dictionary = r_v
+		var rr: Array = r["r"]
+		print("    %-44s %-13s %5.1f → %5.1f %%   %5.1f → %5.1f %%   %5.1f п.п.%s"
+			% ["%s (%s)" % [r["name"], _fmt(float(r["base"]))], "%s…%s" % [_fmt(float(r["lo"])), _fmt(float(r["hi"]))],
+			   float(rr[0][0]) * 100.0, float(rr[0][1]) * 100.0, float(rr[1][0]) * 100.0, float(rr[1][1]) * 100.0,
+			   float(r["swing"]) * 100.0, "" if float(r["swing"]) > nf * 2.0 else "  (у межах шуму)"])
+	_write_sens(rows, cfg, base, nf, n)
+
+
+static func _fmt(v: float) -> String:
+	if absf(v - roundf(v)) < 0.001:
+		return "%d" % int(roundf(v))
+	return ("%.2f" % v).rstrip("0")
+
+
+static func _write_sens(rows: Array, cfg: Dictionary, base: Array, nf: float, n: int) -> void:
+	var d := out_dir()
+	var f := FileAccess.open(d + "/netdef_sensitivity.csv", FileAccess.WRITE)
+	f.store_line("param,name,base,low,high,risk_w3_low,risk_w3_high,risk_w9_low,risk_w9_high,swing,how_to_measure")
+	for r_v: Variant in rows:
+		var r: Dictionary = r_v
+		var rr: Array = r["r"]
+		f.store_line("%s,\"%s\",%s,%s,%s,%.4f,%.4f,%.4f,%.4f,%.4f,\"%s\"" % [r["key"], r["name"], r["base"], r["lo"], r["hi"],
+			rr[0][0], rr[0][1], rr[1][0], rr[1][1], r["swing"], r["how"]])
+	f.close()
+	var m := FileAccess.open(d + "/netdef_sensitivity.md", FileAccess.WRITE)
+	m.store_line("# Чутливість моделі сітьового заслону")
+	m.store_line("")
+	m.store_line("Конфігурація: **%s**. Метрика — ризик вивести АЗС з ладу для суміші нальоту, %d спроб на оцінку." % [cfg["name"], n])
+	m.store_line("База: вітер 3 м/с — **%.1f %%**, 9 м/с — **%.1f %%**. Шум оцінки ≈ %.1f п.п." % [float(base[0]["risk"]) * 100.0, float(base[1]["risk"]) * 100.0, nf * 100.0])
+	m.store_line("")
+	m.store_line("| параметр (база) | діапазон | 3 м/с: низ → верх | 9 м/с: низ → верх | розмах | як виміряти |")
+	m.store_line("|---|---|---|---|---|---|")
+	for r_v: Variant in rows:
+		var r: Dictionary = r_v
+		var rr: Array = r["r"]
+		m.store_line("| %s (%s) | %s…%s | %.0f → %.0f %% | %.0f → %.0f %% | **%.1f п.п.** | %s |" % [r["name"], _fmt(float(r["base"])),
+			_fmt(float(r["lo"])), _fmt(float(r["hi"])), float(rr[0][0]) * 100.0, float(rr[0][1]) * 100.0,
+			float(rr[1][0]) * 100.0, float(rr[1][1]) * 100.0, float(r["swing"]) * 100.0, r["how"]])
+	m.close()
+	print("\nCSV: %s/netdef_sensitivity.csv" % ProjectSettings.globalize_path(d))
+
+
+# ═══════════════════ РОЗА ВЕТРОВ: ДОСТУПНОСТЬ ПО РЕГИОНАМ ═══════════════════
+# Реальный почасовой ветер ERA5 на 100 м (tools/fetch_wind.py) сворачивается с кривой
+# риска модели r(ветер): ожидаемый риск объекта за год, ночью (время налётов), зимой и летом.
+
+const ROSE_CFGS := ["azs_opt", "azs_aero_hd", "azs_mast"]
+
+
+static func windrose() -> void:
+	var txt := FileAccess.get_file_as_string("res://assets/netdef/wind_hist.json")
+	if txt.is_empty():
+		push_error("нет assets/netdef/wind_hist.json — запустите tools/fetch_wind.py")
+		return
+	var data: Dictionary = JSON.parse_string(txt)
+	var n := 1500
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--netwindrose="):
+			n = maxi(int(a.substr(14)), 300)
+	M.reset_k()
+	print("\n╔══ ДОСТУПНІСТЬ ЗАСЛОНУ ЗА РЕАЛЬНИМИ ВІТРАМИ ══╗")
+	print("вітер: %s, %d–%d, почасово, висота 100 м" % [data["source"], data["years"][0], data["years"][1]])
+	print("метрика: очікуваний ризик вивести АЗС з ладу на одну атаку суміші нальоту (%s)\n" % ", ".join(_mix_names()))
+	var curves := {}
+	for c_v: Variant in ROSE_CFGS:
+		var cid := str(c_v)
+		var cfg: Dictionary = SCENARIOS[cid]
+		var bar := M.build_barrier(cfg)
+		var curve: Array = []
+		var over: Array = []
+		for w in 31:
+			var r := _risk_at(cfg, float(w), n, 4242)
+			curve.append(float(r["risk"]))
+			over.append(float(w) > float(bar["wind_max"]) or float(M.wind_state(bar, float(w))["h_eff"]) < M.shot_height_at(M.shot_of("shahed", 120.0, 50.0), float(bar["r_stand"])) + 3.0)
+		curves[cid] = {"risk": curve, "over": over}
+		var pts: Array = []
+		for w: int in [0, 3, 6, 9, 12, 15, 18, 22]:
+			pts.append("%d м/с %.0f%%" % [w, float(curve[w]) * 100.0])
+		print("── %s" % cfg["name"])
+		print("   крива ризику: " + " · ".join(pts))
+	print("")
+	var lines: Array = []
+	var md: Array = []
+	md.append("# Доступність сітьового заслону за реальними вітрами")
+	md.append("")
+	md.append("Вітер: %s, %d–%d, почасово, висота 100 м (середина полотна). Метрика — очікуваний ризик вивести АЗС з ладу на одну атаку суміші нальоту. «Шахед поверх» — частка годин, коли кромка нижча за висоту перетину рубежу типовим Шахедом або заслін спущено." % [data["source"], data["years"][0], data["years"][1]])
+	md.append("")
+	md.append("ERA5 — годинні середні по комірці ~30 км: пориви й локальні ефекти (пагорби, забудова) не враховані, реальний вітер на майданчику треба міряти.")
+	for c_v: Variant in ROSE_CFGS:
+		var cid := str(c_v)
+		var cv: Dictionary = curves[cid]
+		print("── %s" % SCENARIOS[cid]["name"])
+		print("   %-12s %8s %8s %8s %8s %13s %9s" % ["місто", "рік", "ніч", "зима", "літо", "Шахед поверх", "вітер 100 м"])
+		md.append("")
+		md.append("## %s" % SCENARIOS[cid]["name"])
+		md.append("")
+		md.append("| місто | ризик за рік | вночі | взимку | влітку | Шахед поверх (ніч) | середній вітер 100 м |")
+		md.append("|---|---|---|---|---|---|---|")
+		for reg_v: Variant in data["regions"]:
+			var reg: Dictionary = reg_v
+			var hs: Dictionary = reg["hist"]
+			var e_all := _fold(hs["all"], cv["risk"])
+			var e_n := _fold(hs["night"], cv["risk"])
+			var e_w := _fold(hs["winter"], cv["risk"])
+			var e_s := _fold(hs["summer"], cv["risk"])
+			var o_n := _fold_bool(hs["night"], cv["over"])
+			print("   %-12s %7.1f%% %7.1f%% %7.1f%% %7.1f%% %12.1f%% %6.1f м/с"
+				% [reg["name"], e_all * 100.0, e_n * 100.0, e_w * 100.0, e_s * 100.0, o_n * 100.0, reg["mean100"]])
+			md.append("| %s | %.0f %% | %.0f %% | %.0f %% | %.0f %% | %.0f %% | %.1f м/с |"
+				% [reg["name"], e_all * 100.0, e_n * 100.0, e_w * 100.0, e_s * 100.0, o_n * 100.0, reg["mean100"]])
+		print("")
+	var f := FileAccess.open(out_dir() + "/netdef_windrose.md", FileAccess.WRITE)
+	f.store_string("\n".join(md) + "\n")
+	f.close()
+	print("Звіт: %s/netdef_windrose.md" % ProjectSettings.globalize_path(out_dir()))
+
+
+static func _fold(hist: Array, curve: Array) -> float:
+	var s := 0.0
+	var t := 0.0
+	for i in hist.size():
+		var h := float(hist[i])
+		s += h * float(curve[mini(i, curve.size() - 1)])
+		t += h
+	return s / maxf(t, 1.0)
+
+
+static func _fold_bool(hist: Array, flags: Array) -> float:
+	var s := 0.0
+	var t := 0.0
+	for i in hist.size():
+		var h := float(hist[i])
+		if bool(flags[mini(i, flags.size() - 1)]):
+			s += h
+		t += h
+	return s / maxf(t, 1.0)
 
 
 # ═══════════════════ САМОПРОВЕРКИ МОДЕЛИ ═══════════════════

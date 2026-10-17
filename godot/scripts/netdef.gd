@@ -683,10 +683,10 @@ func _step_hang(t: Dictionary, dt: float) -> void:
 	if bool(t["res"]["deton"]) and float(t["hang"]) > 0.35:
 		_detonate(t, node.position)
 		return
-	if float(t["hang"]) > 1.6:
-		t["state"] = "fall"
-		t["vel"] = Vector3(0, -1.0, 0)
-		t["spin"] = Vector3(_rng.randf_range(-3, 3), 0, _rng.randf_range(-3, 3))
+	# без подрыва изделие остаётся в «мешке» полотна: секцию потом спускают лебёдкой,
+	# поэтому сцена его просто снимает, не роняя и не взрывая
+	if float(t["hang"]) > 8.0:
+		_remove(t)
 
 
 func _step_fall(t: Dictionary, dt: float) -> void:
@@ -704,7 +704,7 @@ func _step_fall(t: Dictionary, dt: float) -> void:
 			_detonate(t, p)
 		else:
 			if main.fx != null:
-				main.fx.explosion(p, false)
+				main.fx.drone_hit(p)            # удар обломков без подрыва — пыль и искры, не взрыв
 			_remove(t)
 
 

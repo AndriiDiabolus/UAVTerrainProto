@@ -13,6 +13,38 @@ const RHO_AIR := 1.225           # кг/м³, МСА на уровне моря
 const RHO_HE := 0.1664           # кг/м³, гелий 15 °C
 const H_SCALE := 8400.0          # шкала высоты атмосферы, м
 
+# ─────────────── НЕУВЕРЕННЫЕ КОЭФФИЦИЕНТЫ МОДЕЛИ ───────────────
+# Всё, что не взято из справочников, а оценено, собрано здесь, чтобы анализ
+# чувствительности (--netsens) мог качать каждое значение в правдоподобном диапазоне.
+# Значения по умолчанию = базовая модель. После прогона вызывается reset_k().
+const K_DEFAULT := {
+	"eta": 0.5,            # доля нагрузки на нити под изделием (неравномерность)
+	"knot": 1.0,           # прочность узла полотна / прочность шнура (узловая сеть ≈0.5–0.6)
+	"stroke_k": 1.0,       # множитель упругого хода полотна
+	"brake_k": 1.0,        # фактическая сила тормоза / номинал (разброс срабатывания)
+	"anchor_share": 0.6,   # доля ветровой нагрузки полотна на анкеры
+	"cd_net": 1.2,         # Cd сетки по перекрытой площади
+	"cd_aero": 0.12,       # Cd·S оболочки / V^(2/3)
+	"evade": 0.22,         # доля уклонений оператора, видящего полотно
+	"prop_quad": 0.92,     # намотка шнура на винты квадрокоптера
+	"prop_pusher": 0.55,   # намотка на толкающий винт
+	"fz_imp_g0": 8.0,      # порог инерционного взрывателя, g
+	"fz_con_g0": 4.0,      # порог контактного взрывателя, g
+	"glim_k": 1.0,         # множитель предела прочности планеров
+	"alt_k": 1.0,          # множитель крейсерской высоты подхода
+	"rdive_k": 1.0,        # множитель дальности начала снижения
+	"v_k": 1.0,            # множитель скорости изделий
+	"cep": 12.0,           # КВО прицеливания, м
+	"tnt": 1.1,            # ТНТ-эквивалент ВВ
+	"frag": 900.0,         # убойных осколков на кг ВВ
+	"wreck_det": 0.5       # срабатывание взрывателя обломков при ударе о грунт после прорыва
+}
+static var K: Dictionary = K_DEFAULT.duplicate()
+
+
+static func reset_k() -> void:
+	K = K_DEFAULT.duplicate()
+
 
 # ─────────────────────────── УГРОЗЫ ───────────────────────────
 # mass  — стартовая масса, кг
@@ -218,14 +250,15 @@ static func net_props(net_id: String) -> Dictionary:
 	return {
 		"id": net_id, "name": str(n["name"]), "cell": cell, "d": d, "mat": mat,
 		"areal": areal, "solidity": solidity,
-		"break_kn": cord_break(d, mat), "stroke": float(n["stroke"])
+		"break_kn": cord_break(d, mat) * float(K["knot"]),
+		"stroke": float(n["stroke"]) * float(K["stroke_k"])
 	}
 
 
 ## Лобовое сопротивление полотна при ветре/ударе потока, Н.
 static func net_drag(props: Dictionary, area_m2: float, v: float) -> float:
 	# Cd решётки ≈ 1.2 по перекрытой площади (для малой заполненности близко к линейному)
-	return 0.5 * RHO_AIR * v * v * area_m2 * float(props["solidity"]) * 1.2
+	return 0.5 * RHO_AIR * v * v * area_m2 * float(props["solidity"]) * float(K["cd_net"])
 
 
 # ═══════════════════ НОСИТЕЛИ ═══════════════════
@@ -295,7 +328,7 @@ static func build_barrier(cfg: Dictionary) -> Dictionary:
 		"r_stand": r_stand, "h_top": h_top, "h_bot": h_bot,
 		"seg_w": seg_w, "n_seg": n_seg, "carriers_n": carriers_n, "gap": gap,
 		"arc_deg": arc_deg, "front_m": front, "coverage": coverage,
-		"anchor_share": float(cfg.get("anchor_share", 0.6)),
+		"anchor_share": float(cfg.get("anchor_share", K["anchor_share"])),
 		"panel_area": panel_area, "net_mass_seg": net_mass_seg,
 		"net_mass_total": net_mass_seg * n_seg,
 		"payload": payload, "lift_ok": lift_ok, "lift_margin": lift_margin, "reserve": reserve,
@@ -332,13 +365,13 @@ static func wind_state(bar: Dictionary, wind: float) -> Dictionary:
 		}
 	# нижняя кромка полотна притянута к грунтовым анкерам: большая часть лобового
 	# сопротивления сети реагируется анкерами, на носитель приходит остаток
-	var anchor_share: float = float(bar.get("anchor_share", 0.6))
+	var anchor_share: float = float(bar.get("anchor_share", K["anchor_share"]))
 	var drag_carrier := drag * (1.0 - anchor_share)
 	if str(carrier["kind"]) == "aerostat":
 		var lift_n: float = (float(bar["payload"]) - float(bar["net_mass_seg"])) * G   # свободный остаток, Н
 		lift_n = maxf(lift_n, 1.0)
 		# сопротивление самой оболочки: обтекаемый корпус, Cd·S ≈ 0.12·V^(2/3)
-		var aero_drag := 0.5 * RHO_AIR * wind * wind * pow(float(carrier["vol"]), 2.0 / 3.0) * 0.12
+		var aero_drag := 0.5 * RHO_AIR * wind * wind * pow(float(carrier["vol"]), 2.0 / 3.0) * float(K["cd_aero"])
 		tilt = atan2(drag_carrier + aero_drag, lift_n)
 		h_eff = float(bar["h_top"]) * cos(tilt)
 	elif str(carrier["kind"]) == "multirotor":
@@ -365,7 +398,7 @@ static func wind_state(bar: Dictionary, wind: float) -> Dictionary:
 static func net_hold_force(net: Dictionary, span: float) -> float:
 	var cell: float = float(net["cell"])
 	var n_cords: int = clampi(2 * (int(ceil(span / cell)) + 1), 2, 48)
-	return float(n_cords) * float(net["break_kn"]) * 1000.0 * 0.5
+	return float(n_cords) * float(net["break_kn"]) * 1000.0 * float(K["eta"])
 
 
 ## Силовая схема задержания.
@@ -377,7 +410,7 @@ static func capture(bar: Dictionary, span: float, mass: float, e_n: float) -> Di
 	var net: Dictionary = bar["net"]
 	var s_net: float = maxf(float(net["stroke"]), 0.5)
 	var f_net := net_hold_force(net, span)
-	var f_b: float = float(bar["absorber"]["force"]) * 1000.0
+	var f_b: float = float(bar["absorber"]["force"]) * 1000.0 * float(K["brake_k"])
 	var s_abs: float = float(bar["absorber"]["stroke"])
 	var out := {"caught": false, "e_cap": 0.0, "n_g": 0.0, "travel": 0.0, "brake_used": 0.0,
 		"f_net": f_net, "f_b": f_b, "mode": ""}
@@ -434,10 +467,10 @@ static func make_shot(threat_id: String, bar: Dictionary, rng: RandomNumberGener
 	var th: Dictionary = THREATS[threat_id]
 	var prof_id := str(opts.get("prof", th["prof"]))
 	var az: float = float(opts.get("az", deg_to_rad(rng.randf_range(0.0, 360.0))))
-	var v: float = maxf(float(th["v"]) + rng.randfn(0.0, float(th["v_sd"])), 5.0)
-	var h_travel: float = maxf(float(th["alt"]) + rng.randfn(0.0, float(th["alt_sd"])), 15.0)
+	var v: float = maxf((float(th["v"]) + rng.randfn(0.0, float(th["v_sd"]))) * float(K["v_k"]), 5.0)
+	var h_travel: float = maxf((float(th["alt"]) + rng.randfn(0.0, float(th["alt_sd"]))) * float(K["alt_k"]), 15.0)
 	# боковое смещение прицеливания (КВО изделия)
-	var cep: float = float(opts.get("cep", 12.0))
+	var cep: float = float(opts.get("cep", K["cep"]))
 	var miss := Vector2(rng.randfn(0.0, cep), rng.randfn(0.0, cep))
 	return shot_of(threat_id, h_travel, v, prof_id, az, miss)
 
@@ -449,9 +482,9 @@ static func shot_of(threat_id: String, h: float, v: float, prof_id := "",
 	if prof_id == "":
 		prof_id = str(th["prof"])
 	var prof: Dictionary = PROFILES.get(prof_id, PROFILES["low"])
-	var r_dive: float = float(prof["r_dive"])
+	var r_dive: float = float(prof["r_dive"]) * float(K["rdive_k"])
 	if float(prof["r_dive_k"]) > 0.0:
-		r_dive = h * float(prof["r_dive_k"])
+		r_dive = h * float(prof["r_dive_k"]) * float(K["rdive_k"])
 	r_dive = maxf(r_dive, 50.0)
 	return {
 		"threat": threat_id, "az": az, "v": maxf(v, 5.0), "h": maxf(h, 5.0),
@@ -523,7 +556,7 @@ static func engage(bar: Dictionary, shot: Dictionary, rng: RandomNumberGenerator
 		return res
 
 	# 3. оператор видит полотно и уклоняется (только для управляемых по видео)
-	if str(th["guid"]) == "optic" and rng.randf() < 0.22:
+	if str(th["guid"]) == "optic" and rng.randf() < float(K["evade"]):
 		res.outcome = "evaded"
 		res.note = "оператор побачив полотно і відвернув"
 		_apply_direct_hit(bar, th, res, rng, shot)
@@ -539,8 +572,8 @@ static func engage(bar: Dictionary, shot: Dictionary, rng: RandomNumberGenerator
 	# вращающиеся винты ловят шнур даже при формальном пролёте
 	var p_prop := 0.0
 	match str(th["prop"]):
-		"quad": p_prop = 0.92
-		"pusher": p_prop = 0.55
+		"quad": p_prop = float(K["prop_quad"])
+		"pusher": p_prop = float(K["prop_pusher"])
 		_: p_prop = 0.0
 	var p_through: float = p_pass * (1.0 - p_prop)
 	if rng.randf() < p_through:
@@ -559,14 +592,14 @@ static func engage(bar: Dictionary, shot: Dictionary, rng: RandomNumberGenerator
 	res["travel"] = float(cap["travel"])
 	res["brake_used"] = float(cap["brake_used"])
 
-	var airframe_break: bool = n_g > float(th["g_lim"])
+	var airframe_break: bool = n_g > float(th["g_lim"]) * float(K["glim_k"])
 	var caught: bool = bool(cap["caught"])
 
 	# 6. подрыв БЧ на сети (инерционный взрыватель чувствует замедление)
 	var p_det := 0.0
 	match str(th["fuze"]):
-		"impact": p_det = clampf((n_g - 8.0) / 45.0, 0.02, 0.75)
-		"contact": p_det = clampf((n_g - 4.0) / 25.0, 0.05, 0.85)
+		"impact": p_det = clampf((n_g - float(K["fz_imp_g0"])) / 45.0, 0.02, 0.75)
+		"contact": p_det = clampf((n_g - float(K["fz_con_g0"])) / 25.0, 0.05, 0.85)
 		_: p_det = 0.0
 	res.deton = rng.randf() < p_det
 
@@ -589,6 +622,11 @@ static func engage(bar: Dictionary, shot: Dictionary, rng: RandomNumberGenerator
 			res.note = "полотно прорвано, планер зруйновано (%.0f g); уламки пронесло %.0f м" % [n_g, carry]
 			res.fall_r = maxf(r_stand - carry, 0.0)
 			res.fall_h = (h_cross * 0.5 if res.deton else 0.0)
+			# не сработал на полотне — обломки с БЧ бьются о грунт на десятках м/с,
+			# инерционный взрыватель может сработать уже там, ближе к объекту
+			if not res.deton and str(th["fuze"]) != "none" and rng.randf() < float(K["wreck_det"]):
+				res.deton = true
+				res.fall_h = 0.0
 		else:
 			res.outcome = "breach"
 			res.stopped = false
@@ -628,7 +666,7 @@ static func overpressure(w_tnt: float, r: float) -> float:
 static func frag_kill(w_tnt: float, area: float, r: float) -> float:
 	if w_tnt <= 0.0:
 		return 0.0
-	var n_frag := 900.0 * w_tnt                       # ~900 убойных осколков на кг ВВ (ОФ БЧ)
+	var n_frag: float = float(K["frag"]) * w_tnt      # убойных осколков на кг ВВ (ОФ БЧ)
 	var rr: float = maxf(r, 1.0)
 	var dens := n_frag / (4.0 * PI * rr * rr)          # осколков на м²
 	var eff: float = exp(-rr / 120.0)                  # потеря убойности с дальностью
@@ -649,7 +687,7 @@ static func damage_at(bar: Dictionary, th: Dictionary, fall_r: float, fall_h: fl
 			crit = true
 			fire = true
 		return {"elements": hit, "crit": crit, "fire": fire, "dp_max": 0.0, "deton": false}
-	var w_tnt: float = float(th["wh"]) * 1.1           # тротиловый эквивалент смесевого ВВ
+	var w_tnt: float = float(th["wh"]) * float(K["tnt"])   # тротиловый эквивалент смесевого ВВ
 	var dp_max := 0.0
 	for e_v: Variant in site["elements"]:
 		var e: Dictionary = e_v
@@ -721,7 +759,7 @@ static func baseline(site_id: String, threat_id: String, n: int, rng: RandomNumb
 	var crit := 0
 	var fire := 0
 	for i in n:
-		var miss := Vector2(rng.randfn(0.0, 12.0), rng.randfn(0.0, 12.0))
+		var miss := Vector2(rng.randfn(0.0, float(K["cep"])), rng.randfn(0.0, float(K["cep"])))
 		var dmg := damage_at(bar, th, miss.length(), 0.0, str(th["fuze"]) != "none", rng, true)
 		if bool(dmg["crit"]):
 			crit += 1

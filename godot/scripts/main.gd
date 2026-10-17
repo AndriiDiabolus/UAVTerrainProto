@@ -1283,6 +1283,8 @@ func _netdef_headless() -> bool:
 	var batch := false
 	var test := false
 	var sweep := false
+	var sens := false
+	var rose := false
 	for a in args:
 		if a == "--nettest":
 			test = true
@@ -1290,7 +1292,11 @@ func _netdef_headless() -> bool:
 			batch = true
 		elif a == "--netsweep" or a.begins_with("--netsweep="):
 			sweep = true
-	if not (batch or test or sweep):
+		elif a == "--netsens" or a.begins_with("--netsens="):
+			sens = true
+		elif a == "--netwindrose" or a.begins_with("--netwindrose="):
+			rose = true
+	if not (batch or test or sweep or sens or rose):
 		return false
 	var B: GDScript = load("res://scripts/netdef_batch.gd")
 	var ok := true
@@ -1300,6 +1306,10 @@ func _netdef_headless() -> bool:
 		B.run()
 	if sweep:
 		B.sweep()
+	if sens:
+		B.sensitivity()
+	if rose:
+		B.windrose()
 	get_tree().quit(0 if ok else 1)
 	return true
 
